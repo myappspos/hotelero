@@ -3364,7 +3364,10 @@ function abrirHab(num){
       body += '<div style="font-size:12.5px;color:#6b5a86;margin-top:6px">Para invitados del jefe: amigos, familia o personas que vienen a trabajar al hotel.</div>';
       body += '<div id="m-autoriza-box" style="display:none;margin-top:10px">';
       body += '<div class="field"><label>¿Cómo se maneja el precio?</label><select id="m-autoriza-modo" onchange="recalcCheckin('+num+')"><option value="gratis">Gratis (cortesía, no se cobra)</option><option value="mitad">Mitad de precio</option><option value="credito">Cobrar después (a crédito)</option></select></div>';
-      body += '<div class="field"><label>Motivo</label><select id="m-autoriza-motivo"><option value="Amigo de escA(autorizaTexto())">Amigo de esc(autorizaTexto())</option><option value="Familia de escA(autorizaTexto())">Familia de esc(autorizaTexto())</option><option value="Trabajador externo (viene a trabajar al hotel)">Trabajador externo</option><option value="Otro">Otro</option></select></div>';
+      body += '<div class="field"><label>Motivo</label><select id="m-autoriza-motivo">';
+      body += '<option value="'+escA('Amigo de '+autorizaTexto())+'">Amigo de '+esc(autorizaTexto())+'</option>';
+      body += '<option value="'+escA('Familia de '+autorizaTexto())+'">Familia de '+esc(autorizaTexto())+'</option>';
+      body += '<option value="Trabajador externo (viene a trabajar al hotel)">Trabajador externo</option><option value="Otro">Otro</option></select></div>';
       body += '<div id="m-autoriza-aviso" style="font-size:12px;color:#6b5a86;background:#fff;border:1px solid #e8dcf8;border-radius:9px;padding:8px 10px;line-height:1.5">👑 Si es <b>gratis</b>, no se cobra nada y no sale como pendiente. Si es <b>mitad de precio</b>, el otro 50% se le carga en <b>CXC</b> al invitado, con su nota. Si es <b>a crédito</b>, todo el hospedaje se le carga en CXC.</div>';
       body += '</div></div>';
     }
@@ -12450,63 +12453,145 @@ function cuentaHabBoxAutorizada(r){
   h+='</div>';
   return h;
 }
+/* ============ EDITAR FORMA DE PAGO (con pago mixto) ============ */
+function _epMetodosDePago(p){
+  var out=[];
+  if(Array.isArray(p.metodos) && p.metodos.length){
+    p.metodos.forEach(function(l){ out.push({metodo:String(l.metodo||''), montoUsd:Number(l.montoUsd||0), ref:String(l.ref||'')}); });
+  } else {
+    var met=String(p.metodo||'');
+    if(met.indexOf(' + ')>=0){
+      met.split(' + ').forEach(function(t){
+        t=t.trim(); if(!t) return;
+        var mo=0, rf='';
+        /* 1) la referencia: "[Ref: 123]" */
+        var mr=t.match(/\[Ref:\s*([^\]]*)\]/);
+        if(mr){ rf=mr[1].trim(); t=(t.slice(0,mr.index)+t.slice(mr.index+mr[0].length)).trim(); }
+        /* 2) el monto entre parentesis al final: "Efectivo USD (45.00)" */
+        var mm=t.match(/\(\s*\$?([0-9]+(?:[.,][0-9]{1,2})?)\s*\)\s*$/);
+        if(mm){ mo=parseFloat(String(mm[1]).replace(/\./g,'').replace(',','.'))||0; t=t.slice(0,mm.index).trim(); }
+        t=t.replace(/\s+/g,' ').trim();
+        out.push({metodo:t, montoUsd:mo, ref:rf});
+      });
+    }
+    if(!out.length) out.push({metodo:met.replace(/\s*\[Ref:[^\]]*\]/g,'').trim(), montoUsd:Number(p.montoUsd||0), ref:''});
+  }
+  var suma=out.reduce(function(s,l){ return s+Number(l.montoUsd||0); },0);
+  var tot=Number(p.montoUsd||0);
+  if(out.length===1 && Math.abs(suma-tot)>0.009) out[0].montoUsd=tot;
+  else if(out.length>1 && suma>0 && Math.abs(suma-tot)>0.009){
+    /* reparte el total en la misma proporción */
+    out.forEach(function(l){ l.montoUsd=Math.round((Number(l.montoUsd||0))*(tot/suma)*100)/100; });
+    out[out.length-1].montoUsd=Math.round((tot-out.slice(0,out.length-1).reduce(function(s,l){return s+l.montoUsd;},0))*100)/100;
+  }
+  return out;
+}
 function editarPagoModal(id){
   if(!(session().rol==='admin'||puedeSup('anularPagos'))){ alert('No tienes permiso para corregir cobros.'); return; }
   var p=(DB.get('pagos',[])||[]).find(function(x){ return x.id===id; });
   if(!p){ alert('No se encontr\u00f3 el cobro.'); return; }
-  var met=String(p.metodo||'');
-  var ref=''; var mm=met.match(/\[Ref:\s*([^\]]*)\]/); if(mm) ref=mm[1];
-  var base=met.replace(/\s*\[Ref:[^\]]*\]/g,'').trim();
-  var lista=(typeof getMetodos==='function'?getMetodos():[])||[];
-  var opts=''; var _hit=false;
-  lista.forEach(function(m){ var sel=(String(m)===base); if(sel) _hit=true; opts+='<option value="'+escA(m)+'"'+(sel?' selected':'')+'>'+esc(m)+'</option>'; });
-  if(!_hit && base) opts='<option value="'+escA(base)+'" selected>'+esc(base)+' (actual)</option>'+opts;
+  EP_STATE.lines=_epMetodosDePago(p);
+  EP_STATE.total=Number(p.montoUsd||0);
+  epPintar(id);
+}
+var EP_STATE={id:0, lines:[], total:0};
+function epPintar(id){
+  var p=(DB.get('pagos',[])||[]).find(function(x){ return x.id===id; });
+  if(!p){ alert('No se encontr\u00f3 el cobro.'); return; }
+  EP_STATE.id=id;
   var h='<button class="close" onclick="cerrarModal()">\u00d7</button><h2>\u270f\ufe0f Corregir forma de pago</h2>';
-  h+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#2a4a73;margin-bottom:10px">Se corrige <b>c\u00f3mo pag\u00f3</b> el hu\u00e9sped (efectivo, pago m\u00f3vil, punto, Zelle\u2026) y la referencia. El monto y el N\u00b0 de control <b>no cambian</b>. Queda anotado en el Kardex qui\u00e9n lo corrigi\u00f3 y por qu\u00e9.</div>';
+  h+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#2a4a73;margin-bottom:10px">Se corrige <b>c\u00f3mo pag\u00f3</b> el hu\u00e9sped: una sola forma o <b>varias (pago mixto)</b>. El monto total y el N\u00b0 de control <b>no cambian</b>. Queda anotado en el Kardex qui\u00e9n lo corrigi\u00f3 y por qu\u00e9.</div>';
   h+='<div style="background:#f3f6fb;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px">';
   h+='<div><b>'+(p.hab?('Hab. '+esc(String(p.hab))):(p.clienteId?'Cobro a cliente':'Cobro suelto'))+'</b> '+esc(p.huesped||p.concepto||'')+'</div>';
   h+='<div style="color:#55637a;margin-top:3px">'+(p.control?('Control N\u00b0 '+fmtControl(p.control)+' \u00b7 '):'')+esc(p.fechaStr||'')+'</div>';
-  h+='<div style="font-weight:800;color:var(--azul);margin-top:3px">'+fmtBs(p.montoBs)+' \u00b7 '+fmtUSD(p.montoUsd)+'</div></div>';
-  h+='<div class="field"><label>Forma de pago</label><select id="ep-metodo">'+opts+'</select></div>';
-  h+='<div class="field"><label>Referencia / N\u00b0 de operaci\u00f3n <span style="color:#8893a5;font-weight:400;font-size:12px">(opcional)</span></label><input id="ep-ref" value="'+escA(ref)+'" placeholder="ej: 123456789"></div>';
-  h+='<div class="field"><label>\u00bfPor qu\u00e9 lo corriges? (obligatorio)</label><textarea id="ep-motivo" rows="2" placeholder="ej: pag\u00f3 por pago m\u00f3vil y se carg\u00f3 como efectivo"></textarea></div>';
+  h+='<div style="font-weight:800;color:var(--azul);margin-top:3px">'+fmtUSD(Number(p.montoUsd||0))+' \u00b7 '+fmtBs(p.montoBs)+'</div></div>';
+  h+='<div class="field"><label>Formas de pago <span style="color:#8893a5;font-weight:400;font-size:12px">(si pag\u00f3 con dos o m\u00e1s, agrega otra l\u00ednea)</span></label><div id="ep-lineas"></div>';
+  h+='<button type="button" class="btn-ghost" style="padding:6px 12px;margin-top:4px" onclick="epAddLinea()">+ Agregar otra forma de pago</button>';
+  h+='<div style="background:#f3f6fb;border-radius:8px;padding:8px 10px;margin-top:8px;font-size:13px;display:flex;justify-content:space-between"><span>Asignado: <b id="ep-asig">'+fmtUSD(0)+'</b></span><span id="ep-falta"></span></div></div>';
+  h+='<div class="field"><label>\u00bfPor qu\u00e9 lo corriges? (obligatorio)</label><textarea id="ep-motivo" rows="2" placeholder="ej: pag\u00f3 mitad efectivo y mitad pago m\u00f3vil y se carg\u00f3 todo como efectivo"></textarea></div>';
   h+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="confirmarEditarPago('+id+', this)">Guardar correcci\u00f3n</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(h);
+  epPintarLineas();
+}
+function epLineaHTML(l){
+  var opts=getMetodos().map(function(m){ return '<option value="'+escA(m)+'"'+(String(m)===String(l.metodo)?' selected':'')+'>'+esc(m)+'</option>'; }).join('');
+  if(l.metodo && getMetodos().indexOf(l.metodo)<0) opts='<option value="'+escA(l.metodo)+'" selected>'+esc(l.metodo)+'</option>'+opts;
+  var esEf=/efectivo/i.test(String(l.metodo||''));
+  return '<div class="ep-linea" style="margin-bottom:8px"><div style="display:flex;gap:6px;align-items:center">'
+    +'<select class="ep-met" onchange="epRefToggle(this)" style="flex:2">'+opts+'</select>'
+    +'<input type="number" min="0" step="0.01" class="ep-monto" value="'+(Number(l.montoUsd||0)>0?Number(l.montoUsd).toFixed(2):'')+'" placeholder="USD" oninput="epRecalc()" style="flex:1;min-width:70px">'
+    +'<button type="button" class="btn-ghost" style="padding:4px 9px" onclick="epDelLinea(this)">\u00d7</button></div>'
+    +'<input type="text" class="ep-ref" placeholder="N\u00b0 de referencia / confirmaci\u00f3n" value="'+escA(l.ref||'')+'" style="display:'+(esEf?'none':'block')+';margin-top:5px;font-size:13px"></div>';
+}
+function epPintarLineas(){
+  var cont=document.getElementById('ep-lineas'); if(!cont) return;
+  cont.innerHTML=EP_STATE.lines.map(epLineaHTML).join('');
+  epRecalc();
+}
+function epRefToggle(sel){
+  var row=sel.closest('.ep-linea'); if(!row) return;
+  var ref=row.querySelector('.ep-ref'); if(!ref) return;
+  var ef=/efectivo/i.test(sel.value);
+  ref.style.display=ef?'none':'block';
+  if(ef) ref.value='';
+  epRecalc();
+}
+function epAddLinea(){
+  epLeerDom();
+  EP_STATE.lines.push({metodo:(getMetodos()[1]||getMetodos()[0]||''), montoUsd:0, ref:''});
+  epPintarLineas();
+}
+function epDelLinea(btn){
+  epLeerDom();
+  if(EP_STATE.lines.length<=1){ alert('Tiene que quedar al menos una forma de pago.'); return; }
+  var rows=Array.prototype.slice.call(document.querySelectorAll('#ep-lineas .ep-linea'));
+  var i=rows.indexOf(btn.closest('.ep-linea'));
+  if(i>=0) EP_STATE.lines.splice(i,1);
+  epPintarLineas();
+}
+function epLeerDom(){
+  var rows=Array.prototype.slice.call(document.querySelectorAll('#ep-lineas .ep-linea'));
+  if(!rows.length) return;
+  EP_STATE.lines=rows.map(function(row){
+    return {metodo:String((row.querySelector('.ep-met')||{}).value||''),
+            montoUsd:parseFloat((row.querySelector('.ep-monto')||{}).value)||0,
+            ref:String((row.querySelector('.ep-ref')||{}).value||'').trim()};
+  });
+}
+function epRecalc(){
+  epLeerDom();
+  var asig=EP_STATE.lines.reduce(function(s,l){ return s+Number(l.montoUsd||0); },0);
+  var a=document.getElementById('ep-asig'); if(a) a.innerText=fmtUSD(asig);
+  var f=document.getElementById('ep-falta'); if(!f) return;
+  var dif=EP_STATE.total-asig;
+  if(Math.abs(dif)<0.01) f.innerHTML='<span style="color:var(--verde);font-weight:700">\u2713 Completo</span>';
+  else if(dif>0) f.innerHTML='Falta: <b style="color:#c0392b">'+fmtUSD(dif)+'</b>';
+  else f.innerHTML='Sobra: <b style="color:#c0392b">'+fmtUSD(-dif)+'</b>';
 }
 function confirmarEditarPago(id, btn){
   if(procesoDoble(btn)) return;
   if(!(session().rol==='admin'||puedeSup('anularPagos'))){ procesoListo(btn); alert('No tienes permiso para corregir cobros.'); return; }
   var motivo=((document.getElementById('ep-motivo')||{}).value||'').trim();
   if(!motivo){ procesoListo(btn); alert('Escribe el motivo de la correcci\u00f3n.'); return; }
-  var met=((document.getElementById('ep-metodo')||{}).value||'').trim();
-  if(!met){ procesoListo(btn); alert('Elige la forma de pago.'); return; }
-  var ref=((document.getElementById('ep-ref')||{}).value||'').trim();
+  epLeerDom();
+  var lines=EP_STATE.lines.filter(function(l){ return l.metodo; });
+  if(!lines.length){ procesoListo(btn); alert('Elige la forma de pago.'); return; }
+  for(var i=0;i<lines.length;i++){ if(!(Number(lines[i].montoUsd)>0.009)){ procesoListo(btn); alert('La forma de pago "'+lines[i].metodo+'" est\u00e1 en cero. Escribe el monto o quita esa l\u00ednea.'); return; } }
   var pagos=DB.get('pagos',[])||[]; var p=pagos.find(function(x){ return x.id===id; });
   if(!p){ procesoListo(btn); alert('No se encontr\u00f3 el cobro.'); return; }
+  var tot=Number(p.montoUsd||0);
+  var suma=lines.reduce(function(s,l){ return s+Number(l.montoUsd||0); },0);
+  if(Math.abs(suma-tot)>0.01){ procesoListo(btn); alert('Los montos de las formas de pago ('+fmtUSD(suma)+') no coinciden con lo que se cobr\u00f3 ('+fmtUSD(tot)+').\n\nAjusta los montos: el total no se puede cambiar al corregir la forma de pago.'); return; }
   var antes=String(p.metodo||'');
-  var nuevo=met+(ref?(' [Ref: '+ref+']'):'');
+  var nuevo=lines.map(function(l){ var t2=l.metodo; if(lines.length>1) t2+=' ('+fmtUSD(l.montoUsd)+')'; if(l.ref) t2+=' [Ref: '+l.ref+']'; return t2; }).join(' + ');
   if(antes===nuevo){ procesoListo(btn); alert('No cambiaste nada.'); return; }
-
-  /* 1) se corrige la l\u00ednea de forma de pago, sin mover el monto total */
-  if(Array.isArray(p.metodos) && p.metodos.length===1){
-    p.metodos[0].metodo=met; p.metodos[0].ref=ref;
-  } else if(Array.isArray(p.metodos) && p.metodos.length>1){
-    var _mt=p.metodos.map(function(x){ return String(x.metodo||'').replace(/\s*\(.*\)\s*$/,''); });
-    var _ix=_mt.indexOf(met);
-    if(_ix>=0){ p.metodos[_ix].ref=ref; }
-    else { p.metodos[0].metodo=met; p.metodos[0].ref=ref; }
-  } else {
-    p.metodos=[{metodo:met, montoUsd:Number(p.montoUsd||0), montoBs:Number(p.montoBs||0), ref:ref}];
-  }
-  /* 2) se rehace el texto de la forma de pago con los montos reales */
-  if(Array.isArray(p.metodos) && p.metodos.length){
-    p.metodo=p.metodos.map(function(l){ var t2=String(l.metodo||''); if(p.metodos.length>1) t2+=' ('+fmtUSD(Number(l.montoUsd||0))+')'; if(l.ref) t2+=' [Ref: '+l.ref+']'; return t2; }).join(' + ');
-  } else { p.metodo=nuevo; }
+  p.metodos=lines.map(function(l){ return {metodo:l.metodo, montoUsd:Number(l.montoUsd||0), montoBs:precioBs(Number(l.montoUsd||0)), ref:l.ref||''}; });
+  p.metodo=nuevo;
   p.editadoPor=(session()||{}).nombre||''; p.editadoTs=Date.now();
   DB.save('pagos', pagos);
-  logKardex('correccion', {hab:p.hab||0, huesped:p.huesped||p.concepto||'', clienteId:p.clienteId||'', control:p.control||'', detalle:'Correcci\u00f3n de forma de pago: "'+antes+'" \u2192 "'+p.metodo+'" \u00b7 Motivo: '+motivo, montoUsd:0, montoBs:0, metodo:p.metodo});
+  logKardex('correccion', {hab:p.hab||0, huesped:p.huesped||p.concepto||'', clienteId:p.clienteId||'', control:p.control||'', detalle:'Correcci\u00f3n de forma de pago: "'+antes+'" \u2192 "'+nuevo+'" \u00b7 Motivo: '+motivo, montoUsd:0, montoBs:0, metodo:nuevo});
   cerrarModal(); render();
-  alert('Corregido. La forma de pago qued\u00f3 en "'+p.metodo+'" y el N\u00b0 de control N\u00b0 '+fmtControl(p.control)+' no se movi\u00f3.\n\nQued\u00f3 anotado en el Kardex qui\u00e9n lo corrigi\u00f3 y por qu\u00e9.');
+  alert('Corregido. La forma de pago qued\u00f3 en "'+nuevo+'" y el N\u00b0 de control N\u00b0 '+fmtControl(p.control)+' no se movi\u00f3.\n\nQued\u00f3 anotado en el Kardex qui\u00e9n lo corrigi\u00f3 y por qu\u00e9.');
 }
 
 bootstrap();
