@@ -4508,6 +4508,21 @@ function datosCuentaHab(r){
   const lista=cuartosQuePaganA(r);
   const porHab=[]; let hospT=0, consT=0, habT=0;
   const cgs=cargosACuenta(r);
+  /* [ADELANTO-UNIDA] El adelanto/abono de la cuenta UNIDA se descuenta UNA sola vez, y es de
+     toda la cuenta: se ve igual desde la ficha de la 204 y desde la de la 219.
+     Antes solo se veia en el cuarto donde estaba guardado (la 219 decia "total $88 y
+     adelantos $0", como si el adelanto no estuviera pagado). */
+  var _uniAb=0, _uniFil=null;
+  try{
+    var _listaG=lista;
+    if(_listaG.length===1){ try{ var _base4=r; if(cuentaDeHab(r)!=='yo' && r.cuentaCon){ _base4=findRoomAny(r.cuentaCon)||r; } var _lg=cuartosQuePaganA(_base4); if(_lg && _lg.length>1) _listaG=_lg; }catch(e){} }
+    if(_listaG.length>1){
+
+      var _dg=detalleCuentaHab(r);
+      _uniAb=(_dg&&_dg.abo)||0;
+      _uniFil=(_dg&&_dg.filas)||null;
+    }
+  }catch(e){ _uniAb=0; _uniFil=null; }
   lista.forEach(q=>{
     const noches=nochesHab(q), hosp=brutoHab(q), d=descUsd(q);
     /* [CORTESIA-CERO] cortesia: el hospedaje vale 0 */
@@ -4515,9 +4530,14 @@ function datosCuentaHab(r){
     const _hospQ=_cortQ?0:hosp; const _dQ=_cortQ?0:d;
     const cons=_cortQ?0:cgs.filter(x=>!x.pagado && Number(x.hab||0)===Number(q.num)).reduce((a,x)=>a+Number(x.montoUsd||0),0);
     const ab=_cortQ?0:(Array.isArray(q.abonos)?q.abonos:[]).reduce((a,x)=>a+abonoCuentaUsd(x,q),0);
-    hospT+=(_hospQ-_dQ); habT+=ab; consT+=cons;
-    porHab.push({r:q, noches:noches, hosp:_hospQ, d:_dQ, cons:cons, ab:ab, neto:Math.max(0,(_hospQ-_dQ)+cons-ab)});
+    /* En una cuenta unida, el abono que puso cada cuarto sale del detalle de la cuenta
+       (el mismo numero que usa el corte). Asi la ficha de la 204 y la de la 219 dicen lo mismo. */
+    var _abQ=ab;
+    if(_uniFil){ var _fl0=_uniFil.filter(function(f){ return f && f.r && Number(f.r.num)===Number(q.num); })[0]; if(_fl0 && _fl0.ab!=null) _abQ=Number(_fl0.ab); }
+    hospT+=(_hospQ-_dQ); habT+=_abQ; consT+=cons;
+    porHab.push({r:q, noches:noches, hosp:_hospQ, d:_dQ, cons:cons, ab:_abQ, neto:Math.max(0,(_hospQ-_dQ)+cons-_abQ)});
   });
+  if(_listaG && _listaG.length>1){ try{ var _dgg=detalleCuentaHab(r); if(_dgg){ hospT=Number(_dgg.hosp||0)+Number(_dgg.cons||0); consT=Number(_dgg.cons||0); habT=Number(_dgg.abo||0); } }catch(e){} }
   const compartidos=cgs.filter(x=>!x.pagado && Number(x.hab||0)!==Number(r.num));
   return { raiz:r, list:lista, porHab:porHab, cargos:cgs, compartidos:compartidos, tot:hospT+consT, abo:habT, saldo:Math.max(0,hospT+consT-habT), nochesTot:porHab.reduce((a,x)=>a+x.noches,0) };
 }
