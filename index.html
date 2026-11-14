@@ -8306,8 +8306,9 @@ function renderCaja(){
   h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(totBs)+'</div><div class="l">Total del día (Bs)</div></div>';
   h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtUSD(totUsd)+'</div><div class="l">Equivalente USD</div></div>';
   h += '<div class="stat" style="border-left-color:var(--gris)"><div class="n">'+pagos.length+'</div><div class="l">Transacciones</div></div></div>';
-  const efBs = porMetodo['Efectivo Bs'] ? porMetodo['Efectivo Bs'].bs : 0;
-  const efUsd = porMetodo['Efectivo USD'] ? porMetodo['Efectivo USD'].usd : 0;
+  const _efMs=Object.keys(porMetodo).filter(function(k){ return /efectivo/i.test(k); });
+  let efBs=0, efUsd=0;
+  _efMs.forEach(function(k){ efBs+=Number(porMetodo[k].bs)||0; efUsd+=Number(porMetodo[k].usd)||0; });
   h += '<div style="background:#eef9f1;border:1px solid #bfe6cd;border-radius:12px;padding:16px 18px;margin-bottom:18px">';
   h += '<div style="font-weight:800;color:#1d6b38;margin-bottom:10px;font-size:15px">💵 Dinero en caja (efectivo)</div>';
   h += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
