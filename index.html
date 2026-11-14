@@ -119,6 +119,10 @@ label{font-size:13px;font-weight:600;color:#44526a;}
 #guardado-chip{position:fixed;left:18px;bottom:18px;background:#fff;border:1px solid #e4e9f2;color:#55637a;border-radius:999px;padding:5px 12px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.10);z-index:40;display:none;align-items:center;gap:6px;}
 #guardado-chip.ver{display:inline-flex;}
 #guardado-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--verde);}
+/* Chip de version: se ve siempre, abajo a la izquierda, para saber que version tiene el equipo */
+#ver-chip{position:fixed;left:18px;bottom:52px;background:#f3f6fb;border:1px solid #dbe3ef;color:#55637a;border-radius:999px;padding:4px 11px;font-size:11.5px;z-index:40;cursor:pointer;user-select:none;}
+#ver-chip:hover{background:#e8eff9;color:#2a4a73;}
+@media print{#ver-chip{display:none;}}
 #guardado-chip.busy .dot{background:var(--naranja);animation:gpulse 1s infinite;}
 @keyframes gpulse{0%,100%{opacity:1}50%{opacity:.35}}
 .prio{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px;}
@@ -230,6 +234,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
   <div class="login-card">
     <h1 style="text-align:center">🏨</h1>
     <p class="sub">Sistema de operaciones · 65 habitaciones</p>
+    <div style="text-align:center;margin:-4px 0 10px;font-size:12px;color:#8893a5" id="login-ver"></div>
     <div class="field"><label>Usuario</label><input id="in-user" autocomplete="username" placeholder="ej: recepcion"></div>
     <div class="field"><label>Contraseña</label><input id="in-pass" type="password" autocomplete="current-password" placeholder="••••"></div>
     <button class="btn-primary" onclick="login()">Entrar</button>
@@ -261,6 +266,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <button id="btn-subir" title="Subir arriba" aria-label="Subir arriba" onclick="subirArriba()">⬆️</button>
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
+<!-- Chip: version de la app (para saber que version tiene cada equipo) -->
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.17 · 15/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -268,6 +275,37 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 </div>
 
 <script>
+
+/* Muestra la version de este equipo y, si se puede, la que esta publicada en internet.
+   Si no coinciden, es que ese equipo tiene una version vieja guardada (hay que recargar). */
+function verVersionModal(){
+  const _f=function(){ try{ return new Date(document.lastModified).toLocaleString('es-VE'); }catch(e){ return '—'; } };
+  let h='<h3>🏷️ Versión de la app</h3>';
+  h+='<div style="font-size:14px;line-height:1.9;color:#2a3a52">';
+  h+='<div>Este equipo: <b>'+esc(APP_VERSION)+'</b></div>';
+  h+='<div>Archivo cargado en este equipo: <b>'+esc(_f())+'</b></div>';
+  h+='<div style="font-size:12.5px;color:#8893a5;margin-top:6px">Si un compañero ve un número distinto, o le sale “desactualizado”, tiene que recargar con <b>Ctrl+F5</b> (o abrir en incógnito).</div>';
+  h+='</div><div id="ver-net" style="margin-top:12px;font-size:13px;color:#8893a5">Buscando la versión publicada…</div>';
+  h+='<div style="margin-top:16px;text-align:right"><button class="btn-primary" onclick="cerrarModal()">Cerrar</button></div>';
+  showModal(h);
+  try{
+    fetch(location.href.split('?')[0]+'?v='+Date.now(),{cache:'no-store'}).then(function(r){ return r.text(); }).then(function(t){
+      const m=String(t).match(/APP_VERSION\s*=\s*'([^']+)'/);
+      const box=document.getElementById('ver-net'); if(!box) return;
+      if(!m || !m[1]){ box.innerHTML='No se pudo leer la versión publicada. Señal baja o sin internet.'; return; }
+      const pub=m[1];
+      if(pub===APP_VERSION){ box.innerHTML='<span style="color:#1d6b38;font-weight:700">✔ Ya tienes la última versión publicada</span>'; }
+      else { box.innerHTML='<span style="color:#b36b00;font-weight:700">⚠️ Hay una versión más nueva publicada: '+esc(pub)+'</span><br><span style="font-size:12.5px">Cierra la app y ábrela con Ctrl+F5 para actualizar.</span>'; }
+    }).catch(function(){ const box=document.getElementById('ver-net'); if(box) box.innerHTML='No se pudo revisar internet (sin señal). La versión de este equipo es la de arriba.'; });
+  }catch(e){}
+}
+function pintarLoginVersion(){ try{ const el=document.getElementById('login-ver'); if(el) el.textContent='Versión '+APP_VERSION; }catch(e){} }
+try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded', pintarLoginVersion); }catch(e){}
+/* ====== VERSION DE LA APP ======
+   Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
+   Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
+const APP_VERSION = 'v1.17 · 15/11/2026';
+
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
 const SB_KEY = 'sb_publishable_PJfzZshU0tA9FigMiysl1Q_1wMFjKHJ';
