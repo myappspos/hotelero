@@ -8352,6 +8352,9 @@ function renderCaja(){
   h += corteBusqBloque();
   const porMetodo = {}; let totBs=0, totUsd=0;
   getMetodos().forEach(m=>porMetodo[m]={bs:0,usd:0,n:0});
+  /* [CORTE-MONTO] se descartan de los totales los cobros ANULADOS (su metodo dice "Anulado") */
+  const _anulTodos = pagos.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0; });
+  pagos = pagos.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')<0; });
   pagos.forEach(p=>{ cajaLineasDePago(p).forEach(m=>{ const k=String(m.metodo||'Otro'); if(!porMetodo[k]) porMetodo[k]={bs:0,usd:0,n:0}; porMetodo[k].bs+=Number(m.montoBs)||0; porMetodo[k].usd+=Number(m.montoUsd)||0; porMetodo[k].n++; }); var _tpRc=pagoTotal(p); totBs+=_tpRc.bs; totUsd+=_tpRc.usd; });
   h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(totBs)+'</div><div class="l">Total del día (Bs)</div></div>';
   h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtUSD(totUsd)+'</div><div class="l">Equivalente USD</div></div>';
@@ -8370,14 +8373,19 @@ function renderCaja(){
   let keys = Object.keys(porMetodo);
   keys.forEach(m=>{ const x=porMetodo[m]; if(x.n===0 && getMetodos().indexOf(m)<0) return; h += '<tr><td>'+esc(m)+'</td><td>'+x.n+'</td><td>'+fmtBs(x.bs)+'</td><td>'+fmtUSD(x.usd)+'</td></tr>'; });
   h += '<tr style="font-weight:800;background:#f3f6fb"><td>TOTAL</td><td>'+pagos.length+'</td><td>'+fmtBs(totBs)+'</td><td>'+fmtUSD(totUsd)+'</td></tr></table>';
+  if(_anulTodos.length){
+    let _anBs=0,_anUsd=0; _anulTodos.forEach(function(p){ const _t=pagoTotal(p); _anBs+=(Number(p.montoBs)||_t.bs); _anUsd+=(Number(p.montoUsd)||_t.usd); });
+    h += '<div style="background:#fdf7f7;border:1px solid #f2c2c2;border-radius:10px;padding:10px 13px;margin-bottom:12px;font-size:12.6px;color:#8a2f2f">🚫 <b>'+_anulTodos.length+' cobro(s) anulado(s) este día · '+fmtBs(_anBs)+' / '+fmtUSD(_anUsd)+'</b>. No se suman al total del día. Aparecen abajo marcados como anulados.</div>';
+  }
   h += '<div class="section-title" style="font-size:15px;margin-top:22px">Movimientos del día</div>';
   if(pagos.length===0){ h += '<div class="empty">No hay cobros registrados en esta fecha.</div>'; return h; }
   h += '<div class="task-list">';
-  pagos.forEach(p=>{
+  pagos.concat(_anulTodos).forEach(p=>{
+    const _esAn=String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0;
     var _tpR=pagoTotal(p);
     var _metTxt=esc(metodoTextoDesdeLineas(cajaLineasDePago(p))||p.metodo||'');
     var _avisoMonto=_tpR.sinMonto?' <span style="display:inline-block;background:#fff4e5;color:#a05a00;border:1px solid #f3d3a0;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">⚠️ Sin monto</span>':'';
-    h += '<div class="task"><div class="info"><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+_metTxt+' · '+p.fechaStr+' · '+esc(p.usuario||'')+_avisoMonto+'</div></div>';
+    h += '<div class="task"'+( _esAn?' style="opacity:.62"':'')+'><div class="info"><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+(_esAn?' <b style="color:#b23b3b">· ANULADO</b>':'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+_metTxt+' · '+p.fechaStr+' · '+esc(p.usuario||'')+_avisoMonto+'</div></div>';
     h += '<div style="text-align:right"><div style="font-weight:800;color:'+(_tpR.sinMonto?'#a05a00':'var(--azul)')+'">'+(_tpR.sinMonto?'Sin monto':fmtBs(_tpR.bs))+'</div><div style="font-size:12px;color:#8893a5">'+( _tpR.sinMonto?'—':fmtUSD(_tpR.usd))+'</div>';
     if(session().rol==='admin' || puedeSup('anularPagos')) h += '<button class="btn-ghost" style="padding:4px 10px;margin-top:4px;font-size:12px;margin-right:6px" onclick="editarPagoModal('+p.id+')">✏️ Corregir</button><button class="btn-red" style="padding:4px 10px;margin-top:4px;font-size:12px" onclick="borrarPago('+p.id+')">Anular</button>';
     h += '</div></div>';
@@ -8629,8 +8637,14 @@ function corteDatos(fecha, turno){
     hkRep = hkRep.filter(k=>turnoDeTs(k.ts)===turno);
   }
   let totBs=0, totUsd=0; const porRecep={};
-  pagos.forEach(p=>{ totBs+=Number(p.montoBs)||0; totUsd+=Number(p.montoUsd)||0;
-    const u=p.usuario||'(sin nombre)'; if(!porRecep[u]) porRecep[u]={n:0,bs:0,usd:0}; porRecep[u].n++; porRecep[u].bs+=Number(p.montoBs)||0; porRecep[u].usd+=Number(p.montoUsd)||0; });
+  /* [CORTE-MONTO] El monto se toma con pagoTotal(): si un cobro viejo no tiene
+     montoUsd/montoBs guardado, se saca de sus formas de pago. Antes el corte
+     sumaba 0 y el cobro salia sin monto aunque si se hubiera cobrado. */
+  pagos.forEach(p=>{ const _tp=(function(){ try{ return pagoTotal(p); }catch(e){ return {bs:Number(p.montoBs)||0, usd:Number(p.montoUsd)||0}; } })();
+    const _bs=Number(_tp.bs)||0, _us=Number(_tp.usd)||0;
+    p._totBs=_bs; p._totUsd=_us;
+    totBs+=_bs; totUsd+=_us;
+    const u=p.usuario||'(sin nombre)'; if(!porRecep[u]) porRecep[u]={n:0,bs:0,usd:0}; porRecep[u].n++; porRecep[u].bs+=_bs; porRecep[u].usd+=_us; });
   let credUsd=0, credBs=0; cred.forEach(k=>{ credUsd+=Number(k.credUsd||0); credBs+=Number(k.credBs||0); });
   return {pagos:pagos, cargos:cargos, anul:anul, cred:cred, autoriz:autoriz, listaMan:listaMan, hkRep:hkRep, totBs:totBs, totUsd:totUsd, credUsd:credUsd, credBs:credBs, porRecep:porRecep};
 }
@@ -8647,7 +8661,10 @@ function imprimirCorte(turnoArg, _modo){
   const lMant=rs.filter(r=>r.estado==='mantenimiento').sort(porNum);
   // Tabla principal: habitaciones / cobros vendidos
   let filas=''; D.pagos.forEach(p=>{
-    filas+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</td><td>'+esc(p.huesped||p.concepto||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td class="c">'+(p.noches?p.noches:'—')+'</td><td>'+esc(p.metodo||'')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>';
+    const _fBs=(p._totBs!=null?p._totBs:(pagoTotal(p).bs));
+    const _fUsd=(p._totUsd!=null?p._totUsd:(pagoTotal(p).usd));
+    const _sin=!(Number(_fBs)>0.004 || Number(_fUsd)>0.004);
+    filas+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</td><td>'+esc(p.huesped||p.concepto||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td class="c">'+(p.noches?p.noches:'—')+'</td><td>'+esc(p.metodo||'')+'</td><td class="r">'+(_sin?'<span style="color:#b36b00">Sin monto</span>':fmtBs(_fBs))+'</td><td class="r">'+(_sin?'<span style="color:#b36b00">Sin monto</span>':fmtUSD(_fUsd))+'</td></tr>';
   });
   if(!filas) filas='<tr><td colspan="8" class="c" style="color:#888;padding:18px">No se vendió nada en esta fecha</td></tr>';
   // Cargos extra por habitación
