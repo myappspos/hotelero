@@ -4123,10 +4123,29 @@ function cobrarYCheckout(num, btn){
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
   const desc = (enCxc||_mitCxc)?0:descUsd(r); const totUsd = (hospCobro - desc) + consUsd;
-  const abonos = Array.isArray(r.abonos)?r.abonos:[];
+  const abonos = Array.isArray(r.abonos)?r.abonos.slice():[];
   const abonoUsd = abonos.reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
   const saldoUsd = Math.max(0, totUsd - abonoUsd);
   const c = clienteDeHab(r); const cr = c?clienteResumen(c):null;
+  if(abonos.length){
+    /* [KARDEX-COBRO] Los adelantos se concretan al hacer el check-out: pasan a la
+       lista de pagos (arqueo y turno) y se quitan del cuarto, para que un segundo
+       check-out no los cuente dos veces. */
+    try{
+      const _pg=DB.get('pagos',[]);
+      abonos.forEach(function(a){
+        const _u=abonoCuentaUsd(a,r), _ct=parseInt(a.control)||siguienteControl();
+        _pg.unshift({ id:Date.now()+Math.floor(Math.random()*900), control:_ct, dia:diaKey(now), fechaStr:(a.fechaStr||now.toLocaleString('es-VE')),
+          hab:num, huesped:r.huesped||'', tipo:r.tipo||'', noches:noches, metodo:(a.metodo||'Abono'), metodos:(a.metodos||null),
+          clienteId:r.clienteId||'', clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
+          montoUsd:_u, montoBs:(Number(a.montoBs)||precioBs(_u)), tasa:tasa(), usuario:session().nombre, nota:'Adelanto aplicado en el check-out' });
+        try{ confirmarControl(_ct); }catch(_ec){}
+      });
+      DB.save('pagos',_pg);
+    }catch(_eAb){}
+    r.abonos=[];
+    try{ saveRooms(rooms()); }catch(_eAb2){}
+  }
   const now = new Date();
   const detAb = abonoUsd>0 ? (' (ya adelantó '+fmtUSD(abonoUsd)+')') : '';
   if(saldoUsd<=0.009){
@@ -4148,6 +4167,12 @@ function cobrarYCheckout(num, btn){
     montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), tasa:tasa(), usuario:session().nombre });
   DB.save('pagos', pagos); confirmarControl(ctrl);
   ligarCargosControl(pend.map(c=>c.id), ctrl);
+  /* [KARDEX-COBRO] El cobro del check-out tiene que quedar anotado como COBRO en el
+     Kardex (no solo como "check-out"). Antes el kardex y su total salian en cero
+     aunque el dinero si entro. */
+  try{ logKardex('pago',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:ctrl,
+    detalle:'Cobro al hacer check-out · '+noches+' noche(s)'+(consUsd>0?(' + consumos '+fmtUSD(consUsd)):'')+detAb,
+    montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), metodo:metodo}); }catch(_eKP){}
   const det = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+' cobradas'+detAb;
   logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det, montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), metodo:metodo});
   cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:saldoUsd, metodo:metodo});
@@ -8329,16 +8354,38 @@ function imprimirCorteCliente(){
   return imprimirHTML(html);
 }
 var cajaTurnoRecepSel='';
-var TURNOS=[
-  {id:'manana', nombre:'Mañana', emoji:'🌅', desde:6, hasta:14},
-  {id:'tarde',  nombre:'Tarde',  emoji:'🌇', desde:14, hasta:22},
-  {id:'noche',  nombre:'Noche',  emoji:'🌙', desde:22, hasta:6}
-];
-function turnoDeHora(hh){ if(hh>=6&&hh<14)return'manana'; if(hh>=14&&hh<22)return'tarde'; return'noche'; }
-function turnoDeTs(ts){ try{ var d=new Date(ts); if(isNaN(d))return null; return turnoDeHora(d.getHours()); }catch(e){ return null; } }
-function turnoDePago(p){ var ms=Number(p.id); if(ms>1e12){ try{ var d=new Date(ms); if(!isNaN(d)) return turnoDeHora(d.getHours()); }catch(e){} } if(p.fechaStr){ var t=turnoDeTs(p.fechaStr); if(t) return t; } return null; }
-function turnoNombre(id){ var t=TURNOS.find(x=>x.id===id); return t?(t.emoji+' '+t.nombre):'Todos los turnos'; }
-function turnoRango(id){ var t=TURNOS.find(x=>x.id===id); if(!t) return ''; var f=function(h){ var ap=h<12?'a.m.':'p.m.'; var hr=h%12; if(hr===0)hr=12; return hr+':00 '+ap; }; return 'de '+f(t.desde)+' a '+f(t.hasta); }
+/* [CORTE-TURNOS] Los turnos son de RECEPCION: cada uno se abre y se cierra con el
+   nombre de quien lo trabajo. Aqui se busca a que turno pertenece una hora o un pago. */
+function _turnosDeDia(fecha){
+  try{ return (DB.get('turnos',[])||[]).slice().sort(function(a,b){ return new Date(a.inicio)-new Date(b.inicio); }); }catch(e){ return []; }
+}
+function _turnoDeFechaHora(ts){
+  try{
+    var d=new Date(ts); if(isNaN(d)) return null;
+    var list=_turnosDeDia(); var found=null;
+    for(var i=0;i<list.length;i++){
+      var t=list[i]; var ini=new Date(t.inicio); if(isNaN(ini)) continue;
+      var fin=t.fin?new Date(t.fin):null; if(fin && isNaN(fin)) fin=null;
+      if(d>=ini && (!fin || d<=fin)) found=t;
+    }
+    return found;
+  }catch(e){ return null; }
+}
+function turnoDeTs(ts){ var t=_turnoDeFechaHora(ts); return t?(t.id!=null?t.id:t.nombre):null; }
+function turnoDePago(p){
+  if(!p) return null;
+  if(p.turnoId!=null){ var t0=(DB.get('turnos',[])||[]).find(function(x){ return String(x.id)===String(p.turnoId); }); if(t0) return t0.id; }
+  var t=_turnoDeFechaHora(Number(p.id)>1e12?Number(p.id):p.fechaStr);
+  return t?(t.id!=null?t.id:t.nombre):null;
+}
+function _turnoPorId(id){
+  var list=(DB.get('turnos',[])||[]);
+  var t=list.find(function(x){ return String(x.id)===String(id); });
+  if(t) return t;
+  return list.find(function(x){ return String(x.nombre)===String(id); })||null;
+}
+function turnoNombre(id){ var t=_turnoPorId(id); return t?((t.nombre||t.usuario||'Turno')):'Sin turno'; }
+function turnoRango(id){ var t=_turnoPorId(id); if(!t) return ''; return 'de '+horaCorta(t.inicio)+(t.fin?(' a '+horaCorta(t.fin)):' · abierto'); }
 function renderCaja(){
   const pagosDia = DB.get('pagos',[]).filter(p=>p.dia===cajaFecha);
   let pagos = pagosDia;
@@ -8620,37 +8667,67 @@ function exportarCajaCSV(){
   _descargarXLS('arqueo_'+cajaFecha+'.xls', headers, rows);
 }
 function corteDatos(fecha, turno){
-  let pagos = DB.get('pagos',[]).filter(p=>p.dia===fecha);
-  let cargos = kardexAll().filter(k=>k.tipo==='cargo' && diaKey(new Date(k.ts))===fecha);
-  let anul = kardexAll().filter(k=>k.tipo==='anulacion' && diaKey(new Date(k.ts))===fecha);
-  let cred = kardexAll().filter(k=>k.tipo==='credito' && diaKey(new Date(k.ts))===fecha);
-  let autoriz = kardexAll().filter(k=>k.tipo==='autorizada' && diaKey(new Date(k.ts))===fecha);
-  let listaMan = kardexAll().filter(k=>k.tipo==='listamanual' && diaKey(new Date(k.ts))===fecha);
-  let hkRep = kardexAll().filter(k=>k.tipo==='limpieza' && k.hkReporte && diaKey(new Date(k.ts))===fecha);
-  if(turno && turno!=='todos'){
-    pagos = pagos.filter(p=>turnoDePago(p)===turno);
-    cargos = cargos.filter(k=>turnoDeTs(k.ts)===turno);
-    anul = anul.filter(k=>turnoDeTs(k.ts)===turno);
-    cred = cred.filter(k=>turnoDeTs(k.ts)===turno);
-    autoriz = autoriz.filter(k=>turnoDeTs(k.ts)===turno);
-    listaMan = listaMan.filter(k=>turnoDeTs(k.ts)===turno);
-    hkRep = hkRep.filter(k=>turnoDeTs(k.ts)===turno);
-  }
-  let totBs=0, totUsd=0; const porRecep={};
-  /* [CORTE-MONTO] El monto se toma con pagoTotal(): si un cobro viejo no tiene
-     montoUsd/montoBs guardado, se saca de sus formas de pago. Antes el corte
-     sumaba 0 y el cobro salia sin monto aunque si se hubiera cobrado. */
-  pagos.forEach(p=>{ const _tp=(function(){ try{ return pagoTotal(p); }catch(e){ return {bs:Number(p.montoBs)||0, usd:Number(p.montoUsd)||0}; } })();
+  /* [CORTE-TURNOS] Los turnos son los de RECEPCION (se abren uno por uno y quedan
+     con el nombre de quien los trabajo), no franjas de reloj fijas. Si se pide un
+     turno, se filtra por ese turno cerrado/abierto. */
+  const _todos = DB.get('pagos',[]).filter(p=>p.dia===fecha);
+  const _todasF = function(tipo){ return kardexAll().filter(k=>k.tipo===tipo && diaKey(new Date(k.ts))===fecha); };
+  const _turnoId = (turno && turno!=='todos') ? String(turno) : null;
+  const _enTurnoPago = function(p){ if(!_turnoId) return true; if(p.turnoId!=null) return String(p.turnoId)===_turnoId; var t=turnoPorPago(p); return t?String(t.id)===_turnoId:false; };
+  const _enTurnoK = function(k){ if(!_turnoId) return true; if(k.turnoId!=null) return String(k.turnoId)===_turnoId; var t=turnoPorTs(k.ts); return t?String(t.id)===_turnoId:false; };
+  const _fil = function(list){ return _turnoId? list.filter(_enTurnoK) : list; };
+  let pagos = _todos.filter(_enTurnoPago);
+  let cargos = _fil(_todasF('cargo'));
+  let anul = _fil(_todasF('anulacion'));
+  let cred = _fil(_todasF('credito'));
+  let autoriz = _fil(_todasF('autorizada'));
+  let listaMan = _fil(_todasF('listamanual'));
+  let hkRep = _todasF('limpieza').filter(k=>k.hkReporte).filter(_enTurnoK);
+  /* [CORTE-TURNOS] Adelantos: se tomaron en caja pero no son un "cobro" del dia. */
+  let adelan = pagos.filter(function(p){ return p.nota && String(p.nota).indexOf('Adelanto')>=0; });
+  /* [CORTE-ANULADOS] Los cobros anulados NO suman al total. Se muestran aparte. */
+  let anulPagos = pagos.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0; });
+  pagos = pagos.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')<0; });
+  let totBs=0, totUsd=0, sinMontoN=0; const porRecep={}, porTurno={};
+  pagos.forEach(p=>{
+    const _tp=(function(){ try{ return pagoTotal(p); }catch(e){ return {bs:Number(p.montoBs)||0, usd:Number(p.montoUsd)||0, sinMonto:false}; } })();
     const _bs=Number(_tp.bs)||0, _us=Number(_tp.usd)||0;
-    p._totBs=_bs; p._totUsd=_us;
+    p._totBs=_bs; p._totUsd=_us; p._sinMonto=!!_tp.sinMonto; if(_tp.sinMonto) sinMontoN++;
     totBs+=_bs; totUsd+=_us;
-    const u=p.usuario||'(sin nombre)'; if(!porRecep[u]) porRecep[u]={n:0,bs:0,usd:0}; porRecep[u].n++; porRecep[u].bs+=_bs; porRecep[u].usd+=_us; });
+    const u=p.usuario||'(sin nombre)'; if(!porRecep[u]) porRecep[u]={n:0,bs:0,usd:0}; porRecep[u].n++; porRecep[u].bs+=_bs; porRecep[u].usd+=_us;
+    const _tt=turnoPorPago(p); const tk=_tt?String(_tt.id):'z'; if(!porTurno[tk]) porTurno[tk]={t:_tt,n:0,bs:0,usd:0};
+    porTurno[tk].n++; porTurno[tk].bs+=_bs; porTurno[tk].usd+=_us;
+  });
+  let anuBs=0, anuUsd=0; anulPagos.forEach(function(p){ const _t=(function(){ try{ return pagoTotal(p); }catch(e){ return {bs:Number(p.montoBs)||0, usd:Number(p.montoUsd)||0}; } })(); p._totBs=_t.bs; p._totUsd=_t.usd; anuBs+=_t.bs; anuUsd+=_t.usd; });
+  let adeBs=0, adeUsd=0; adelan.forEach(function(p){ const _t=pagoTotal(p); p._totBs=_t.bs; p._totUsd=_t.usd; adeBs+=_t.bs; adeUsd+=_t.usd; });
   let credUsd=0, credBs=0; cred.forEach(k=>{ credUsd+=Number(k.credUsd||0); credBs+=Number(k.credBs||0); });
-  return {pagos:pagos, cargos:cargos, anul:anul, cred:cred, autoriz:autoriz, listaMan:listaMan, hkRep:hkRep, totBs:totBs, totUsd:totUsd, credUsd:credUsd, credBs:credBs, porRecep:porRecep};
+  return {pagos:pagos, cargos:cargos, anul:anul, cred:cred, autoriz:autoriz, listaMan:listaMan, hkRep:hkRep,
+    totBs:totBs, totUsd:totUsd, credUsd:credUsd, credBs:credBs, porRecep:porRecep, porTurno:porTurno,
+    anulPagos:anulPagos, anuBs:anuBs, anuUsd:anuUsd, adelan:adelan, adeBs:adeBs, adeUsd:adeUsd, sinMontoN:sinMontoN, turno:_turnoId};
+}
+/* Busca a que turno de recepcion pertenece un pago (por id del turno o por la hora). */
+function turnoPorTs(ts){
+  try{
+    const d=new Date(ts); if(isNaN(d)) return null;
+    const list=turnos().filter(function(t){ var ini=new Date(t.inicio); var fin=t.fin?new Date(t.fin):null; return d>=ini && (!fin || d<=fin); });
+    return list.length?list[list.length-1]:null;
+  }catch(e){ return null; }
+}
+function turnoPorPago(p){
+  if(!p) return null;
+  if(p.turnoId!=null){ const t=turnos().find(function(x){ return String(x.id)===String(p.turnoId); }); if(t) return t; }
+  const ms=Number(p.id); if(ms>1e12){ return turnoPorTs(ms); }
+  if(p.fechaStr) return turnoPorTs(p.fechaStr);
+  return null;
+}
+function turnoEtiqueta(t){
+  if(!t) return 'Sin turno';
+  return (t.nombre||t.usuario||'Turno')+' ('+horaCorta(t.inicio)+(t.fin?(' a '+horaCorta(t.fin)):' · abierto')+')';
 }
 function imprimirCorte(turnoArg, _modo){
-  const _turno = turnoArg && turnoArg!=='todos' ? turnoArg : null;
+  const _turno = turnoArg && turnoArg!=='todos' ? String(turnoArg) : null;
   const D = corteDatos(cajaFecha, _turno);
+  const _tObj = _turno ? (turnos().find(function(x){ return String(x.id)===_turno; })||null) : null;
   const rs=rooms(); const totalHab=rs.length; const ocup=rs.filter(r=>r.estado==='ocupada').length;
   const libres=rs.filter(r=>r.estado==='libre').length; const pct=totalHab?Math.round(ocup*100/totalHab):0;
   const porNum=function(a,b){ return (parseInt(a.num)||0)-(parseInt(b.num)||0); };
@@ -8659,20 +8736,30 @@ function imprimirCorte(turnoArg, _modo){
   const lSucia=rs.filter(r=>r.estado==='sucia').sort(porNum);
   const lLimp=rs.filter(r=>r.estado==='limpieza').sort(porNum);
   const lMant=rs.filter(r=>r.estado==='mantenimiento').sort(porNum);
+  const _fch=function(p){ return p.fechaStr||(''); };
   // Tabla principal: habitaciones / cobros vendidos
   let filas=''; D.pagos.forEach(p=>{
     const _fBs=(p._totBs!=null?p._totBs:(pagoTotal(p).bs));
     const _fUsd=(p._totUsd!=null?p._totUsd:(pagoTotal(p).usd));
-    const _sin=!(Number(_fBs)>0.004 || Number(_fUsd)>0.004);
-    filas+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</td><td>'+esc(p.huesped||p.concepto||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td class="c">'+(p.noches?p.noches:'—')+'</td><td>'+esc(p.metodo||'')+'</td><td class="r">'+(_sin?'<span style="color:#b36b00">Sin monto</span>':fmtBs(_fBs))+'</td><td class="r">'+(_sin?'<span style="color:#b36b00">Sin monto</span>':fmtUSD(_fUsd))+'</td></tr>';
+    const _sin=!!p._sinMonto;
+    filas+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</td><td>'+esc(p.huesped||p.concepto||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td>'+esc(turnoEtiqueta(turnoPorPago(p)))+'</td><td class="c">'+(p.noches?p.noches:'—')+'</td><td>'+esc(p.metodo||'')+'</td><td class="r">'+(_sin?'<span style="color:#b36b00">Sin monto</span>':fmtBs(_fBs))+'</td><td class="r">'+(_sin?'<span style="color:#b36b00">Sin monto</span>':fmtUSD(_fUsd))+'</td></tr>';
   });
-  if(!filas) filas='<tr><td colspan="8" class="c" style="color:#888;padding:18px">No se vendió nada en esta fecha</td></tr>';
+  if(!filas) filas='<tr><td colspan="9" class="c" style="color:#888;padding:18px">No se vendió nada en esta fecha</td></tr>';
+  // Adelantos recibidos
+  let filasAd=''; D.adelan.forEach(function(p){ filasAd+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):'—')+'</td><td>'+esc(p.huesped||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td>'+esc(turnoEtiqueta(turnoPorPago(p)))+'</td><td>'+esc(p.metodo||'')+'</td><td>'+_fch(p)+'</td><td class="r">'+(p._sinMonto?'<span style="color:#b36b00">Sin monto</span>':fmtBs(p._totBs))+'</td><td class="r">'+(p._sinMonto?'<span style="color:#b36b00">Sin monto</span>':fmtUSD(p._totUsd))+'</td></tr>'; });
   // Cargos extra por habitación
-  let filasC=''; D.cargos.forEach(k=>{ const _ctrlCk=k.controlPago||k.control; filasC+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(_ctrlCk?fmtControl(_ctrlCk):'<span style="color:#b36b00">Pendiente de cobro</span>')+'</td><td>'+(k.hab?('Hab. '+k.hab):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td>'+esc(k.usuario||'—')+'</td></tr>'; });
+  let filasC=''; D.cargos.forEach(k=>{ const _ctrlCk=k.controlPago||k.control; const _mUsd=Number(k.montoUsd||k.cargoUsd||0), _mBs=Number(k.montoBs||0);
+    filasC+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(_ctrlCk?fmtControl(_ctrlCk):'<span style="color:#b36b00">Pendiente de cobro</span>')+'</td><td>'+(k.hab?('Hab. '+k.hab):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td class="r">'+(_mBs>0.004?fmtBs(_mBs):'—')+'</td><td class="r">'+(_mUsd>0.004?fmtUSD(_mUsd):'—')+'</td><td>'+esc(k.usuario||'—')+'</td></tr>'; });
   // Subtotales por recepcionista
   let filasR=''; Object.keys(D.porRecep).forEach(u=>{ const x=D.porRecep[u]; filasR+='<tr><td>'+esc(u)+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; });
+  // Resumen por turno de recepcion
+  let filasT=''; const _tk=Object.keys(D.porTurno);
+  _tk.sort(function(a,b){ var A=D.porTurno[a].t,B=D.porTurno[b].t; if(!A) return 1; if(!B) return -1; return new Date(A.inicio)-new Date(B.inicio); });
+  _tk.forEach(function(k){ const x=D.porTurno[k]; filasT+='<tr><td>'+esc(turnoEtiqueta(x.t))+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; });
   // Anulaciones del día
   let filasA=''; D.anul.forEach(k=>{ filasA+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+k.hab):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.motivo||k.detalle||'')+'</td><td>'+esc(k.anuladoPor||k.usuario||'—')+'</td><td class="r">'+fmtBs(k.montoBs)+'</td></tr>'; });
+  // Cobros anulados (no suman)
+  let filasAP=''; D.anulPagos.forEach(function(p){ filasAP+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):'—')+'</td><td>'+esc(p.huesped||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td>'+esc(turnoEtiqueta(turnoPorPago(p)))+'</td><td class="r">'+fmtBs(p._totBs)+'</td><td class="r">'+fmtUSD(p._totUsd)+'</td></tr>'; });
   // CXC generadas (ventas a crédito del día/turno)
   let filasCred=''; D.cred.forEach(k=>{ filasCred+='<tr><td>'+(k.control?fmtControl(k.control):'—')+'</td><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td>'+esc(k.usuario||'—')+'</td><td class="r">'+fmtBs(k.credBs)+'</td><td class="r">'+fmtUSD(k.credUsd)+'</td></tr>'; });
   // Habitaciones autorizadas por el Sr. Carlos
@@ -8682,14 +8769,23 @@ function imprimirCorte(turnoArg, _modo){
   // Habitaciones que Ama de Llaves encontró usadas (nadie las había reportado)
   let filasHKRep=''; (D.hkRep||[]).forEach(k=>{ filasHKRep+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.usuario||'Ama de Llaves')+'</td><td>'+esc(k.nota||'—')+'</td></tr>'; });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Corte '+cajaFecha+'</title>';
-  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.cards{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
-  html+='<h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('corte','Corte detallado del día'))+(_turno?(' · Turno '+turnoNombre(_turno)):'')+'</h1>'+hotelLinePrint();
-  html+='<div class="sub">'+fechaLarga(cajaFecha)+(_turno?(' &nbsp;·&nbsp; Turno de '+turnoNombre(_turno)+' ('+turnoRango(_turno)+')'):'')+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.cards{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}.aviso{border:1px solid #f0d58a;background:#fffdf5;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#8a5a00;margin-bottom:12px}.ok{color:#1d6b38;font-weight:700}.mal{color:#b23b3b;font-weight:700}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html+='<h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('corte','Corte detallado del día'))+(_tObj?(' · Turno de '+esc(_tObj.nombre||_tObj.usuario||'')):'')+'</h1>'+hotelLinePrint();
+  html+='<div class="sub">'+fechaLarga(cajaFecha)+(_tObj?(' &nbsp;·&nbsp; Turno de '+esc(_tObj.nombre||_tObj.usuario||'')+' ('+horaCorta(_tObj.inicio)+( _tObj.fin?(' a '+horaCorta(_tObj.fin)):' · abierto')+')'):' &nbsp;·&nbsp; Todos los turnos')+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
+  if(D.sinMontoN>0) html+='<div class="aviso">⚠️ Hay <b>'+D.sinMontoN+' cobro(s) sin monto</b> registrado. No se suman al total (aparecen marcados “Sin monto” en la tabla). Corrígelos en Caja con el botón ✏️ Corregir.</div>';
   html+='<div class="cards"><div class="card"><div class="l">Total vendido (Bs)</div><div class="n">'+fmtBs(D.totBs)+'</div></div>';
   html+='<div class="card"><div class="l">Equivalente USD</div><div class="n">'+fmtUSD(D.totUsd)+'</div></div>';
   html+='<div class="card"><div class="l">Transacciones</div><div class="n">'+D.pagos.length+'</div></div>';
+  if(D.anuBs>0.004) html+='<div class="card" style="border-color:#f0b8b8;background:#fff8f8"><div class="l">Anulado (no suma)</div><div class="n" style="color:#b23b3b">'+fmtBs(D.anuBs)+'</div><div class="l">'+fmtUSD(D.anuUsd)+' · '+D.anulPagos.length+' cobro(s)</div></div>';
+  if(D.adeBs>0.004) html+='<div class="card" style="border-color:#bfe6cd;background:#f5fdf8"><div class="l">Adelantos recibidos</div><div class="n" style="color:#1d6b38">'+fmtBs(D.adeBs)+'</div><div class="l">'+fmtUSD(D.adeUsd)+' · '+D.adelan.length+' adelanto(s)</div></div>';
   if(D.credUsd>0.009) html+='<div class="card" style="border-color:#f0d58a;background:#fffdf5"><div class="l">A crédito (por cobrar)</div><div class="n" style="color:#b36b00">'+fmtUSD(D.credUsd)+'</div><div class="l">'+fmtBs(D.credBs)+' · '+D.cred.length+' cuenta(s)</div></div>';
   html+='<div class="card"><div class="l">Ocupación ahora</div><div class="n">'+pct+'%</div><div class="l">'+ocup+' ocup. · '+libres+' libres · '+totalHab+' total</div></div></div>';
+  // CUADRE contra el arqueo
+  let _arq=0; try{ _arq=(resumenCaja(cajaFecha).totBs)||0; }catch(e){ _arq=0; }
+  if(!_tObj){
+    const _dif=Math.round((D.totBs-_arq)*100)/100;
+    html+='<div class="aviso" style="'+(Math.abs(_dif)<0.02?'border-color:#bfe6cd;background:#f5fdf8;color:#1d6b38':'')+'">Cuadre con el arqueo del día: <b>'+fmtBs(D.totBs)+'</b> (corte) vs <b>'+fmtBs(_arq)+'</b> (arqueo) · '+(Math.abs(_dif)<0.02?'<span class="ok">CUADRA ✔</span>':('<span class="mal">DIFERENCIA '+fmtBs(_dif)+'</span>'))+'</div>';
+  }
   html+='<div class="cards"><div class="card"><div class="l">Ocupadas</div><div class="n">'+lOcup.length+'</div></div>';
   html+='<div class="card"><div class="l">Libres</div><div class="n">'+lLibre.length+'</div></div>';
   html+='<div class="card"><div class="l">Por limpiar</div><div class="n">'+lSucia.length+'</div></div>';
@@ -8707,12 +8803,15 @@ function imprimirCorte(turnoArg, _modo){
   lLibre.forEach(r=>filasHab+=_filaHab(r,'<b style="color:#1d6b38">Libre</b>'));
   if(!filasHab) filasHab='<tr><td colspan="7" class="c" style="color:#888;padding:18px">No hay habitaciones registradas</td></tr>';
   estadoHtml+=filasHab+'</table>';
-  html+='<h2>Habitaciones y cobros del día</h2>';
-  html+='<table><tr><th>N° Control</th><th>Habitación</th><th>A quién (huésped)</th><th>Recepcionista</th><th class="c">Noches</th><th>Forma de pago</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filas;
-  html+='<tr class="tot"><td colspan="6">TOTAL VENDIDO</td><td class="r">'+fmtBs(D.totBs)+'</td><td class="r">'+fmtUSD(D.totUsd)+'</td></tr></table>';
+  html+='<h2>Habitaciones y cobros'+(_tObj?' del turno':' del día')+'</h2>';
+  html+='<table><tr><th>N° Control</th><th>Habitación</th><th>A quién (huésped)</th><th>Recepcionista</th><th>Turno</th><th class="c">Noches</th><th>Forma de pago</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filas;
+  html+='<tr class="tot"><td colspan="7">TOTAL VENDIDO</td><td class="r">'+fmtBs(D.totBs)+'</td><td class="r">'+fmtUSD(D.totUsd)+'</td></tr></table>';
+  if(filasT){ html+='<h2>Resumen por turno de recepcionista</h2><table><tr><th>Turno</th><th class="c">Cobros</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasT+'</table>'; }
   if(filasR){ html+='<h2>Resumen por recepcionista</h2><table><tr><th>Recepcionista</th><th class="c">Transacciones</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasR+'</table>'; }
-  if(filasC){ html+='<h2>Cargos extra por habitación</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Detalle del cargo</th><th>Registrado por</th></tr>'+filasC+'</table>'; }
-  if(filasA){ html+='<h2>Cobros anulados en el día</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th></tr>'+filasA+'</table>'; }
+  if(filasAd){ html+='<h2>Adelantos recibidos</h2><table><tr><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Recibido por</th><th>Turno</th><th>Forma de pago</th><th>Fecha</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasAd+'<tr class="tot"><td colspan="7">TOTAL ADELANTOS</td><td class="r">'+fmtBs(D.adeBs)+'</td><td class="r">'+fmtUSD(D.adeUsd)+'</td></tr></table>'; }
+  if(filasC){ html+='<h2>Cargos extra por habitación</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Detalle del cargo</th><th class="r">Bs</th><th class="r">USD</th><th>Registrado por</th></tr>'+filasC+'</table>'; }
+  if(filasAP){ html+='<h2>Cobros anulados (NO se suman al total)</h2><table><tr><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Anulado por</th><th>Turno</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasAP+'<tr class="tot"><td colspan="5">TOTAL ANULADO (no suma)</td><td class="r">'+fmtBs(D.anuBs)+'</td><td class="r">'+fmtUSD(D.anuUsd)+'</td></tr></table>'; }
+  if(filasA){ html+='<h2>Anulaciones en el sistema</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th></tr>'+filasA+'</table>'; }
   if(filasCred){ html+='<h2>CXC generadas (ventas a crédito)</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th>Registrado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasCred+'<tr class="tot"><td colspan="6">TOTAL A CRÉDITO (POR COBRAR)</td><td class="r">'+fmtBs(D.credBs)+'</td><td class="r">'+fmtUSD(D.credUsd)+'</td></tr></table>'; }
   if(filasAut){ html+='<h2>👑 Habitaciones autorizadas por '+esc(autorizaTitulo())+'</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th>Autorizado por (recepción)</th><th class="r">Tarifa normal</th><th class="r">Se cobra</th></tr>'+filasAut+'</table>'; }
   if((D.listaMan||[]).length){ html+='<h2>🧹 Habitaciones marcadas listas a mano (sin pasar por Ama de Llaves)</h2><table><tr><th>Hora</th><th>Habitación</th><th>Marcada por</th><th>Motivo (nota)</th></tr>'+filasLisM+'</table>'; }
@@ -8720,10 +8819,9 @@ function imprimirCorte(turnoArg, _modo){
   html+=estadoHtml;
   if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Entregado por<br>(Recepcionista)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
   html+=piePaginaHTML()+'</body></html>';
-  return entregarDoc(html, _modo, {tipo:'corte', titulo:(tituloDoc('corte','Corte detallado del día')+(_turno?(' · Turno '+turnoNombre(_turno)):'')), fecha:cajaFecha, periodo:fechaLarga(cajaFecha)+(_turno?(' · Turno '+turnoNombre(_turno)):'')});
+  return entregarDoc(html, _modo, {tipo:'corte', titulo:(tituloDoc('corte','Corte detallado del día')+(_tObj?(' · Turno de '+(_tObj.nombre||_tObj.usuario||'')):'')), fecha:cajaFecha, periodo:fechaLarga(cajaFecha)+(_tObj?(' · Turno de '+(_tObj.nombre||_tObj.usuario||'')):'')});
 }
 
-/* ====== REPORTE DE PAGOS POR RANGO DE FECHAS ====== */
 function primerDiaMes(){ const d=new Date(); return diaKey(new Date(d.getFullYear(),d.getMonth(),1)); }
 let repDesde = primerDiaMes();
 let repHasta = diaKey();
@@ -10749,10 +10847,20 @@ function renderKardex(){
 function turnoBloque(t){
   const movs = kardexDeTurno(t.id);
   let cobrUsd=0, cobrBs=0; movs.forEach(m=>{ cobrUsd+=Number(m.montoUsd||0); cobrBs+=Number(m.montoBs||0); });
+  /* [KARDEX-COBRO] Se comparan los movimiento del kardex con los cobros REALES del turno.
+     Si un cobro no quedo anotado en el kardex (versiones viejas), el total del bloque
+     se toma igual de los cobros, para que no salga en cero. */
+  let _cobros=[]; try{ _cobros=(Array.isArray(t.pagos)&&t.pagos.length)?t.pagos.slice():pagosDeRango(t.inicio, t.fin||null); }catch(e){ _cobros=[]; }
+  _cobros=_cobros.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')<0; });
+  let _realBs=0,_realUsd=0; _cobros.forEach(function(p){ const _x=pagoTotal(p); _realBs+=Number(_x.bs)||0; _realUsd+=Number(_x.usd)||0; });
+  const _usaReal=(_realUsd>Math.abs(cobrUsd)+0.009 || _realBs>Math.abs(cobrBs)+0.009);
+  if(_usaReal){ cobrUsd=_realUsd; cobrBs=_realBs; }
+  const _nPagos=_cobros.length||movs.filter(function(m){ return m.tipo==='pago'; }).length;
+  const _avisoKx=(_usaReal && _cobros.length? '<div style="font-size:11px;color:#b36b00;text-align:right">'+_cobros.length+' cobro(s) · el detalle de abajo no los ten&iacute;a anotados</div>':'');
   let h = '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px;overflow:hidden">';
   h += '<div style="background:#f3f6fb;padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
   h += '<div style="flex:1;min-width:170px"><b>'+esc(t.nombre)+'</b> '+(t.abierto?'<span style="font-size:11px;color:var(--verde);font-weight:700">● ABIERTO</span>':'')+'<div style="font-size:12px;color:#55637a">'+fechaHoraCorta(t.inicio)+(t.fin?(' → '+fechaHoraCorta(t.fin)):'')+' · '+duracionTurno(t)+'</div></div>';
-  h += '<div style="text-align:right"><div style="font-weight:800;color:var(--azul)">'+fmtBs(cobrBs)+'</div><div style="font-size:12px;color:#8893a5">'+fmtUSD(cobrUsd)+' · '+movs.length+' mov.</div></div>';
+  h += '<div style="text-align:right"><div style="font-weight:800;color:var(--azul)">'+fmtBs(cobrBs)+'</div><div style="font-size:12px;color:#8893a5">'+fmtUSD(cobrUsd)+' · '+_nPagos+' cobro(s) · '+movs.length+' mov.</div>'+_avisoKx+'</div>';
   h += '<button class="btn-primary" style="padding:6px 12px" onclick="imprimirCortePorTurno(\''+t.id+'\')">🧾 Corte del turno</button>';
   h += '<button class="btn-ghost" style="padding:6px 12px" onclick="imprimirKardex(\''+t.id+'\')">Imprimir</button>';
   h += '<button class="btn-ghost" style="padding:6px 12px" onclick="exportarKardexCSV(\''+t.id+'\')">Excel</button>';
