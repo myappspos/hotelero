@@ -911,7 +911,7 @@ function guardarEnvioAdmin(meta, html){
 function enviarAdminModal(tipo){
   const esCorte=(tipo==='caja');
   let b='<button class="close" onclick="cerrarModal()">×</button><h2>📤 Enviar a administración</h2>';
-  b+='<div style="background:#eef6ff;border:1px solid #cfe0f5;border-radius:10px;padding:11px 13px;font-size:13px;color:#2a4a73;margin-bottom:12px">Se enviará a la bandeja de <b>Administración</b> '+(esCorte?(cajaTurnoRecepSel?('el <b>corte del turno</b> del recepcionista '+esc((turnos().filter(function(t){return t.id===cajaTurnoRecepSel;})[0]||{}).nombre||'')+' de '+fechaLarga(cajaFecha)):('el <b>corte de caja</b> de '+fechaLarga(cajaFecha))):('el <b>reporte de pagos</b> del periodo seleccionado'))+'. Administración podrá verlo y descargarlo para su auditoría.</div>';
+  b+='<div style="background:#eef6ff;border:1px solid #cfe0f5;border-radius:10px;padding:11px 13px;font-size:13px;color:#2a4a73;margin-bottom:12px">Se enviará a la bandeja de <b>Administración</b> '+(esCorte?('el <b>corte de caja</b> de '+fechaLarga(cajaFecha)):('el <b>reporte de pagos</b> del periodo seleccionado'))+'. Administración podrá verlo y descargarlo para su auditoría.</div>';
   b+='<div class="field"><label>Nota para administración (opcional)</label><textarea id="env-nota" rows="3" placeholder="Ej: cierre del turno de la tarde, cuadra con el efectivo…"></textarea></div>';
   b+='<div class="actions"><button class="btn-green" onclick="confirmarEnvioAdmin(\''+tipo+'\')">Enviar ahora</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(b);
@@ -919,7 +919,7 @@ function enviarAdminModal(tipo){
 function confirmarEnvioAdmin(tipo){
   const na=document.getElementById('env-nota'); _envioNota=na?na.value.trim():'';
   let ok=false;
-  if(tipo==='caja'){ ok = cajaTurnoRecepSel ? imprimirCortePorTurno(cajaTurnoRecepSel,'enviar') : imprimirCorte(null,'enviar'); }
+  if(tipo==='caja'){ ok = imprimirCorte(null,'enviar'); }
   else { ok=imprimirReportePagos('enviar'); }
   _envioNota='';
   cerrarModal();
@@ -8292,7 +8292,6 @@ function turnoRango(id){ var t=TURNOS.find(x=>x.id===id); if(!t) return ''; var 
 function renderCaja(){
   const pagosDia = DB.get('pagos',[]).filter(p=>p.dia===cajaFecha);
   let pagos = pagosDia;
-  if(cajaTurnoRecepSel){ var _tR=turnos().filter(function(t){ return t.id===cajaTurnoRecepSel; })[0]; if(_tR){ var _idsP={}; (pagosDeRango(_tR.inicio, _tR.fin||new Date().toISOString())||[]).forEach(function(p){ _idsP[String(p.id)]=1; }); pagos = pagosDia.filter(function(p){ return _idsP[String(p.id)]; }); } }
   let h = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">';
   h += '<div style="flex:1;min-width:160px"><label>Fecha del arqueo</label><input type="date" value="'+cajaFecha+'" onchange="setCajaFecha(this.value)"></div>';
   h += '<button class="btn-primary" onclick="pagoManualModal()">Registrar cobro manual</button>';
@@ -8301,15 +8300,10 @@ function renderCaja(){
   h += '<button class="btn-orange" onclick="enviarAdminModal(\'caja\')">📤 Enviar a administración</button>';
   h += '<button class="btn-ghost" onclick="exportarCajaCSV()">Exportar a Excel</button></div>';
   h += corteBusqBloque();
-  h += '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;background:#f6f8fc;border:1px solid #e1e8f2;border-radius:12px;padding:12px 14px;margin-bottom:16px">';
-  h += '<div style="flex:1;min-width:260px"><label>Ver el corte de un turno de recepción</label><select onchange="cajaTurnoRecepSel=this.value;render()"><option value="">— Todo el día —</option>'+turnos().slice(0,40).map(function(t){ return '<option value="'+t.id+'"'+(cajaTurnoRecepSel===t.id?' selected':'')+'>'+esc(t.nombre)+' · '+fechaHoraCorta(t.inicio)+(t.fin?(' → '+horaCorta(t.fin)):' (abierto)')+'</option>'; }).join('')+'</select>';
-  h += '<div style="font-size:12px;color:#8893a5;margin-top:4px">El hotel usa los turnos de los recepcionistas. Abre un turno para ver solo lo que hizo ese recepcionista, desde que abrió hasta que cerró.</div></div>';
-  if(cajaTurnoRecepSel) h += '<button class="btn-primary" onclick="imprimirCortePorTurno(\''+cajaTurnoRecepSel+'\')">Imprimir el corte de ese turno</button>';
-  h += '</div>';
   const porMetodo = {}; let totBs=0, totUsd=0;
   getMetodos().forEach(m=>porMetodo[m]={bs:0,usd:0,n:0});
-  pagos.forEach(p=>{ if(Array.isArray(p.metodos)&&p.metodos.length){ p.metodos.forEach(m=>{ if(!porMetodo[m.metodo]) porMetodo[m.metodo]={bs:0,usd:0,n:0}; porMetodo[m.metodo].bs+=Number(m.montoBs)||0; porMetodo[m.metodo].usd+=Number(m.montoUsd)||0; porMetodo[m.metodo].n++; }); } else { if(!porMetodo[p.metodo]) porMetodo[p.metodo]={bs:0,usd:0,n:0}; porMetodo[p.metodo].bs+=p.montoBs; porMetodo[p.metodo].usd+=p.montoUsd; porMetodo[p.metodo].n++; } totBs+=p.montoBs; totUsd+=p.montoUsd; });
-  h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(totBs)+'</div><div class="l">'+(cajaTurnoRecepSel?'Total del turno (Bs)':'Total del día (Bs)')+'</div></div>';
+  pagos.forEach(p=>{ cajaLineasDePago(p).forEach(m=>{ const k=String(m.metodo||'Otro'); if(!porMetodo[k]) porMetodo[k]={bs:0,usd:0,n:0}; porMetodo[k].bs+=Number(m.montoBs)||0; porMetodo[k].usd+=Number(m.montoUsd)||0; porMetodo[k].n++; }); var _tpRc=pagoTotal(p); totBs+=_tpRc.bs; totUsd+=_tpRc.usd; });
+  h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(totBs)+'</div><div class="l">Total del día (Bs)</div></div>';
   h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtUSD(totUsd)+'</div><div class="l">Equivalente USD</div></div>';
   h += '<div class="stat" style="border-left-color:var(--gris)"><div class="n">'+pagos.length+'</div><div class="l">Transacciones</div></div></div>';
   const efBs = porMetodo['Efectivo Bs'] ? porMetodo['Efectivo Bs'].bs : 0;
@@ -8329,8 +8323,11 @@ function renderCaja(){
   if(pagos.length===0){ h += '<div class="empty">No hay cobros registrados en esta fecha.</div>'; return h; }
   h += '<div class="task-list">';
   pagos.forEach(p=>{
-    h += '<div class="task"><div class="info"><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+p.metodo+' · '+p.fechaStr+' · '+esc(p.usuario||'')+'</div></div>';
-    h += '<div style="text-align:right"><div style="font-weight:800;color:var(--azul)">'+fmtBs(p.montoBs)+'</div><div style="font-size:12px;color:#8893a5">'+fmtUSD(p.montoUsd)+'</div>';
+    var _tpR=pagoTotal(p);
+    var _metTxt=esc(metodoTextoDesdeLineas(cajaLineasDePago(p))||p.metodo||'');
+    var _avisoMonto=_tpR.sinMonto?' <span style="display:inline-block;background:#fff4e5;color:#a05a00;border:1px solid #f3d3a0;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">⚠️ Sin monto</span>':'';
+    h += '<div class="task"><div class="info"><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+_metTxt+' · '+p.fechaStr+' · '+esc(p.usuario||'')+_avisoMonto+'</div></div>';
+    h += '<div style="text-align:right"><div style="font-weight:800;color:'+(_tpR.sinMonto?'#a05a00':'var(--azul)')+'">'+(_tpR.sinMonto?'Sin monto':fmtBs(_tpR.bs))+'</div><div style="font-size:12px;color:#8893a5">'+( _tpR.sinMonto?'—':fmtUSD(_tpR.usd))+'</div>';
     if(session().rol==='admin' || puedeSup('anularPagos')) h += '<button class="btn-ghost" style="padding:4px 10px;margin-top:4px;font-size:12px;margin-right:6px" onclick="editarPagoModal('+p.id+')">✏️ Corregir</button><button class="btn-red" style="padding:4px 10px;margin-top:4px;font-size:12px" onclick="borrarPago('+p.id+')">Anular</button>';
     h += '</div></div>';
   });
@@ -8463,11 +8460,64 @@ function confirmarAnularPago(id, btn){
 }
 
 /* ====== REPORTE DE ARQUEO (imprimir / exportar) ====== */
+/* Devuelve las lineas reales de un cobro: sirve para pago sencillo y para pago mixto. */
+function cajaLineasDePago(p){
+  if(!p) return [];
+  const _vacia=String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0;
+  if(Array.isArray(p.metodos) && p.metodos.length){
+    return p.metodos.map(function(m){ return {metodo:(_vacia?'Anulado':String(m.metodo||'')), montoBs:Number(m.montoBs)||0, montoUsd:Number(m.montoUsd)||0, ref:String(m.ref||'')}; });
+  }
+  const met=String(p.metodo||'');
+  if(met.indexOf(' + ')>=0){
+    const tot=Number(p.montoUsd)||0;
+    const partes=[];
+    met.split(' + ').forEach(function(t){
+      t=t.trim(); if(!t) return;
+      let rf=''; let mo=0;
+      const mr=t.match(/\[Ref:\s*([^\]]*)\]/);
+      if(mr){ rf=mr[1].trim(); t=(t.slice(0,mr.index)+t.slice(mr.index+mr[0].length)).trim(); }
+      const mm=t.match(/\(\s*\$?([0-9]+(?:[.,][0-9]{1,2})?)\s*\)\s*$/);
+      if(mm){ mo=parseFloat(String(mm[1]).replace(',','.'))||0; t=t.slice(0,mm.index).trim(); }
+      t=t.replace(/\s+/g,' ').trim();
+      if(t) partes.push({metodo:t, montoUsd:mo, ref:rf});
+    });
+    const suma=partes.reduce(function(s2,l){ return s2+Number(l.montoUsd||0); },0);
+    if(partes.length>1 && Math.abs(suma-tot)<=0.05){
+      partes.forEach(function(l){ l.montoBs=precioBs(l.montoUsd); });
+      return partes;
+    }
+  }
+  return [{metodo:(_vacia?'Anulado':met.replace(/\s*\[Ref:[^\]]*\]/g,'').replace(/\s+/g,' ').trim()), montoBs:Number(p.montoBs)||0, montoUsd:Number(p.montoUsd)||0, ref:(String(met).match(/\[Ref:\s*([^\]]*)\]/)||['',''])[1].trim()}];
+}
+/* Total real de un cobro: si el registro tiene las lineas del pago mixto, se suman.
+   Asi un cobro viejo guardado con monto 0 pero repartido en lineas no sale en cero. */
+function pagoTotal(p){
+  if(!p) return {bs:0, usd:0, sinMonto:true};
+  var bs=Number(p.montoBs)||0, usd=Number(p.montoUsd)||0;
+  var lins=cajaLineasDePago(p);
+  var sbs=0, susd=0;
+  lins.forEach(function(l){ sbs+=Number(l.montoBs)||0; susd+=Number(l.montoUsd)||0; });
+  if(Math.abs(usd)<0.005 && Math.abs(bs)<0.005 && (Math.abs(susd)>0.005 || Math.abs(sbs)>0.005)){ bs=sbs; usd=susd; }
+  return {bs:bs, usd:usd, sinMonto:(Math.abs(bs)<0.005 && Math.abs(usd)<0.005)};
+}
+/* Arma el texto de la forma de pago desde las lineas reales. */
+function metodoTextoDesdeLineas(metodos){
+  if(!Array.isArray(metodos) || !metodos.length) return '';
+  if(metodos.length===1) return String(metodos[0].metodo||'');
+  return metodos.map(function(l){ var t=String(l.metodo||''); if(metodos.length>1) t+=' ('+fmtUSD(Number(l.montoUsd||0))+')'; if(l.ref) t+=' [Ref: '+l.ref+']'; return t; }).join(' + ');
+}
 function resumenCaja(fecha){
   const pagos = DB.get('pagos',[]).filter(p=>p.dia===fecha);
   const porMetodo = {}; let totBs=0, totUsd=0;
   METODOS.forEach(m=>porMetodo[m]={bs:0,usd:0,n:0});
-  pagos.forEach(p=>{ if(Array.isArray(p.metodos)&&p.metodos.length){ p.metodos.forEach(m=>{ if(!porMetodo[m.metodo]) porMetodo[m.metodo]={bs:0,usd:0,n:0}; porMetodo[m.metodo].bs+=Number(m.montoBs)||0; porMetodo[m.metodo].usd+=Number(m.montoUsd)||0; porMetodo[m.metodo].n++; }); } else { if(!porMetodo[p.metodo]) porMetodo[p.metodo]={bs:0,usd:0,n:0}; porMetodo[p.metodo].bs+=p.montoBs; porMetodo[p.metodo].usd+=p.montoUsd; porMetodo[p.metodo].n++; } totBs+=p.montoBs; totUsd+=p.montoUsd; });
+  pagos.forEach(p=>{
+    cajaLineasDePago(p).forEach(m=>{
+      const k=String(m.metodo||'Otro');
+      if(!porMetodo[k]) porMetodo[k]={bs:0,usd:0,n:0};
+      porMetodo[k].bs+=Number(m.montoBs)||0; porMetodo[k].usd+=Number(m.montoUsd)||0; porMetodo[k].n++;
+    });
+    var _tp=pagoTotal(p); totBs+=_tp.bs; totUsd+=_tp.usd;
+  });
   return {pagos:pagos, porMetodo:porMetodo, totBs:totBs, totUsd:totUsd};
 }
 function fechaLarga(dia){
@@ -8480,7 +8530,7 @@ function imprimirArqueo(){
   Object.keys(R.porMetodo).forEach(m=>{ const x=R.porMetodo[m]; if(x.n===0 && getMetodos().indexOf(m)<0) return;
     filasM += '<tr><td>'+esc(m)+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; });
   let filasMov = '';
-  R.pagos.forEach(p=>{ filasMov += '<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):'Manual')+'</td><td>'+esc(p.huesped||p.concepto||'')+'</td><td>'+esc(p.metodo)+'</td><td>'+p.fechaStr+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; });
+  R.pagos.forEach(p=>{ filasMov += '<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):'Manual')+'</td><td>'+esc(p.huesped||p.concepto||'')+'</td><td>'+esc(metodoTextoDesdeLineas(cajaLineasDePago(p))||p.metodo||'')+'</td><td>'+p.fechaStr+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; });
   if(!filasMov) filasMov = '<tr><td colspan="7" class="c" style="color:#888;padding:18px">Sin movimientos registrados</td></tr>';
   let html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Arqueo '+cajaFecha+'</title>';
   html += '<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}';
@@ -8738,7 +8788,7 @@ function resumenRango(pagos){
   pagos.forEach(p=>{
     if(Array.isArray(p.metodos)&&p.metodos.length){ p.metodos.forEach(m=>{ if(!porMetodo[m.metodo]) porMetodo[m.metodo]={bs:0,usd:0,n:0}; porMetodo[m.metodo].bs+=Number(m.montoBs)||0; porMetodo[m.metodo].usd+=Number(m.montoUsd)||0; porMetodo[m.metodo].n++; }); }
     else { if(!porMetodo[p.metodo]) porMetodo[p.metodo]={bs:0,usd:0,n:0}; porMetodo[p.metodo].bs+=Number(p.montoBs)||0; porMetodo[p.metodo].usd+=Number(p.montoUsd)||0; porMetodo[p.metodo].n++; }
-    totBs+=Number(p.montoBs)||0; totUsd+=Number(p.montoUsd)||0;
+    var _tr=pagoTotal(p); totBs+=_tr.bs; totUsd+=_tr.usd;
   });
   return {porMetodo:porMetodo, totBs:totBs, totUsd:totUsd};
 }
@@ -8765,7 +8815,7 @@ function renderReportePagos(){
   h += '<div class="section-title" style="font-size:15px;margin-top:22px">Movimientos del periodo</div>';
   if(pagos.length===0){ h += '<div class="empty">No hay cobros en este rango de fechas.</div>'; return h; }
   h += '<table class="users-table"><tr><th>Control</th><th>Fecha</th><th>Ubicación</th><th>Huésped / Concepto</th><th>Método</th><th>Bs</th><th>USD</th></tr>';
-  pagos.forEach(p=>{ h += '<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+esc(p.fechaStr||p.dia)+'</td><td>'+(p.hab?('Hab. '+p.hab):'Manual')+'</td><td>'+esc(p.huesped||p.concepto||'')+'</td><td>'+esc(p.metodo||'')+'</td><td>'+fmtBs(p.montoBs)+'</td><td>'+fmtUSD(p.montoUsd)+'</td></tr>'; });
+  pagos.forEach(p=>{ var _tp=pagoTotal(p); h += '<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+esc(p.fechaStr||p.dia)+'</td><td>'+(p.hab?('Hab. '+p.hab):'Manual')+'</td><td>'+esc(p.huesped||p.concepto||'')+'</td><td>'+esc(metodoTextoDesdeLineas(cajaLineasDePago(p))||p.metodo||'')+(_tp.sinMonto?' <b style="color:#a05a00">(sin monto)</b>':'')+'</td><td>'+(_tp.sinMonto?'—':fmtBs(_tp.bs))+'</td><td>'+(_tp.sinMonto?'—':fmtUSD(_tp.usd))+'</td></tr>'; });
   h += '</table>';
   return h;
 }
@@ -10687,7 +10737,7 @@ function imprimirCortePorTurno(turnoId, _modo){
   const deTipo=function(tp){ return movs.filter(k=>k.tipo===tp && (sT(k) || !k.turnoId)); };
   const checkins=deTipo('checkin'), checkouts=deTipo('checkout'), cargos=deTipo('cargo'), anuls=deTipo('anulacion'), creds=deTipo('credito'), auts=deTipo('autorizada'), cambios=deTipo('cambio'), lstMan=deTipo('listamanual'), comidas=deTipo('comidainc'), espera=deTipo('espera'), corr=deTipo('correccion'), acomp=deTipo('acompanante');
   let cobrBs=0, cobrUsd=0, abonosBs=0, abonosUsd=0; const porMetodo={};
-  pagos.forEach(p=>{ var bs=Number(p.montoBs)||0, us=Number(p.montoUsd)||0; var esAb=(p.tipoPago==='abono'||p.abono===true||/abono/i.test(p.concepto||'')); if(esAb){ abonosBs+=bs; abonosUsd+=us; } else { cobrBs+=bs; cobrUsd+=us; } var m=p.metodo||'(sin método)'; if(!porMetodo[m]) porMetodo[m]={n:0,bs:0,usd:0}; porMetodo[m].n++; porMetodo[m].bs+=bs; porMetodo[m].usd+=us; if(!p.control){ var _kr=movs.find(x=>x.tipo==='pago' && Number(x.montoUsd||0)===us && Number(x.montoBs||0)===bs && x.control); if(_kr) p.control=_kr.control; } if(!p.control){ var _rr=findRoom(p.hab); if(_rr && _rr.control) p.control=_rr.control; } });
+  pagos.forEach(p=>{ var _tpp=pagoTotal(p); var bs=_tpp.bs, us=_tpp.usd; var esAb=(p.tipoPago==='abono'||p.abono===true||/abono/i.test(p.concepto||'')); if(esAb){ abonosBs+=bs; abonosUsd+=us; } else { cobrBs+=bs; cobrUsd+=us; } cajaLineasDePago(p).forEach(function(L){ var m=String(L.metodo||'(sin método)'); if(!porMetodo[m]) porMetodo[m]={n:0,bs:0,usd:0}; porMetodo[m].n++; porMetodo[m].bs+=Number(L.montoBs)||0; porMetodo[m].usd+=Number(L.montoUsd)||0; }); if(!p.control){ var _kr=movs.find(x=>x.tipo==='pago' && Number(x.montoUsd||0)===us && Number(x.montoBs||0)===bs && x.control); if(_kr) p.control=_kr.control; } if(!p.control){ var _rr=findRoom(p.hab); if(_rr && _rr.control) p.control=_rr.control; } });
   let credBs=0, credUsd=0; creds.forEach(k=>{ credBs+=Number(k.credBs||0); credUsd+=Number(k.credUsd||0); });
   let anulBs=0, anulUsd=0; anuls.forEach(k=>{ anulBs+=Number(k.montoBs||0); anulUsd+=Number(k.montoUsd||0); });
   let cargosT=0; cargos.forEach(k=>{ cargosT+=Number(k.cargoUsd||0); });
@@ -12469,7 +12519,7 @@ function _epMetodosDePago(p){
         if(mr){ rf=mr[1].trim(); t=(t.slice(0,mr.index)+t.slice(mr.index+mr[0].length)).trim(); }
         /* 2) el monto entre parentesis al final: "Efectivo USD (45.00)" */
         var mm=t.match(/\(\s*\$?([0-9]+(?:[.,][0-9]{1,2})?)\s*\)\s*$/);
-        if(mm){ mo=parseFloat(String(mm[1]).replace(/\./g,'').replace(',','.'))||0; t=t.slice(0,mm.index).trim(); }
+        if(mm){ mo=parseFloat(String(mm[1]).replace(',','.'))||0; t=t.slice(0,mm.index).trim(); }
         t=t.replace(/\s+/g,' ').trim();
         out.push({metodo:t, montoUsd:mo, ref:rf});
       });
