@@ -146,7 +146,11 @@ label{font-size:13px;font-weight:600;color:#44526a;}
 .users-table{width:100%;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.05);border-collapse:collapse;}
 .users-table th{background:#f3f6fb;text-align:left;padding:11px 14px;font-size:12.5px;color:#55637a;}
 .users-table td{padding:11px 14px;border-top:1px solid #eef1f6;font-size:14px;}
-.tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;}
+.tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+/* [TABS-FIJAS] La barra de pestanas se queda quieta arriba y no se encoge al bajar. */
+.tabs-wrap{position:sticky;top:0;z-index:25;padding:8px 0 2px;margin-bottom:12px;background:var(--bg);}
+.tabs-wrap .tabs{flex-shrink:0;margin-bottom:10px;}
+.tabs-wrap .tab{flex:0 0 auto;}
 .tab{background:#e3e8f0;color:#2c3a4f;padding:9px 16px;border-radius:20px;font-weight:600;font-size:13.5px;cursor:pointer;}
 .tab.active{background:var(--azul);color:#fff;}
 @media(max-width:600px){
@@ -189,7 +193,19 @@ body{background:linear-gradient(135deg,#dfe8f5 0%,#eef2f9 40%,#e4ecf8 100%);back
 .task{border-radius:18px;padding:16px 18px;box-shadow:var(--sombra);border:1px solid #e9eff8;transition:transform .18s ease,box-shadow .18s ease;}
 .task:hover{transform:translateY(-4px);box-shadow:var(--sombra2);}
 .task .info b{font-size:17px;letter-spacing:.2px;}
-.tab{border-radius:24px;padding:9px 18px;transition:all .18s ease;box-shadow:0 2px 6px rgba(13,59,102,.06);font-weight:600;}
+.tab{border-radius:24px;padding:9px 18px;transition:background .16s ease,color .16s ease,box-shadow .16s ease;box-shadow:0 2px 6px rgba(13,59,102,.06);font-weight:600;transform:none !important;}
+.tab:hover{transform:none !important;}
+/* [RESERVAS-FIJAS] Todas las tarjetas de reserva salen con el mismo ancho y alineadas,
+   sin encogerse ni estirarse al bajar la lista. */
+#res-lista{display:block;width:100%;}
+#res-lista *{box-sizing:border-box;}
+#res-lista .res-lista-inner{display:flex;flex-direction:column;align-items:stretch;gap:0;width:100%;}
+#res-lista .res-card{width:100%;max-width:100%;flex:0 0 auto;align-self:stretch;transform:none !important;}
+#res-lista .res-card *{min-width:0;}
+#res-lista .res-card div{max-width:100%;}
+#res-lista .res-card button{flex:0 0 auto;}
+/* En pantalla de celular/tablet angosta las tarjetas ocupan todo el ancho */
+@media(max-width:900px){ #res-lista .res-card{width:100% !important;} }
 .tab:hover{background:#d2dced;transform:translateY(-1px);}
 .tab.active{background:linear-gradient(90deg,#0d3b66,#1b6ca8);color:#fff;box-shadow:0 8px 18px rgba(13,59,102,.32);}
 button{transition:transform .12s ease,box-shadow .16s ease,background .16s ease,filter .16s ease;}
@@ -229,6 +245,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 .pg-doc .pg-tabla th{background:#eef3fa;color:#44526a;font-size:12px;text-transform:uppercase;letter-spacing:.3px}
 @media print{.pg-doc{box-shadow:none;padding:0}}
 @media (max-width:640px){.pg-doc{padding:14px 14px 18px}.pg-doc .pg-lista>li{font-size:13px}}
+
+/* [RES-SEC] Secciones de reservas: SIN caja propia, solo titulo + tarjetas. Nada anidado. */
+#res-lista .res-sec{background:transparent !important;border:0 !important;border-radius:0 !important;padding:0 !important;margin:0 0 16px !important;box-shadow:none !important;display:block;width:100%;box-sizing:border-box;}
+#res-lista .res-sec-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 2px;padding:0;border:0 !important;background:transparent !important;}
+#res-lista .res-sec-head > div{background:transparent;border:0;}
+#res-lista .res-sec-head > div:nth-child(2){border:0 !important;background:transparent !important;box-shadow:none !important;padding:0 !important;}
+#res-lista .res-sec-head > div:nth-child(2) span{background:transparent !important;}
+#res-lista .res-lista-inner{display:flex;flex-direction:column;gap:10px;width:100%;padding:8px 0 0;margin:0;background:transparent !important;border:0 !important;}
 </style>
 </head>
 <body>
@@ -279,7 +303,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 </div>
 
 <script>
-
 /* Muestra la version de este equipo y, si se puede, la que esta publicada en internet.
    Si no coinciden, es que ese equipo tiene una version vieja guardada (hay que recargar). */
 function verVersionModal(){
@@ -308,7 +331,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.25 · 15/11/2026';
+const APP_VERSION = 'v1.27 · 15/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -878,6 +901,7 @@ function openApp(){
 function render(){
   const rol = session().rol;
   if(vistaChat){ renderChatFull(); renderNotif(); actualizarBadgeChat(); return; }
+  try{ limpiarCanceladasViejas(); }catch(e){}
   if(rol==='recepcion'||rol==='supervisor') renderRecepcion();
   else if(rol==='housekeeping') renderHousekeeping();
   else if(rol==='mantenimiento') renderMantenimiento();
@@ -2537,6 +2561,9 @@ function enviarLocalizador(loc){
 
 /* ====== RESERVAS (localizador) ====== */
 let resBuscar='';
+/* [RESERVAS-SEPARADAS] Se ve igual que CXC / Cobrar: primero "Por llegar",
+   despues "Ya ingresaron" y al final las cerradas. */
+let resFiltroEstado='';
 function reservas(){ return DB.get('reservas', []); }
 function saveReservas(list){ DB.save('reservas', list); }
 function reservasProximas(dias){
@@ -2605,7 +2632,7 @@ function fmtFechaCorta(f){
 }
 function resEstadoBadge(e){
   const map={pendiente:['#eaf2ff','#1457c7','Pendiente'],ingresada:['#eaf7ee','#1f6b35','Ya ingresó'],cancelada:['#f1f1f4','#888','Cancelada'],noshow:['#fdeaea','#a23b3b','🚫 No show']};
-  const m=map[e]||map.pendiente;
+  const m=map[String(e||'').toLowerCase()]||map.pendiente;
   return '<span style="background:'+m[0]+';color:'+m[1]+';padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700">'+m[2]+'</span>';
 }
 function renderReservas(){
@@ -2618,11 +2645,52 @@ function renderReservas(){
   h+='</div>';
   h+='<div id="res-espera">'+esperaSeccionHTML()+'</div>';
   h+=noShowAvisoHTML();
+  h+='<div id="res-chips">'+resChipsHTML()+'</div>';
   h+='<div id="res-lista">'+reservaRows(resBuscar)+'</div>';
   return h;
 }
 function filtrarReservas(){
   const el=document.getElementById('res-lista'); if(el) el.innerHTML=reservaRows(resBuscar);
+  const ch=document.getElementById('res-chips'); if(ch) ch.innerHTML=resChipsHTML();
+}
+function resSetFiltro(v){ resFiltroEstado=(resFiltroEstado===v?'':v); filtrarReservas(); }
+function resCuentaPorEstado(){
+  const c={pendiente:0,ingresada:0,cerrada:0};
+  reservas().forEach(function(r){
+    var e=String(r.estado||'').toLowerCase();
+    if(e==='pendiente') c.pendiente++;
+    else if(e==='ingresada') c.ingresada++;
+    else c.cerrada++;
+  });
+  return c;
+}
+function resChipHTML(v,activo,label,n,color){
+  const on=activo;
+  return '<div onclick="resSetFiltro(\''+v+'\')" style="cursor:pointer;user-select:none;padding:8px 15px;border-radius:999px;font-size:13.5px;font-weight:700;border:1.5px solid '+(on?color:'#dfe6f1')+';background:'+(on?color:'#fff')+';color:'+(on?'#fff':'#44526a')+';box-shadow:'+(on?('0 4px 12px '+color+'44'):'0 1px 3px rgba(0,0,0,.04)')+'">'+label+' <span style="display:inline-block;min-width:20px;text-align:center;padding:1px 6px;margin-left:4px;border-radius:999px;background:'+(on?'rgba(255,255,255,.28)':'#eef2f9')+';color:'+(on?'#fff':'#55637a')+';font-size:12px">'+n+'</span></div>';
+}
+function resChipsHTML(){
+  const c=resCuentaPorEstado();
+  let h='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px">';
+  var _tot=c.pendiente+c.ingresada+c.cerrada;
+  h+=resChipHTML('',!resFiltroEstado,'Todas',_tot,'#44526a');
+  h+=resChipHTML('pendiente',resFiltroEstado==='pendiente','🛎️ Por llegar',c.pendiente,'#1b6ca8');
+  h+=resChipHTML('ingresada',resFiltroEstado==='ingresada','✅ Ya ingresaron',c.ingresada,'#1d6b38');
+  h+=resChipHTML('cerrada',resFiltroEstado==='cerrada','🚫 Canceladas / no show',c.cerrada,'#8893a5');
+
+  h+='</div>';
+  return h;
+}
+function resSeccionHTML(titulo,sub,color,lista,q){
+  if(!lista.length) return '';
+  let h='<div class="res-sec">';
+  h+='<div class="res-sec-head">';
+  h+='<div style="width:6px;height:22px;border-radius:4px;background:'+color+'"></div>';
+  h+='<div style="font-size:15.5px;font-weight:800;color:#22303f">'+titulo+' <span style="display:inline-block;padding:1px 8px;border-radius:999px;background:#f1f4f9;color:'+color+';font-size:12.5px">'+lista.length+'</span></div>';
+  if(sub) h+='<span style="font-size:12.5px;color:#8893a5">'+sub+'</span>';
+  h+='</div>';
+  h+='<div class="res-lista-inner">'+lista.map(function(r){ return resCardHTML(r); }).join('')+'</div>';
+  h+='</div>';
+  return h;
 }
 let resCanalMes=(function(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })();
 function resCanalEtiqueta(c){ return c==='telefono'?'📞 Por teléfono':c==='web'?'🌐 Por la web':c==='mostrador'?'🏨 En el mostrador':c==='booking'?'🅱️ Booking':'Otro'; }
@@ -2708,16 +2776,33 @@ function reservaRows(q){
   const orden={pendiente:0,ingresada:1,noshow:2,cancelada:3};
   list.sort((a,b)=>{ const d=(orden[a.estado]||0)-(orden[b.estado]||0); if(d) return d; return String(a.fechaEntrada||'').localeCompare(String(b.fechaEntrada||'')); });
   if(list.length===0) return '<div class="empty-guia"><span class="ico">🛎️</span><div class="t">'+(q?'Sin resultados':'Aún no hay reservas')+'</div><div class="s">'+(q?'No encontramos reservas con esa búsqueda. Prueba con otra palabra o número de localizador.':'Las reservas sirven para apartar una habitación antes de que llegue el huésped. Créala aquí y el día de entrada aparece como llegada pendiente.')+'</div>'+(q?'':'<button class="btn-primary" style="padding:8px 16px" onclick="nuevaReservaModal()">+ Nueva reserva</button>')+'</div>';
+  /* [RESERVAS-SEPARADAS] Se separan por grupo: por llegar / ya ingresaron / cerradas */
+  if(resFiltroEstado){ list=list.filter(function(r){ var g=(r.estado==='pendiente'?'pendiente':(r.estado==='ingresada'?'ingresada':'cerrada')); return g===resFiltroEstado; }); }
+  if(list.length===0) return '<div id="res-vacio" class="empty-guia"><span class="ico">🔎</span><div class="t">Sin reservas en esta parte</div><div class="s">No hay reservas en la parte que elegiste. Toca “ver todas” para ver la lista completa.</div></div>';
+  var _gPend=[],_gIng=[],_gCer=[];
+  var _nCancel=0;
+  list.forEach(function(r){
+    var e=String(r.estado||'').toLowerCase();
+    if(e==='pendiente') _gPend.push(r);
+    else if(e==='ingresada') _gIng.push(r);
+    else { _gCer.push(r); if(e!=='noshow') _nCancel++; }
+  });
   let h='';
-  list.forEach(r=>{
+  h+=resSeccionHTML('🛎️ Por llegar','Reservas que todavía no hacen check-in','#1b6ca8',_gPend,q);
+  h+=resSeccionHTML('✅ Ya ingresaron','Huéspedes que ya están en su habitación','#1d6b38',_gIng,q);
+  h+=resSeccionHTML('🚫 Canceladas / no show',(_nCancel?_nCancel+' cancelada'+(_nCancel>1?'s':''):'')+(_nCancel&&_gCer.length>_nCancel?' · ':'')+(_gCer.length>_nCancel?(_gCer.length-_nCancel)+' no show':''),'#8893a5',_gCer,q);
+  return h;
+}
+function resCardHTML(r){
+    let h='';
     const nom=((r.nombre||'')+' '+(r.apellido||'')).trim()||(r.tipoReserva==='empresa'?('🏢 '+(function(){var e=empresaPorRef(r.empresaRef);return e?(e.nombre||e.codigo||r.empresaRef):(r.empresaRef||'Empresa');})()):'(sin nombre)');
     const doc=r.docNum?(docLabel(r.docTipo)+' '+r.docNum):'';
     const noches=diffNoches(r.fechaEntrada,r.fechaSalida);
-    h+='<div style="background:#fff;border:1px solid #e7ecf5;border-radius:12px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.04)">';
+    h+='<div class="res-card" style="background:#fff;border:1px solid #e7ecf5;border-radius:12px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.04)">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
     h+='<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><div style="font-family:monospace;font-size:20px;font-weight:800;color:var(--azul);letter-spacing:1px">'+esc(r.loc)+'</div>';
     if(parseInt(r.control)||0){ const _cerrado=(r.controlEstado==='cerrado'); h+='<div style="font-size:12px;font-family:monospace;font-weight:700;border-radius:7px;padding:3px 8px;'+(_cerrado?'color:#7a7f8a;background:#f0f2f5;border:1px solid #dde1e8':'color:#1b4b86;background:#eef4fd;border:1px solid #cddff5')+'">N° control '+fmtControl(r.control)+(_cerrado?' · cerrado':'')+'</div>'; }
-    h+=resEstadoBadge(r.estado)+'</div>';
+    h+=resEstadoBadge(r.estado)+'</div></div>';
     if(r.estado==='pendiente' && r.enEspera) h+='<div style="font-size:12px;color:#9a6a00;background:#fff7e6;border:1px solid #f3c96b;border-radius:8px;padding:4px 9px;display:inline-block;margin-bottom:6px">⏳ En lista de espera</div>';
     if(r.canal==='booking') h+='<div style="font-size:12px;color:#0a3d91;background:#eaf1ff;border:1px solid #b9d0f5;border-radius:8px;padding:4px 9px;display:inline-block;margin-bottom:6px">🅱️ Booking · comisión '+esc(String(r.comisionBooking!=null&&r.comisionBooking!==''?r.comisionBooking:15))+'% · '+fmtUSD(resComisionReserva(r))+(resTramosReserva(r).length>1?(' · en '+resTramosReserva(r).length+' tramos'):'')+'</div>';
     h+='<div style="font-size:15px;font-weight:700;margin-bottom:2px">'+esc(nom)+'</div>';
@@ -2756,8 +2841,7 @@ function reservaRows(q){
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="eliminarReserva(\''+r.loc+'\')">🗑️ Eliminar</button>';
     }
     h+='</div></div>';
-  });
-  return h;
+    return h;
 }
 var _resHabs=[];
 function resHabsDe(r){
@@ -3369,11 +3453,24 @@ function noShowConfigHTML(){
   b+='<div class="actions"><button class="btn-primary" onclick="noShowConfigGuardar()">Guardar</button><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(b);
 }
+function limpiarCanceladasViejas(){
+  try{ if(DB.get('__fixCancel','')==='1') return; DB.set('__fixCancel','1'); }catch(e){}
+  /* [ARREGLO-CANCEL] Antes, al cancelar o eliminar una reserva SIN anticipo, el
+     guardado se saltaba y la reserva seguia ahi como si nada. Aqui se cierra de
+     una vez lo que quedo a medias: canceladas que siguen como pendientes/ingresadas. */
+  try{
+    const list=reservas(); let cambió=false;
+    list.forEach(function(r){ if(r && r.canceladaEn && r.estado!=='cancelada' && r.estado!=='noshow'){ r.estado='cancelada'; cambió=true; } });
+    if(cambió) DB.set('reservas',list);
+  }catch(e){}
+}
 function cancelarReserva(loc){
   const list=reservas(); const r=list.find(x=>x.loc===loc); if(!r) return;
-  if(!confirm('¿Cancelar la reserva '+loc+'? Quedará marcada como cancelada pero no se borra.'+reservaCanceladaMsg(r))) return;
-  if(!resDejaAnticipo(r)) return;
-    r.estado='cancelada'; r.canceladaEn=new Date().toISOString(); saveReservas(list);
+  if(!confirm('\u00bfCancelar la reserva '+loc+'? Quedara marcada como cancelada pero no se borra.')) return;
+  var ant=resAnticipoUsd(r);
+  if(ant>0.009){ if(!resDejaAnticipo(r)) return; }
+  r.estado='cancelada'; r.canceladaEn=nowISO(); r.canceladaPor=(((session()||{}).nombre)||'');
+  saveReservas(list);
   try{ cerrarControlReserva(loc,'cancelada'); }catch(_ec){}
   render();
 }
@@ -3389,13 +3486,16 @@ function resDejaAnticipo(r){
 }
 function eliminarReserva(loc){
   const _r=reservas().find(x=>x.loc===loc);
-  if(!confirm('¿Eliminar definitivamente la reserva '+loc+'? Esta acción no se puede deshacer.'+reservaCanceladaMsg(_r))) return;
-  if(!resDejaAnticipo(_r)) return;
-  let list=reservas().filter(x=>x.loc!==loc);
-  try{ cerrarControlReserva(loc,'eliminada'); }catch(_ec){}
+  if(!_r){ alert('No se encontro la reserva '+loc+'. Puede que ya se haya borrado.'); return; }
+  if(!confirm('\u00bfEliminar definitivamente la reserva '+loc+'? Esta accion no se puede deshacer.'+reservaCanceladaMsg(_r))) return;
+  var ant=resAnticipoUsd(_r);
+  if(ant>0.009){ if(!resDejaAnticipo(_r)) return; }
+  const list=reservas().filter(x=>x.loc!==loc);
+  if(list.length===reservas().length){ alert('No se pudo eliminar la reserva '+loc+'.'); return; }
   saveReservas(list);
+  try{ cerrarControlReserva(loc,'eliminada'); }catch(_ec){}
   render();
-  try{ logKardex('reserva',{hab:0, huesped:((_r&&((_r.nombre||'')+' '+(_r.apellido||'')).trim())||'Huésped'), clienteId:'', detalle:'Reserva '+loc+' ELIMINADA'+(resAnticipoUsd(_r)>0.009?(' · tenía anticipo cobrado de '+fmtUSD(resAnticipoUsd(_r))+' (sigue registrado en la caja)'):''), montoUsd:0, montoBs:0, metodo:''}); }catch(_e){}
+  try{ logKardex('reserva',{hab:0, huesped:((_r&&((_r.nombre||'')+' '+(_r.apellido||'')).trim())||'Huesped'), clienteId:'', detalle:'Reserva '+loc+' ELIMINADA'+(ant>0.009?(' \u00b7 tenia anticipo cobrado de '+fmtUSD(ant)+' (sigue registrado en la caja)'):''), montoUsd:0, montoBs:0, metodo:''}); }catch(_e){}
 }
 function resPagoEnReserva(r, concepto){
   if(!r) return 0;
@@ -5084,7 +5184,13 @@ function confirmarCambioHab(origen){
   limpiarAutorizacionHab(origen);
   updateRoom(origen,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción (cambio de hab.)', huesped:'', clienteId:'', tituId:'', personas:0, ninos:0, noches:0, checkin:'', salida:'', salidaReal:'', cargos:[], abonos:[], acomp:[], menores:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, control:0, autorizada:false, habEstuvo:[], tramos:[], tramosCobro:undefined, nota:'Habitación desocupada por cambio a la '+destinoNum+(motivo?' · '+motivo:'')});
   moverEstadiaHab(o.clienteId||'', origen, destinoNum);
-  logKardex('cambio',{hab:origen, huesped:o.huesped||'', clienteId:o.clienteId||'', detalle:'Cambio de Hab. '+origen+' → '+destinoNum+(motivo?' · '+motivo:'')+(usarNueva?' · tarifa nueva '+fmtUSD(tarFinal):' · mantiene '+fmtUSD(tarFinal)), montoUsd:0, montoBs:0, metodo:''});
+  /* [CAMBIO-CONTROL] El N° de control viaja con el huesped: antes la habitacion NUEVA
+     se quedaba sin control y en el corte "Cuentas del turno" aparecia solo la vieja,
+     ya vacia, como si la cuenta se hubiera ido. Ahora la nueva toma el mismo control
+     (si no tenia uno) y el kardex dice desde y hacia donde fue la cuenta. */
+  var _ctrlCambio=parseInt(o.control||0)||0;
+  try{ var _rD=findRoom(destinoNum); if(_rD && !(parseInt(_rD.control||0)||0) && _ctrlCambio){ updateRoom(destinoNum,{control:_ctrlCambio, controlDesde:Number(origen)}); } }catch(e){}
+  logKardex('cambio',{hab:origen, desde:origen, hacia:destinoNum, control:(_ctrlCambio||null), huesped:o.huesped||'', clienteId:o.clienteId||'', detalle:'Cambio de Hab. '+origen+' → '+destinoNum+' · la cuenta y el Control N° '+(_ctrlCambio?fmtControl(_ctrlCambio):'(sin control)')+' pasan a la Hab. '+destinoNum+' · la '+origen+' queda libre'+(motivo?' · '+motivo:'')+(usarNueva?' · tarifa nueva '+fmtUSD(tarFinal):' · mantiene '+fmtUSD(tarFinal)), montoUsd:0, montoBs:0, metodo:''});
   cerrarModal(); render();
   alert('Huésped mudado de la habitación '+origen+' a la '+destinoNum+'.');
 }
@@ -11358,7 +11464,7 @@ function imprimirCortePorTurno(turnoId, _modo){
   pagos.forEach(p=>{ h+='<tr><td>'+horaCorta(p.id>1e12?new Date(Number(p.id)).toISOString():(p.fechaStr||p.dia))+'</td><td>'+esc(p.usuario||'—')+'</td><td>'+(p.control?('<b>'+fmtControl(p.control)+'</b>' ):((p.hab&&findRoom(p.hab)&&findRoom(p.hab).control)?('<b>'+fmtControl(findRoom(p.hab).control)+'</b>'):'—'))+'</td><td>'+(p.hab?('Hab. '+esc(String(p.hab))):'—')+'</td><td>'+esc(p.huesped||p.cliente||'—')+'</td><td>'+esc(p.concepto||'—')+'</td><td>'+esc(p.metodo||'—')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; });
   h+='<tr class="tot"><td colspan="7">TOTAL COBRADO EN EL TURNO</td><td class="r">'+fmtBs(cobrBs)+'</td><td class="r">'+fmtUSD(cobrUsd)+'</td></tr></table>';
   if(_otros.length){ h+='<h2>Cobros hechos por otros usuarios (supervisión / administración)</h2><table><tr><th>Hora</th><th>Quién cobró</th><th>N° Control</th><th>Habitación</th><th>A quién</th><th>Concepto</th><th>Forma de pago</th><th class="r">Bs</th><th class="r">USD</th></tr>'; _otros.forEach(function(p){ h+='<tr><td>'+horaCorta(p.id>1e12?new Date(Number(p.id)).toISOString():(p.fechaStr||p.dia))+'</td><td><b>'+esc(p.usuario||'—')+'</b></td><td>'+(p.control?('<b>'+fmtControl(p.control)+'</b>'):'—')+'</td><td>'+(p.hab?('Hab. '+esc(String(p.hab))):'—')+'</td><td>'+esc(p.huesped||p.cliente||'—')+'</td><td>'+esc(p.concepto||'—')+'</td><td>'+esc(p.metodo||'—')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="7">TOTAL COBRADO POR OTROS</td><td class="r">'+fmtBs(_oBs)+'</td><td class="r">'+fmtUSD(_oUsd)+'</td></tr></table><div style="font-size:11.5px;color:#667;margin:-4px 0 8px">Estos cobros se hicieron en este turno pero con otro usuario. Se incluyen en el total y en el cuadre, para que el cierre cuadre igual.</div>'; }
-  h+=corteTurnoCuentas(pagos);
+  h+=corteTurnoCuentas(pagos, movs, sinPagar);
   if(Object.keys(porMetodo).length){ h+='<h2>Cuadre por forma de pago</h2><table><tr><th>Forma de pago</th><th class="c">Cantidad</th><th class="r">Bs</th><th class="r">USD</th></tr>'; Object.keys(porMetodo).forEach(m=>{ var x=porMetodo[m]; h+='<tr><td>'+esc(m)+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; }); h+='</table>'; }
   h+=corteTurnoBloques({checkins:checkins, checkouts:checkouts, cargos:cargos, anuls:anuls, creds:creds, auts:auts, cambios:cambios, lstMan:lstMan, comidas:comidas, espera:espera, corr:corr, acomp:acomp});
   h+='<h2>Habitaciones sin cobrar (pasan al siguiente turno)</h2>';
@@ -11436,20 +11542,72 @@ function corteListadoHabitaciones(){
   return h;
 }
 function corteCtrl(k){ if(!k) return '—'; if(k.control) return '<b>'+fmtControl(k.control)+'</b>'; var h=k.hab||k.num; if(h){ var r=findRoom(h); if(r && r.control) return '<b>'+fmtControl(r.control)+'</b>'; } return '—'; }
-function corteTurnoCuentas(pagos){
+function corteTurnoCuentas(pagos, movs, sinPagar){
+  /* [CORTE-CUENTAS] Esta tabla ya no sale vacia cuando la habitacion sigue ocupada.
+     Antes solo listaba las habitaciones que tuvieron un COBRO en el turno: si se
+     cobraba todo y la habitacion seguia abierta (o si solo hubo un cambio de
+     habitacion), la cuenta no aparecia por ningun lado. Ahora salen tambien:
+       - las habitaciones que quedaron debiendo,
+       - las que tuvieron movimientos en el turno (cambio de hab., consumo, abono...),
+       - y sus dos numeros: el de la que se mudo y el de la nueva. */
   var cuentas={}, orden=[];
-  (pagos||[]).forEach(function(p){ String(p.hab||'').split(',').forEach(function(x){ var n=String(x).trim(); if(n&&orden.indexOf(n)<0) orden.push(n); }); });
+  var _add=function(n){ n=String(n||'').trim(); if(!n) return; if(orden.indexOf(n)<0) orden.push(n); };
+  (pagos||[]).forEach(function(p){ String(p.hab||'').split(/[,\s]+/).forEach(_add); });
+  (sinPagar||[]).forEach(function(r){ if(r && r.num) _add(r.num); });
+  (movs||[]).forEach(function(k){
+    if(!k) return;
+    if(['cambio','cargo','pago','credito','cuenta','comidainc','checkin'].indexOf(k.tipo)<0) return;
+    String(k.hab||'').split(/[,+\s]+/).forEach(_add);
+    String(k.desde||'').split(',').forEach(_add);
+    String(k.hacia||'').split(',').forEach(_add);
+  });
+  /* rastro de los cambios de habitacion del turno: quien se mudo y a donde */
+  var _cambios={};
+  (movs||[]).forEach(function(k){
+    if(!k || k.tipo!=='cambio') return;
+    var m=String(k.detalle||'').match(/Cambio de Hab\.\s*(\d+)\s*(?:→|->|a)\s*(\d+)/);
+    if(!m) return;
+    _cambios[m[1]]=m[2]; _cambios[m[2]]=m[1];
+  });
   if(!orden.length) return '';
+  orden.sort(function(a,b){ return (parseInt(a)||0)-(parseInt(b)||0); });
   var h='<h2>Cuentas del turno por habitación (N° de control)</h2>';
   h+='<table><tr><th>Hab.</th><th>N° Control</th><th>Huésped</th><th class="c">Noches</th><th>Salida</th><th class="r">Cobrado en el turno</th><th class="c">Queda debiendo</th></tr>';
   orden.forEach(function(n){
     var rr=rooms().filter(function(x){ return String(x.num)===n; })[0]||{};
+    /* [CORTE-CUENTAS] El cobrado se saca del total real del pago (incluye los
+       montos de cada forma de pago), no solo de montoBs/montoUsd. */
     var cb=0, cu=0;
-    pagos.forEach(function(p){ if(String(p.hab||'').split(',').map(function(x){return x.trim();}).indexOf(n)>=0){ cb+=Number(p.montoBs)||0; cu+=Number(p.montoUsd)||0; } });
-    var ctrl=parseInt(rr.control)||0; var saldo=rr.num?saldoDeHab(rr):0;
-    h+='<tr><td><b>'+esc(n)+'</b></td><td>'+(ctrl?('<b>'+fmtControl(ctrl)+'</b>'):'—')+'</td><td>'+esc(rr.huesped||'—')+'</td><td class="c">'+(rr.noches||'—')+'</td><td>'+(rr.salida?fechaDDMMYYYY(rr.salida):'—')+'</td><td class="r">'+fmtUSD(cu)+'<div style="font-size:11px;color:#8893a5">'+fmtBs(cb)+'</div></td><td class="c">'+(saldo>0.009?('Debe '+fmtUSD(saldo)):'<b style="color:#1d6b38">Al día</b>')+'</td></tr>';
+    (pagos||[]).forEach(function(p){
+      if(String(p.hab||'').split(/[,\s]+/).map(function(x){return x.trim();}).indexOf(n)<0) return;
+      var _tp; try{ _tp=pagoTotal(p); }catch(e){ _tp={bs:Number(p.montoBs)||0,usd:Number(p.montoUsd)||0}; }
+      cb+=Number(_tp.bs)||0; cu+=Number(_tp.usd)||0;
+    });
+    var ctrl=parseInt(rr.control)||0;
+    /* En una cuenta unida, el control que vale es el de la cuenta (el de la que manda) */
+    try{ if(rr.num){ var _lg=cuartosQuePaganA(rr); if(_lg && _lg.length>1) ctrl=parseInt(controlDeGrupoCuenta(_lg)||0)||ctrl; } }catch(e){}
+    var saldo=rr.num?saldoDeHab(rr):0;
+    /* [CORTE-CUENTAS] Se dice a donde paso la cuenta (cambio de habitacion) o si se cobra junto con otra */
+    var nota='';
+    if(rr.num && Number(rr.cuentaCon||0)>0){ nota='Se cobra junto con la Hab. '+esc(String(rr.cuentaCon)); }
+    else { try{ var _hij=cuartosQueCarganA(rr); if(_hij && _hij.length) nota='Incluye la cuenta de la Hab. '+_hij.map(function(x){return esc(String(x.num));}).join(', '); }catch(e){} }
+    /* [CORTE-CUENTAS] Se dice claro de donde viene: "se mudo aquí desde la 320" (la que
+       recibio la cuenta) o "se mudo a la 315 · quedó libre" (la que quedo vacia). */
+    if(_cambios[n]){
+      /* [CORTE-CUENTAS] Es la "vieja" si NO tiene la cuenta (ni huésped ni deuda). Asi
+         no importa como quede marcada la habitacion despues del cambio (por limpiar,
+         libre, etc.): mientras la 315 tenga la cuenta, la que figura libre es la 320. */
+      var _esVieja=!((rr.huesped&&String(rr.huesped).trim()) || (Number(rr.control)||0)>0 || (saldo||0)>0.009 || rr.cuentaCon);
+      nota=(nota?nota+' · ':'')+(_esVieja
+        ? ('La cuenta se mudó a la '+esc(_cambios[n])+' · esta quedó libre')
+        : ('Recibió la cuenta de la '+esc(_cambios[n])+' (cambio de habitación)'));
+    }
+    var est='';
+    if(rr.estado==='ocupada'){ est=''; }
+    else if(rr.estado){ est='<div style="font-size:10.5px;color:#8893a5">'+(ESTADOS[rr.estado]?esc(ESTADOS[rr.estado].t):esc(rr.estado))+'</div>'; }
+    h+='<tr><td><b>'+esc(n)+'</b>'+est+(nota?'<div style="font-size:10.5px;color:#7c3aed">'+nota+'</div>':'')+'</td><td>'+(ctrl?('<b>'+fmtControl(ctrl)+'</b>'):'—')+'</td><td>'+esc(rr.huesped||'—')+'</td><td class="c">'+((Number(rr.noches)||0)?rr.noches:'—')+'</td><td>'+(rr.salida?fechaDDMMYYYY(rr.salida):'—')+'</td><td class="r">'+(cu>0.009?fmtUSD(cu):'—')+'<div style="font-size:11px;color:#8893a5">'+(cb>0.009?fmtBs(cb):'')+'</div></td><td class="c">'+(saldo>0.009?('Debe '+fmtUSD(saldo)):'<b style="color:#1d6b38">Al día</b>')+'</td></tr>';
   });
-  h+='</table><div style="font-size:11.5px;color:#667;margin:-4px 0 8px">El N° de control se amarra a la habitación cuando entra (check-in) y no cambia hasta que sale (check-out). Si se le cobra en varios turnos, siempre es el mismo control.</div>';
+  h+='</table><div style="font-size:11.5px;color:#667;margin:-4px 0 8px">El N° de control se amarra a la habitación cuando entra (check-in) y no cambia hasta que sale (check-out). Si se mueve a otra habitación, el control se va con el huésped. Si se le cobra en varios turnos, siempre es el mismo control.</div>';
   return h;
 }
 function corteTurnoBloques(B){
@@ -11463,7 +11621,7 @@ function corteTurnoBloques(B){
   if(B.anuls.length){ h+='<h2>⚠️ Cobros anulados en el turno (se descuentan aparte, NO cuentan como cobrado)</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'; var _ab2=0,_au2=0; B.anuls.forEach(k=>{ _ab2+=Number(k.montoBs||0); _au2+=Number(k.montoUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.motivo||k.detalle||'')+'</td><td>'+esc(k.anuladoPor||k.usuario||'—')+'</td><td class="r">-'+fmtBs(k.montoBs||0)+'</td><td class="r">-'+fmtUSD(k.montoUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="6">TOTAL ANULADO EN EL TURNO</td><td class="r">-'+fmtBs(_ab2)+'</td><td class="r">-'+fmtUSD(_au2)+'</td></tr></table>'; }
   if(B.creds.length){ h+='<h2>Ventas a crédito (CXC) del turno</h2><table><tr><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'; let cb=0,cu=0; B.creds.forEach(k=>{ cb+=Number(k.credBs||0); cu+=Number(k.credUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td class="r">'+fmtBs(k.credBs||0)+'</td><td class="r">'+fmtUSD(k.credUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="4">TOTAL A CRÉDITO</td><td class="r">'+fmtBs(cb)+'</td><td class="r">'+fmtUSD(cu)+'</td></tr></table>'; }
   if(B.auts.length){ h+='<h2>👑 Autorizadas por '+esc(autorizaTitulo())+'</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th class="r">Normal</th><th class="r">Se cobra</th></tr>'; B.auts.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.autMotivo||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):(k.metodo||'—'))+'</td><td class="r">'+fmtUSD(k.autTarifaNormal||0)+'</td><td class="r">'+fmtUSD(k.autTarifaCobra||0)+'</td></tr>'; }); h+='</table>'; }
-  if(B.cambios.length){ h+='<h2>Cambios de habitación</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Detalle</th></tr>'; B.cambios.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
+  if(B.cambios.length){ h+='<h2>Cambios de habitación</h2><table><tr><th>Hora</th><th>Habitación</th><th>N° Control</th><th>Huésped</th><th>Detalle</th></tr>'; B.cambios.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))+(k.hacia?(' → Hab. '+esc(String(k.hacia))):'')):'—')+'</td><td>'+corteCtrl(k)+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
   if(B.acomp.length){ h+='<h2>Acompañantes agregados</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Detalle</th></tr>'; B.acomp.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
   if(B.lstMan.length){ h+='<h2>🧹 Habitaciones marcadas listas a mano</h2><table><tr><th>Hora</th><th>Habitación</th><th>Marcada por</th><th>Motivo</th></tr>'; B.lstMan.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.usuario||'—')+'</td><td>'+esc(k.nota||'')+'</td></tr>'; }); h+='</table>'; }
   if(B.espera.length){ h+='<h2>Movimientos a la lista de espera</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Detalle</th></tr>'; B.espera.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
