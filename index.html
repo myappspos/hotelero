@@ -30,6 +30,8 @@ button:active{transform:scale(.97);}
 input,select,textarea{width:100%;padding:11px;border:1px solid #c7d0dd;border-radius:8px;font-size:15px;margin-top:4px;font-family:inherit;box-sizing:border-box;}
 textarea{resize:vertical;}
 label{font-size:13px;font-weight:600;color:#44526a;}
+/* [MAYUS] Se escribe en MAYUSCULA mientras se teclea (solo los campos de texto/libres). */
+input[type=text]:not(.puedeMinus):not(.puede-minus), textarea:not(.puedeMinus):not(.puede-minus){text-transform:uppercase;}
 /* LOGIN */
 #view-login{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;}
 .login-card{background:var(--card);width:360px;max-width:100%;padding:34px;border-radius:16px;box-shadow:0 10px 40px rgba(13,59,102,.15);}
@@ -295,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.25 · 15/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.32 · 15/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -331,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.27 · 15/11/2026';
+const APP_VERSION = 'v1.32 · 15/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -752,6 +754,69 @@ function permisosSup(){ return permisosDe('supervisor'); }
 function setPermisoSup(k,v){ setPermiso('supervisor',k,v); }
 function puedeSup(k){ return puede(k); }
 
+/* ===== [MAYUS] TODO SE ESCRIBE EN MAYUSCULA =====
+   Regla general: cualquier campo de TEXTO libre (nombre, apellido, ciudad, notas,
+   concepto, motivo, etc.) se pasa a MAYUSCULA al escribir y al guardar.
+   NUNCA se toca: contrasenas, correos, RIF/cedula, telefonos, referencias de pago,
+   montos, fechas, numeros y listas desplegables. */
+function campoEnMayuscula(el){
+  if(!el) return false;
+  const tag=String(el.tagName||'').toUpperCase();
+  if(tag!=='INPUT' && tag!=='TEXTAREA') return false;
+  if(tag==='INPUT'){
+    const t=String(el.getAttribute('type')||'text').toLowerCase();
+    const libres=['text','search','tel','url'];
+    if(libres.indexOf(t)<0) return false;   // password, email, number, date, month, time, file, color...
+  }
+  if(el.classList && (el.classList.contains('puedeMinus')||el.classList.contains('puede-minus'))) return false;
+  const id=String(el.id||'').toLowerCase();
+  const cls=String(el.className||'').toLowerCase();
+  const clave=id+' '+cls;
+  /* Correos, claves y referencias de pago se quedan como estan. */
+  if(/-pm-ref$/.test(clave)) return false;
+  if(/(^|[^a-z])(correo|mail|email)([^a-z]|$)/.test(clave)) return false;
+  if(/(^|[^a-z])(pass|clave|contrasena)([^a-z]|$)/.test(clave)) return false;
+  /* Cedula, RIF, documento y telefono: los dejo igual (asi lo pidio el dueno). */
+  if(/(^|[^a-z])(cedula|rif|docnum|doctipo|docref)([^a-z]|$)/.test(clave)) return false;
+  if(/telefono|(^|[^a-z])tel([^a-z]|$)/.test(clave)) return false;
+  return true;
+}
+function mayusculasYa(valor){
+  const s=String(valor==null?'':valor);
+  if(!/[a-z\u00e0-\u00ff]/.test(s)) return s;
+  return s.toUpperCase();
+}
+/* Convierte el valor real (no solo lo que se ve) y deja el cursor donde estaba. */
+function mayusculasCampo(el){
+  if(!campoEnMayuscula(el)) return;
+  const v=el.value;
+  const nv=mayusculasYa(v);
+  if(nv===v) return;
+  let ini=null, fin=null;
+  try{ ini=el.selectionStart; fin=el.selectionEnd; }catch(e){}
+  el.value=nv;
+  try{ if(ini!=null) el.setSelectionRange(ini,fin); }catch(e){}
+}
+function mayusculasEnTodo(el){
+  if(!el || !el.querySelectorAll) return;
+  const lista=el.querySelectorAll('input, textarea');
+  for(let i=0;i<lista.length;i++) mayusculasCampo(lista[i]);
+}
+document.addEventListener('input', function(ev){
+  const el=ev.target; if(!el) return;
+  mayusculasCampo(el);
+}, true);
+document.addEventListener('focusout', function(ev){
+  const el=ev.target; if(!el) return;
+  mayusculasCampo(el);
+}, true);
+/* Antes de guardar se repasa todo lo visible, por si algo quedo en minuscula
+   (por ejemplo, texto pegado con el mouse). */
+function mayusculasAntesDeGuardar(){
+  try{ mayusculasEnTodo(document.getElementById('modal')); }catch(e){}
+  try{ mayusculasEnTodo(document.getElementById('content')); }catch(e){}
+}
+
 /* ====== SESIÓN / LOGIN ====== */
 async function login(){
   const u = document.getElementById('in-user').value.trim().toLowerCase();
@@ -902,6 +967,9 @@ function render(){
   const rol = session().rol;
   if(vistaChat){ renderChatFull(); renderNotif(); actualizarBadgeChat(); return; }
   try{ limpiarCanceladasViejas(); }catch(e){}
+  try{ limpiarCiudadesMinuscula(); }catch(e){}
+  try{ vigilarMayusculas(); }catch(e){}
+  try{ mayusculasAntesDeGuardar(); }catch(e){}
   if(rol==='recepcion'||rol==='supervisor') renderRecepcion();
   else if(rol==='housekeeping') renderHousekeeping();
   else if(rol==='mantenimiento') renderMantenimiento();
@@ -1052,7 +1120,7 @@ function admBusqBloque(){
   h+='<div style="font-size:12.5px;color:#55637a;margin-bottom:10px">Escribe un número de control o una cédula / RIF y te muestro <b>todo lo enlazado</b>: cobros, habitación, cliente, cargos extra, anulaciones y en qué cortes/reportes enviados aparece. Puedes usar uno de los dos campos o ambos.</div>';
   h+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">';
   h+='<div style="flex:1;min-width:150px"><label>Número de control</label><input id="adm-ctrl" value="'+escA(admBusqCtrl)+'" placeholder="ej: 000123" onkeydown="setAdmBusqEnter(event)"></div>';
-  h+='<div style="flex:1;min-width:160px"><label>Cédula / RIF del cliente</label><input id="adm-doc" value="'+escA(admBusqDoc)+'" placeholder="ej: V-12345678 / J-..." onkeydown="setAdmBusqEnter(event)"></div>';
+  h+='<div style="flex:1;min-width:160px"><label>Cédula / RIF del cliente</label><input id="adm-doc" class="puedeMinus" value="'+escA(admBusqDoc)+'" placeholder="ej: V-12345678 / J-..." onkeydown="setAdmBusqEnter(event)"></div>';
   h+='<button class="btn-primary" onclick="buscarAdmControl()">Buscar</button>';
   if(admBusqActiva) h+='<button class="btn-ghost" onclick="limpiarAdmBusq()">← Volver a la bandeja</button>';
   h+='</div></div>';
@@ -1442,6 +1510,72 @@ function duenoCiudadesMes(ym){
   }
   return Object.keys(map).map(function(k){ return {nombre:map[k].nombre, n:map[k].n}; }).sort(function(a,b){ return b.n-a.n; });
 }
+/* ====== DE DONDE NOS VISITAN (simple: hoy / semana / mes) ======
+   Cuenta PERSONAS (no habitaciones, no dinero). Cada huésped se cuenta una vez
+   por período. La ciudad sale de la ficha del cliente.
+   Se apoya en el registro de kardex de check-in (uno por huésped) y, si el
+   cliente no la tiene, tambien en el historial de estadias. */
+let duenoVisita = 'mes';        // 'hoy' | 'semana' | 'mes'
+function setDuenoVisita(v){ duenoVisita = (v==='hoy'||v==='semana')?v:'mes'; render(); }
+function duenoVisitaRango(){
+  const hoy = new Date();
+  const desde = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  if(duenoVisita==='semana') desde.setDate(desde.getDate()-6);
+  if(duenoVisita==='mes'){ desde.setDate(1); }
+  return { desde:diaKey(desde), hasta:diaKey(hoy) };
+}
+function duenoVisitaTitulo(){
+  if(duenoVisita==='hoy') return 'Hoy · '+fechaDDMMYYYY(hoyISO());
+  const r=duenoVisitaRango();
+  if(duenoVisita==='semana') return 'Esta semana · '+fechaDDMMYYYY(r.desde)+' al '+fechaDDMMYYYY(r.hasta);
+  return 'Este mes · '+mesLabel(hoyISO().slice(0,7));
+}
+function duenoCiudadDeCliente(c){
+  if(!c) return '';
+  var c2=String(c.ciudad==null?'':c.ciudad).trim();
+  return c2;
+}
+function duenoVisitasPeriodo(){
+  const r=duenoVisitaRango();
+  const map={};                 // ciudad normalizada -> {nombre, n}
+  const ya={};                  // personas ya contadas (cliente|hab|dia)
+  let total=0, conCiudad=0;
+  function meter(ciudad, clave){
+    if(clave && ya[clave]) return;
+    total++;
+    if(clave) ya[clave]=1;
+    const ciu=ciudadMayus(ciudad);
+    if(!ciu) return;
+    conCiudad++;
+    const kk=ciu.toLowerCase();
+    if(!map[kk]) map[kk]={nombre:ciu, n:0};
+    map[kk].n++;
+  }
+  /* 1) Una entrada por huésped: el kardex de check-in dentro del período */
+  let kdx=[];
+  try{ kdx=kardexAll()||[]; }catch(e){ kdx=[]; }
+  kdx.forEach(function(k){
+    if(!k || k.tipo!=='checkin') return;
+    const dia=diaKey(new Date(k.ts));
+    if(dia<r.desde || dia>r.hasta) return;
+    const c=(k.clienteId?clienteById(k.clienteId):null);
+    meter(duenoCiudadDeCliente(c), String(k.clienteId||k.hab||'')+'|'+dia);
+  });
+  /* 2) Respaldo: estadías del historial del cliente dentro del período */
+  if(!kdx.length){
+    clientes().forEach(function(c){
+      const h=c&&c.historial;
+      if(!Array.isArray(h)) return;
+      h.forEach(function(e){
+        const dia=diaKey(new Date(e&&(e.entrada||e.salida)));
+        if(!dia || dia<r.desde || dia>r.hasta) return;
+        meter(duenoCiudadDeCliente(c), 'c'+(c.id||'')+'|'+(e.hab||'')+'|'+dia);
+      });
+    });
+  }
+  const lista=Object.keys(map).map(function(k){ return {nombre:map[k].nombre, n:map[k].n}; }).sort(function(a,b){ return b.n-a.n || a.nombre.localeCompare(b.nombre); });
+  return {lista:lista, total:total, conCiudad:conCiudad, sinCiudad:Math.max(0,total-conCiudad), rango:r};
+}
 function duenoCxcResumen(){ let totPend=0, venc=0, nPend=0, nVenc=0; cxc().forEach(e=>{ if(e.anulada||cxcPagada(e)) return; const s=cxcSaldo(e); totPend+=s; nPend++; if(cxcVencida(e)){ venc+=s; nVenc++; } }); return {totPend:totPend, venc:venc, nPend:nPend, nVenc:nVenc}; }
 function duenoDonut(pct, color){ pct=Math.max(0,Math.min(100,pct)); const r=54, circ=2*Math.PI*r, filled=circ*pct/100; let s='<svg viewBox="0 0 140 140" style="width:150px;height:150px">'; s+='<circle cx="70" cy="70" r="'+r+'" fill="none" stroke="#e9eef6" stroke-width="16"></circle>'; s+='<circle cx="70" cy="70" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="16" stroke-linecap="round" stroke-dasharray="'+filled+' '+(circ-filled)+'" transform="rotate(-90 70 70)"></circle>'; s+='<text x="70" y="66" text-anchor="middle" font-size="30" font-weight="800" fill="#0d3b66">'+pct+'%</text>'; s+='<text x="70" y="88" text-anchor="middle" font-size="12" fill="#8893a5">ocupación</text></svg>'; return s; }
 function duenoCajaBlanca(titulo, extra){
@@ -1467,7 +1601,6 @@ function renderDueno(){
   const oc=datosOcupacionTipo().tot;
   const auts=duenoAutPorFecha(duenoMes);
   const dias=duenoIngresosDias(7);
-  const ciudades=duenoCiudadesMes(duenoMes);
   const hoyLbl=fechaDDMMYYYY(hoy);
   let h='';
   h+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px">';
@@ -1511,16 +1644,30 @@ function renderDueno(){
   h+='<div style="display:flex;align-items:flex-end;gap:8px;height:150px">';
   dias.forEach(d=>{ const ph=Math.round(d.usd/maxD*120); h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;justify-content:flex-end"><div style="font-size:10px;color:#55637a;white-space:nowrap">'+(d.usd>0?fmtUSD(d.usd).replace(/,00$/,''):'')+'</div><div title="'+fmtUSD(d.usd)+'" style="width:100%;max-width:40px;height:'+Math.max(3,ph)+'px;background:linear-gradient(180deg,#2a6fb0,#0d3b66);border-radius:5px 5px 0 0"></div><div style="font-size:10.5px;color:#8893a5;text-align:center;line-height:1.2">'+d.label+'<br>'+d.num+'</div></div>'; });
   h+='</div></div></div>';
-  /* --- De dónde nos visitan (por mes) --- */
-  h+='<div class="section-title" style="font-size:15px">📍 De dónde nos visitan — '+esc(mesLabel(duenoMes))+'</div>';
+  /* --- De dónde nos visitan (hoy / semana / mes) --- */
+  h+='<div class="section-title" style="font-size:15px">📍 De dónde nos visitan</div>';
   (function(){
-    if(!ciudades.length){ h+=duenoCajaBlanca('','<div style="color:#8893a5;font-size:13px">Todavía no hay ciudades anotadas en '+esc(mesLabel(duenoMes))+'. Cuando Recepción anote la <b>ciudad de procedencia</b> de los huéspedes, aquí ves el ranking del mes.</div>'); return; }
-    var maxC=ciudades[0].n||1; var body='';
-    ciudades.slice(0,10).forEach(function(ci,i){
+    /* Botones del período */
+    var btnV=function(v,txt){
+      var on=(duenoVisita===v);
+      return '<button onclick="setDuenoVisita(\''+v+'\')" style="padding:8px 16px;border-radius:999px;border:1px solid '+(on?'#0d3b66':'#cfd8e6')+';background:'+(on?'#0d3b66':'#fff')+';color:'+(on?'#fff':'#44526a')+';font-weight:700;font-size:13px;cursor:pointer">'+txt+'</button>';
+    };
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+btnV('hoy','Hoy')+btnV('semana','Esta semana')+btnV('mes','Este mes')+'</div>';
+    var V=duenoVisitasPeriodo();
+    h+='<div style="font-size:12.5px;color:#8893a5;margin:-4px 0 12px">'+esc(duenoVisitaTitulo())+' · <b>'+V.total+'</b> huésped(es) entraron</div>';
+    if(!V.lista.length){
+      h+=duenoCajaBlanca('', '<div style="color:#8893a5;font-size:13px;line-height:1.6">Todavía no hay ciudades anotadas en este período.<br>La ciudad se anota en la ficha del huésped (en <b>Huésped → Procedencia</b>). Mientras no se anote, aquí no aparece.</div>');
+      return;
+    }
+    var maxC=V.lista[0].n||1; var body='';
+    V.lista.slice(0,12).forEach(function(ci,i){
       var w=Math.round(ci.n/maxC*100);
-      body+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><div style="width:150px;font-size:12.5px;color:#55637a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(i+1)+'. '+esc(ci.nombre)+'</div><div style="flex:1;background:#eef2f8;border-radius:6px;height:24px"><div style="width:'+Math.max(w,5)+'%;height:100%;background:linear-gradient(90deg,#2a6fb0,#0d3b66);border-radius:6px"></div></div><div style="width:52px;text-align:right;font-weight:700;color:#0d3b66">'+ci.n+'</div></div>';
+      body+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:9px"><div style="width:140px;font-size:12.5px;color:#55637a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(i+1)+'. '+esc(ci.nombre)+'</div><div style="flex:1;background:#eef2f8;border-radius:6px;height:24px"><div style="width:'+Math.max(w,5)+'%;height:100%;background:linear-gradient(90deg,#2a6fb0,#0d3b66);border-radius:6px"></div></div><div style="width:52px;text-align:right;font-weight:700;color:#0d3b66">'+ci.n+'</div></div>';
     });
-    h+=duenoCajaBlanca('', body+'<div style="font-size:11.5px;color:#8893a5;margin-top:6px">Son los huéspedes que se alojaron en '+esc(mesLabel(duenoMes))+' (cada estadía se cuenta una vez).</div>');
+    var pie='<div style="font-size:11.5px;color:#8893a5;margin-top:6px">Cada huésped se cuenta una vez.';
+    if(V.sinCiudad>0) pie+=' <span style="color:#b36b00">⚠️ '+V.sinCiudad+' no tiene la ciudad anotada.</span>';
+    pie+='</div>';
+    h+=duenoCajaBlanca('', body+pie);
   })();
   /* --- Autorizaciones por tipo + lista con nombres --- */
   let g=0,m=0,cr=0; auts.forEach(k=>{ if(k.autModo==='gratis')g++; else if(k.autModo==='mitad')m++; else cr++; });
@@ -1554,7 +1701,6 @@ function imprimirDueno(){
   const prom=duenoPromedio6(duenoMes);
   const oc=datosOcupacionTipo().tot;
   const auts=duenoAutPorFecha(duenoMes);
-  const ciudades=duenoCiudadesMes(duenoMes);
   let g=0,m=0,cr=0; auts.forEach(k=>{ if(k.autModo==='gratis')g++; else if(k.autModo==='mitad')m++; else cr++; });
   var corVal=0; auts.forEach(function(k){ if(k.autModo==='gratis') corVal+=Math.max(0,(Number(k.autTarifaNormal)||0)-(Number(k.autTarifaCobra)||0)); });
   const card=(l,n)=>'<div class="card"><div class="l">'+l+'</div><div class="n">'+n+'</div></div>';
@@ -1565,9 +1711,17 @@ function imprimirDueno(){
   html+='<h2>Hoy ('+esc(fechaDDMMYYYY(hoy))+')</h2><div class="cards">'+card('Cobrado hoy (USD)',fmtUSD(ingHoy.usd))+card('Cobrado hoy (Bs)',fmtBs(ingHoy.bs))+card('Cobros',ingHoy.n)+card('Ocupadas',oc.ocupadas)+card('Libres',oc.libres)+card('Ocupación',oc.pct+'%')+'</div>';
   html+='<h2>Mes de '+esc(mesLabel(duenoMes))+'</h2><div class="cards">'+card('Cobrado (USD)',fmtUSD(mes.usd))+card('Cobrado (Bs)',fmtBs(mes.bs))+card('Cobros',mes.n)+card('Promedio por día',fmtUSD(mes.nDias?mes.usd/mes.nDias:0))+'</div>';
   html+='<div class="nota">Comparación: mes anterior ('+esc(mesLabel(duenoMesAnterior(duenoMes)))+') '+fmtUSD(mesAnt.usd)+' · '+fmtBs(mesAnt.bs)+'. Promedio de los 6 meses anteriores: '+fmtUSD(prom.promedio)+'.</div>';
-  html+='<h2>📍 De dónde nos visitan — '+esc(mesLabel(duenoMes))+'</h2>';
-  if(ciudades.length){ html+='<table><tr><th>#</th><th>Ciudad</th><th>Huéspedes</th></tr>'; ciudades.slice(0,15).forEach((ci,i)=>{ html+='<tr><td>'+(i+1)+'</td><td>'+esc(ci.nombre)+'</td><td>'+ci.n+'</td></tr>'; }); html+='</table>'; }
-  else html+='<p style="color:#888;font-size:12px">Todavía no hay ciudades anotadas en este mes.</p>';
+  html+='<h2>📍 De dónde nos visitan — '+esc(duenoVisitaTitulo())+'</h2>';
+  (function(){
+    var V=duenoVisitasPeriodo();
+    if(V.lista.length){
+      html+='<div class="nota">'+V.total+' huésped(es) entraron en el período. Cada uno se cuenta una vez.'+(V.sinCiudad>0?(' ⚠️ '+V.sinCiudad+' sin ciudad anotada.'):'')+'</div>';
+      html+='<table><tr><th>#</th><th>Ciudad</th><th class="c">Huéspedes</th><th class="c">%</th></tr>';
+      V.lista.slice(0,20).forEach(function(ci,i){ html+='<tr><td>'+(i+1)+'</td><td>'+esc(ci.nombre)+'</td><td class="c">'+ci.n+'</td><td class="c">'+(V.conCiudad?Math.round(ci.n/V.conCiudad*100):0)+'%</td></tr>'; });
+      html+='</table>';
+    }
+    else html+='<p style="color:#888;font-size:12px">Todavía no hay ciudades anotadas en este período.</p>';
+  })();
   html+='<h2>👑 Autorizaciones de '+esc(autorizaTitulo())+' — mes de '+esc(mesLabel(duenoMes))+'</h2><div class="cards">'+card('Cortesía (gratis)',g)+card('Mitad de precio',m)+card('A crédito',cr)+card('Dejado de cobrar',fmtUSD(corVal))+'</div>';
   if(auts.length){ html+='<table><tr><th>Día</th><th>Hab.</th><th>Invitado</th><th>Huésped</th><th>Cómo se cobra</th></tr>'; auts.forEach(k=>{ html+='<tr><td>'+esc(fechaDDMMYYYY(duenoFechaK(k)))+'</td><td>'+(k.hab||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):'—')+'</td></tr>'; }); html+='</table>'; }
   else html+='<p style="color:#888;font-size:12px">No hay habitaciones autorizadas en este mes.</p>';
@@ -2543,11 +2697,11 @@ function modalEnvio(opts){
   if(opts.sub) b+='<p style="color:#55637a;font-size:13.5px;line-height:1.5;margin:0 0 14px">'+opts.sub+'</p>';
   b+='<div style="background:#f3f6fb;border-radius:10px;padding:12px 14px;font-size:13px;color:#55637a;white-space:pre-wrap;margin-bottom:14px">'+esc(opts.mensaje||'')+'</div>';
   b+='<label class="lbl">📱 WhatsApp del huésped</label>';
-  b+='<input id="env-tel" class="inp" value="'+escA(opts.tel||'')+'" placeholder="Ej: 0412-1234567">';
+  b+='<input id="env-tel" class="puedeMinus inp" value="'+escA(opts.tel||'')+'" placeholder="Ej: 0412-1234567">';
   b+='<button class="btn-green" style="width:100%;margin:8px 0 4px" onclick="enviarWa()">📲 Enviar por WhatsApp</button>';
   b+='<div style="height:12px"></div>';
   b+='<label class="lbl">✉️ Correo del huésped (opcional)</label>';
-  b+='<input id="env-correo" class="inp" value="'+escA(opts.correo||'')+'" placeholder="correo@ejemplo.com">';
+  b+='<input id="env-correo" class="puedeMinus inp" value="'+escA(opts.correo||'')+'" placeholder="correo@ejemplo.com">';
   b+='<button class="btn-primary" style="width:100%;margin:8px 0 4px" onclick="enviarMail()">✉️ Enviar por correo</button>';
   b+='<button class="btn-gray" style="width:100%;margin-top:10px" onclick="cerrarModal()">Cerrar</button>';
   showModal(b);
@@ -2966,14 +3120,14 @@ function nuevaReservaModal(loc){
   b+='<label class="lbl">Apellido</label>';
   b+='<input id="res-apellido" class="inp" value="'+escA(d.apellido)+'" placeholder="Apellido">';
   b+='<label class="lbl">Documento</label>';
-  b+='<div style="display:flex;gap:8px"><select id="res-doctipo" class="inp" style="flex:0 0 150px">'+docTipoOptions(d.docTipo)+'</select>';
-  b+='<input id="res-docnum" class="inp" style="flex:1" value="'+escA(d.docNum)+'" oninput="buscarCedulaRes()" placeholder="Número de cédula / pasaporte"></div>';
+  b+='<div style="display:flex;gap:8px"><select id="res-doctipo" class="puedeMinus inp" style="flex:0 0 150px">'+docTipoOptions(d.docTipo)+'</select>';
+  b+='<input id="res-docnum" class="puedeMinus inp" style="flex:1" value="'+escA(d.docNum)+'" oninput="buscarCedulaRes()" placeholder="Número de cédula / pasaporte"></div>';
   b+='<div id="res-docnum-res" style="font-size:12.5px;margin:4px 0 2px"></div>';
   b+='<div style="font-size:12px;color:#8893a5;margin:0 0 6px;line-height:1.5">Escribe la cédula completa de un cliente ya registrado y se llenan nombre y apellido solos. Si necesitas corregir la cédula, bórrala y escríbela de nuevo: no se bloquea.</div>';
   b+='<label class="lbl">Teléfono</label>';
-  b+='<input id="res-telefono" class="inp" value="'+escA(d.telefono)+'" placeholder="Teléfono de contacto">';
+  b+='<input id="res-telefono" class="puedeMinus inp" value="'+escA(d.telefono)+'" placeholder="Teléfono de contacto">';
   b+='<label class="lbl">Correo (opcional)</label>';
-  b+='<input id="res-correo" class="inp" value="'+escA(d.correo)+'" placeholder="correo@ejemplo.com">';
+  b+='<input id="res-correo" class="puedeMinus inp" value="'+escA(d.correo)+'" placeholder="correo@ejemplo.com">';
   b+='<label class="lbl" id="res-lbl-empresa">Empresa / convenio (opcional)</label>';
   b+='<div style="display:flex;gap:8px;align-items:center"><input id="res-empresaref" list="res-empresas-list" class="inp" style="flex:1;margin:0" value="'+escA(d.empresaRef)+'" oninput="autoLlenarEmpresaRes()" placeholder="Escribe el código o nombre de la empresa"><button type="button" class="btn-ghost" style="padding:9px 12px;white-space:nowrap" onclick="limpiarEmpresaRefRes()">Limpiar</button></div>';
   b+='<datalist id="res-empresas-list">'+clientes().filter(c=>c.tipo==='empresa').map(e=>'<option value="'+escA(((e.codigo||'')+(e.nombre?(' — '+e.nombre):'')).trim())+'">').join('')+'</datalist>';
@@ -3053,7 +3207,7 @@ function autoLlenarEmpresaRes(){
         let hh='⚠️ Esta empresa no está registrada.';
         hh+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
         hh+='<input id="res-emp-nuevo-nom" placeholder="Nombre de la empresa" value="'+escA(typed)+'" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid #d7deea;border-radius:7px">';
-        hh+='<input id="res-emp-nuevo-rif" placeholder="RIF (obligatorio) ej: J-12345678" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid #d7deea;border-radius:7px">';
+        hh+='<input id="res-emp-nuevo-rif" class="puedeMinus" placeholder="RIF (obligatorio) ej: J-12345678" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid #d7deea;border-radius:7px">';
         hh+='<button type="button" class="btn-primary" style="padding:7px 12px;white-space:nowrap" onclick="agregarEmpresaRapidaRes()">➕ Agregarla</button>';
         hh+='</div>';
         info.innerHTML=hh;
@@ -3127,11 +3281,11 @@ function usarClienteCedulaRes(id){
 }
 function guardarReserva(loc){
   const tipoReserva=(document.getElementById('res-tiporeserva')||{}).value||'persona';
-  const nombre=document.getElementById('res-nombre').value.trim();
+  const nombre=mayusculasYa(document.getElementById('res-nombre').value.trim());
   const docNum=document.getElementById('res-docnum').value.trim();
   const entrada=document.getElementById('res-entrada').value;
   const salida=document.getElementById('res-salida').value;
-  const empRaw=document.getElementById('res-empresaref').value.trim();
+  const empRaw=mayusculasYa(document.getElementById('res-empresaref').value.trim());
   const emp=empRaw?empresaPorRef(empRaw):null;
   const empRef=emp?((emp.codigo||emp.nombre||empRaw)):empRaw;
   if(tipoReserva==='empresa'){
@@ -3156,7 +3310,7 @@ function guardarReserva(loc){
     comisionBooking:(document.getElementById('res-canal').value==='booking')?(parseFloat((document.getElementById('res-comision')||{}).value)||15):0,
     tipoReserva:tipoReserva,
     nombre:nombre,
-    apellido:document.getElementById('res-apellido').value.trim(),
+    apellido:mayusculasYa(document.getElementById('res-apellido').value.trim()),
     docTipo:document.getElementById('res-doctipo').value,
     docNum:docNum,
     telefono:document.getElementById('res-telefono').value.trim(),
@@ -3172,7 +3326,7 @@ function guardarReserva(loc){
     ninos:_h0.ninos||0,
     acompanantes:_h0.acompanantes||[],
     tarifa:_h0.tarifa||0,
-    notas:document.getElementById('res-notas').value.trim(),
+    notas:mayusculasYa(document.getElementById('res-notas').value.trim()),
     plan:(document.getElementById('res-plan')||{}).value||'solo',
     planRest:collectMealRests('res')
   };
@@ -3453,6 +3607,21 @@ function noShowConfigHTML(){
   b+='<div class="actions"><button class="btn-primary" onclick="noShowConfigGuardar()">Guardar</button><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(b);
 }
+function limpiarCiudadesMinuscula(){
+  /* [CIUDAD-MAYUS] Una sola pasada: deja en MAYUSCULA las ciudades que ya estaban
+     guardadas en minuscula o mezcladas. No toca nada mas del cliente. */
+  try{ if(DB.get('__fixCiudadMayus','')==='1') return; DB.set('__fixCiudadMayus','1'); }catch(e){}
+  try{
+    const list=clientes(); let cambió=false;
+    list.forEach(function(c){
+      if(!c) return;
+      const antes=String(c.ciudad==null?'':c.ciudad);
+      const ahora=ciudadMayus(antes);
+      if(antes!==ahora){ c.ciudad=ahora; cambió=true; }
+    });
+    if(cambió) saveClientes(list);
+  }catch(e){}
+}
 function limpiarCanceladasViejas(){
   try{ if(DB.get('__fixCancel','')==='1') return; DB.set('__fixCancel','1'); }catch(e){}
   /* [ARREGLO-CANCEL] Antes, al cancelar o eliminar una reserva SIN anticipo, el
@@ -3700,7 +3869,7 @@ function abrirHab(num){
     body += '</div>';
   } else if(r.estado==='libre'){
     limpiaCedulaPendiente=true;
-    body += '<div class="field"><label>Documento del huésped (obligatorio)</label><div style="display:flex;gap:8px;align-items:center"><select id="m-doctipo" onchange="toggleDocTipoCheckin()" style="flex:0 0 auto;width:auto;min-width:130px"><option value="V">Cédula (V)</option><option value="E">Extranjero (E)</option><option value="P">Pasaporte (P)</option><option value="J">RIF (J) · empresa</option></select><input id="m-cedula" placeholder="Escríbelo: si ya existe aparece, si no, se registra" oninput="buscarCedula()" style="flex:1"><button class="btn-ghost" type="button" style="padding:9px 12px;white-space:nowrap" onclick="limpiarCedula()">Limpiar</button></div></div>';
+    body += '<div class="field"><label>Documento del huésped (obligatorio)</label><div style="display:flex;gap:8px;align-items:center"><select id="m-doctipo" class="puedeMinus" onchange="toggleDocTipoCheckin()" style="flex:0 0 auto;width:auto;min-width:130px"><option value="V">Cédula (V)</option><option value="E">Extranjero (E)</option><option value="P">Pasaporte (P)</option><option value="J">RIF (J) · empresa</option></select><input id="m-cedula" class="puedeMinus" placeholder="Escríbelo: si ya existe aparece, si no, se registra" oninput="buscarCedula()" style="flex:1"><button class="btn-ghost" type="button" style="padding:9px 12px;white-space:nowrap" onclick="limpiarCedula()">Limpiar</button></div></div>';
     body += '<div id="m-cedula-res" style="font-size:13px;margin:-4px 0 10px"></div>';
     body += '<div id="m-cxc-box" style="display:none"></div>';
     body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:140px"><label id="m-nombre-lbl">Nombre del huésped</label><input id="m-nombre" placeholder="Nombre"></div>';
@@ -3709,7 +3878,7 @@ function abrirHab(num){
     body += '<div class="field"><label>Edad</label><input id="m-edad" type="number" min="0" max="120" placeholder="ej: 35"></div>';
     body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:120px"><label>Estado civil</label><select id="m-estadocivil">'+estadoCivilOptions('')+'</select></div>';
     body += '<div class="field" style="flex:1;min-width:150px"><label>Profesión u oficio</label><input id="m-profesion" placeholder="ej: Comerciante"></div></div>';
-    body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Procedencia</label><input id="m-procedencia" placeholder="¿De dónde viene?"></div>';
+    body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Procedencia</label><input id="m-procedencia" list="m-proc-list" style="text-transform:uppercase" placeholder="¿De dónde viene?"><datalist id="m-proc-list">'+listaCiudadesUsadas().map(function(ci){ return '<option value="'+escA(ci)+'">'; }).join('')+'</datalist></div>';
     body += '<div class="field" style="flex:1;min-width:150px"><label>Destino</label><input id="m-destino" placeholder="¿Hacia dónde va?"></div></div>';
     body += '<div class="field"><label>País / Nacionalidad</label><input id="m-pais" value="Venezuela" placeholder="ej: Venezuela"><div style="font-size:12px;color:#8893a5;margin-top:4px">Déjalo en <b>Venezuela</b> si es venezolano. Cámbialo solo cuando el huésped sea de otro país (sirve para el reporte de extranjeros).</div></div>';
     body += '<div style="display:flex;gap:10px"><div class="field" style="flex:1"><label>Personas (adultos)</label><input id="m-personas" type="number" min="1" value="1" oninput="renderAcompCheckin()"></div>';
@@ -3769,7 +3938,13 @@ function abrirHab(num){
 function stateColor(e){ return {libre:'var(--verde)',ocupada:'var(--rojo)',sucia:'var(--naranja)',limpieza:'var(--azul2)',mantenimiento:'var(--gris)'}[e]; }
 let limpiaCedulaPendiente=false;
 let modalOriginalHTML='';
-function showModal(h){ document.getElementById('modal').innerHTML=h; modalOriginalHTML=document.getElementById('modal').innerHTML; document.getElementById('modal-bg').style.display='flex'; if(limpiaCedulaPendiente){ limpiaCedulaPendiente=false; try{ const c=document.getElementById('m-cedula'); if(c) c.value=''; const r=document.getElementById('m-cedula-res'); if(r) r.innerHTML=''; const sl=document.getElementById('m-cliente'); if(sl){ sl.value=''; if(sl.dataset) sl.dataset.auto='0'; } }catch(e){} } }
+const _obsContent=new MutationObserver(function(){
+  try{ const c=document.getElementById('content'); if(c) mayusculasEnTodo(c); }catch(e){}
+});
+function vigilarMayusculas(){
+  try{ const c=document.getElementById('content'); if(c && !c.__mayusVigila){ c.__mayusVigila=true; _obsContent.observe(c,{childList:true,subtree:true}); } }catch(e){}
+}
+function showModal(h){ document.getElementById('modal').innerHTML=h; modalOriginalHTML=document.getElementById('modal').innerHTML; document.getElementById('modal-bg').style.display='flex'; try{ mayusculasEnTodo(document.getElementById('modal')); }catch(e){} if(limpiaCedulaPendiente){ limpiaCedulaPendiente=false; try{ const c=document.getElementById('m-cedula'); if(c) c.value=''; const r=document.getElementById('m-cedula-res'); if(r) r.innerHTML=''; const sl=document.getElementById('m-cliente'); if(sl){ sl.value=''; if(sl.dataset) sl.dataset.auto='0'; } }catch(e){} } }
 function cerrarModal(){ document.getElementById('modal-bg').style.display='none'; }
 function cerrarModalPago(){
   try{
@@ -3945,7 +4120,7 @@ function pintarAcomp(prefix, boxId, adultsId, initial){
 }
 function colectarAcomp(prefix, adultos){
   const out=[];
-  for(let i=0;i<Math.max(0,adultos-1);i++){ const nm=document.getElementById(prefix+'-acomp-nombre-'+i); if(!nm) continue; const ap=document.getElementById(prefix+'-acomp-apellido-'+i); const nombre=((nm.value||'').trim()+' '+(ap?(ap.value||'').trim():'')).trim(); const docNum=document.getElementById(prefix+'-acomp-docnum-'+i).value.trim(); const docTipo=document.getElementById(prefix+'-acomp-doctipo-'+i).value; if(nombre||docNum) out.push({nombre:nombre,docTipo:docTipo,docNum:docNum}); }
+  for(let i=0;i<Math.max(0,adultos-1);i++){ const nm=document.getElementById(prefix+'-acomp-nombre-'+i); if(!nm) continue; const ap=document.getElementById(prefix+'-acomp-apellido-'+i); const nombre=mayusculasYa((nm.value||'').trim()+' '+(ap?(ap.value||'').trim():'')).trim(); const docNum=document.getElementById(prefix+'-acomp-docnum-'+i).value.trim(); const docTipo=document.getElementById(prefix+'-acomp-doctipo-'+i).value; if(nombre||docNum) out.push({nombre:nombre,docTipo:docTipo,docNum:docNum}); }
   return out;
 }
 function acompResumenTxt(acs){
@@ -3964,7 +4139,7 @@ function agregarAcompPost(num){
   h+='<h2>➕ Agregar acompañante · Hab. '+num+'</h2>';
   h+='<p style="font-size:12.5px;color:#55637a;margin:2px 0 12px">Para cuando un acompañante llega después del check-in. Se suma a la habitación y al registro del huésped.</p>';
   h+='<div style="display:flex;gap:8px"><input id="ap-nombre" class="inp" style="flex:1" placeholder="Nombre"><input id="ap-apellido" class="inp" style="flex:1" placeholder="Apellido"></div>';
-  h+='<div style="display:flex;gap:8px;margin-top:8px"><select id="ap-doctipo" class="inp" style="flex:0 0 150px">'+docTipoOptions('V')+'</select><input id="ap-docnum" class="inp" style="flex:1" placeholder="Número de documento"></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:8px"><select id="ap-doctipo" class="puedeMinus inp" style="flex:0 0 150px">'+docTipoOptions('V')+'</select><input id="ap-docnum" class="puedeMinus inp" style="flex:1" placeholder="Número de documento"></div>';
   h+='<div class="field" style="margin-top:10px"><label>¿Sus consumos a quién se le cargan?</label><select id="ap-paga">';
   h+='<option value="'+num+'">A la cuenta de Hab. '+num+' (la suya)</option>';
   try{ rooms().filter(function(x){ return x.estado==='ocupada'; }).forEach(function(x){ if(Number(x.num)!==Number(num)) h+='<option value="'+x.num+'">A la cuenta de Hab. '+x.num+' · '+esc(x.huesped||'')+'</option>'; }); }catch(e){}
@@ -4024,7 +4199,7 @@ function pintarMenores(prefix, boxId, ninosId, initial){
 }
 function colectarMenores(prefix, ninos){
   const out=[];
-  for(let i=0;i<Math.max(0,ninos);i++){ const nm=document.getElementById(prefix+'-menor-nombre-'+i); if(!nm) continue; out.push({nombre:nm.value.trim(), apellido:document.getElementById(prefix+'-menor-apellido-'+i).value.trim(), folio:document.getElementById(prefix+'-menor-folio-'+i).value.trim()}); }
+  for(let i=0;i<Math.max(0,ninos);i++){ const nm=document.getElementById(prefix+'-menor-nombre-'+i); if(!nm) continue; out.push({nombre:mayusculasYa(nm.value.trim()), apellido:mayusculasYa(document.getElementById(prefix+'-menor-apellido-'+i).value.trim()), folio:document.getElementById(prefix+'-menor-folio-'+i).value.trim()}); }
   return out;
 }
 function menoresResumenTxt(ms){
@@ -4092,7 +4267,7 @@ function checkin(num){
   if(guardTurno()) return;
   const _nomEl=document.getElementById('m-nombre'); const _apeEl=document.getElementById('m-apellido');
   const _dtEl0=document.getElementById('m-doctipo'); const _esEmp0 = !!(_dtEl0 && _dtEl0.value==='J');
-  const _nomV=_nomEl?_nomEl.value.trim():''; const _apeV=(!_esEmp0 && _apeEl)?_apeEl.value.trim():'';
+  const _nomV=_nomEl?mayusculasYa(_nomEl.value.trim()):''; const _apeV=(!_esEmp0 && _apeEl)?mayusculasYa(_apeEl.value.trim()):'';
   const h = (_nomV+' '+_apeV).trim();
   if(!_nomV){ alert('Escribe el nombre del huésped'); return; }
   // Pre-validar huéspedes de habitaciones adicionales ANTES de registrar nada
@@ -4105,8 +4280,8 @@ function checkin(num){
       var _xdt0=((document.getElementById('mx-doctipo-'+_en0)||{}).value)||'V';
       var _xEsEmp0=(_xdt0==='J');
       var _xced0=((document.getElementById('mx-cedula-'+_en0)||{}).value||'').trim();
-      var _xnom0=((document.getElementById('mx-nombre-'+_en0)||{}).value||'').trim();
-      var _xape0=(!_xEsEmp0 && document.getElementById('mx-apellido-'+_en0))?((document.getElementById('mx-apellido-'+_en0).value||'').trim()):'';
+      var _xnom0=mayusculasYa((document.getElementById('mx-nombre-'+_en0)||{}).value||'').trim();
+      var _xape0=(!_xEsEmp0 && document.getElementById('mx-apellido-'+_en0))?mayusculasYa((document.getElementById('mx-apellido-'+_en0).value||'').trim()):'';
       if(!_xnom0 || !_xced0 || (!_xEsEmp0 && !_xape0)){ alert('Faltan datos del huésped de la Hab. '+_en0+'. El nombre, apellido y documento son obligatorios por el registro policial. Si es la misma persona que el titular, toca "Es el mismo titular".'); return; }
       _multiExtras.push({en:_en0, dt:_xdt0, esEmp:_xEsEmp0, ced:_xced0, nom:_xnom0, ape:_xape0});
     }
@@ -4124,7 +4299,7 @@ function checkin(num){
       if(_c){
         const _v2=function(id){ const e=document.getElementById(id); return e?e.value.trim():''; };
         const _ecv=_v2('m-estadocivil'), _prv=_v2('m-profesion'), _pdv=_v2('m-procedencia'), _dev=_v2('m-destino'), _edv=_v2('m-edad'), _paisv=_v2('m-pais');
-        if(_ecv) _c.estadoCivil=_ecv; if(_prv) _c.ocupacion=_prv; if(_pdv) _c.ciudad=_pdv; if(_dev) _c.destino=_dev; if(_edv) _c.edad=_edv; if(_paisv) _c.pais=_paisv;
+        if(_ecv) _c.estadoCivil=mayusculasYa(_ecv); if(_prv) _c.ocupacion=mayusculasYa(_prv); if(_pdv) _c.ciudad=ciudadMayus(_pdv); if(_dev) _c.destino=mayusculasYa(_dev); if(_edv) _c.edad=_edv; if(_paisv) _c.pais=mayusculasYa(_paisv);
         saveClientes(_l);
       }
     }
@@ -4132,9 +4307,9 @@ function checkin(num){
       const _ec=document.getElementById('m-estadocivil'); const _pr=document.getElementById('m-profesion'); const _pd=document.getElementById('m-procedencia'); const _de=document.getElementById('m-destino'); const _ed=document.getElementById('m-edad'); const _pais=document.getElementById('m-pais');
       let nuevo;
       if(dtSel==='J'){
-        nuevo = {id:'c'+Date.now(), tipo:'empresa', nombre:h, apellido:'', docTipo:'J', docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), telefono:'', direccion:'', notas:'', historial:[], creado:new Date().toISOString(), codigo:nuevoCodigoEmpresa()};
+        nuevo = {id:'c'+Date.now(), tipo:'empresa', nombre:h, apellido:'', docTipo:'J', docNum:ced, correo:'', ocupacion:mayusculasYa(_pr?_pr.value.trim():''), ciudad:ciudadMayus(_pd?_pd.value:''), telefono:'', direccion:'', notas:'', historial:[], creado:new Date().toISOString(), codigo:nuevoCodigoEmpresa()};
       } else {
-        nuevo = {id:'c'+Date.now(), tipo:'persona', nombre:_nomV, apellido:_apeV, docTipo:dtSel, docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), estadoCivil:(_ec?_ec.value:''), destino:(_de?_de.value.trim():''), edad:(_ed?_ed.value.trim():''), pais:(_pais?_pais.value.trim():'')||'Venezuela', notas:'', historial:[], creado:new Date().toISOString()};
+        nuevo = {id:'c'+Date.now(), tipo:'persona', nombre:_nomV, apellido:_apeV, docTipo:dtSel, docNum:ced, correo:'', ocupacion:mayusculasYa(_pr?_pr.value.trim():''), ciudad:ciudadMayus(_pd?_pd.value:''), estadoCivil:mayusculasYa(_ec?_ec.value:''), destino:mayusculasYa(_de?_de.value.trim():''), edad:(_ed?_ed.value.trim():''), pais:mayusculasYa((_pais?_pais.value.trim():'')||'Venezuela'), notas:'', historial:[], creado:new Date().toISOString()};
       }
       const list=clientes(); list.push(nuevo); saveClientes(list); clienteId=nuevo.id;
     }
@@ -4145,7 +4320,7 @@ function checkin(num){
   var _cxcChkPrev=document.getElementById('m-cxc-mandar');
   let tarifaEf = tarifa;
   if(_auth){ if(_auth.modo==='gratis') tarifaEf=0; else if(_auth.modo==='mitad') tarifaEf=Math.round((tarifa/2)*100)/100; }
-  const empRefEl=document.getElementById('m-empresaref'); const empRefRaw=empRefEl?empRefEl.value.trim():'';
+  const empRefEl=document.getElementById('m-empresaref'); const empRefRaw=empRefEl?mayusculasYa(empRefEl.value.trim()):'';
   const emp=empRefRaw?empresaPorRef(empRefRaw):null;
   const empRef=emp?((emp.codigo||emp.nombre||empRefRaw)):empRefRaw;
   if(emp && clienteId){ const _l=clientes(); const _c=_l.find(x=>x.id===clienteId); if(_c && _c.tipo!=='empresa' && !(_c.empresaRef||'').trim()){ _c.empresaRef=empRef; saveClientes(_l); } }
@@ -5746,7 +5921,7 @@ function objGuardarNuevo(){
   var desc=((document.getElementById('ob-desc')||{}).value||'').trim();
   var donde=((document.getElementById('ob-donde')||{}).value||'').trim();
   var cat=((document.getElementById('ob-cat')||{}).value||'normal');
-  var obs=((document.getElementById('ob-obs')||{}).value||'').trim();
+  var obs=mayusculasYa(((document.getElementById('ob-obs')||{}).value||'').trim());
   if(!hab){ alert('Escribe el número de habitación.'); return; }
   if(!desc){ alert('Escribe qué es el objeto (descripción).'); return; }
   var c=objHuespedDeHab(hab);
@@ -6314,7 +6489,7 @@ function invEntregaGuardar(){
   var sel=document.getElementById('ent-prod'); var p=invFind(sel&&sel.value); if(!p){ return; }
   var cant=parseFloat((document.getElementById('ent-cant')||{}).value)||0;
   var para=((document.getElementById('ent-para')||{}).value||'').trim();
-  var concepto=((document.getElementById('ent-concepto')||{}).value||'').trim();
+  var concepto=mayusculasYa(((document.getElementById('ent-concepto')||{}).value||'').trim());
   var nota=((document.getElementById('ent-nota')||{}).value||'').trim();
   if(!(cant>0)){ alert('Escribe una cantidad mayor a 0.'); return; }
   if(!para){ alert('Escribe a quién se le entrega.'); return; }
@@ -6839,7 +7014,7 @@ function renderChatFull(){
   }
   html+='</div>';
   html+='<div style="border-top:1px solid #eef1f6;padding:10px;display:flex;gap:8px;align-items:flex-end">';
-  html+='<textarea id="chat-input" rows="1" placeholder="Escribe un mensaje…" onkeydown="chatKey(event)" style="flex:1;margin:0;resize:none;max-height:90px"></textarea>';
+  html+='<textarea id="chat-input" class="puedeMinus" rows="1" placeholder="Escribe un mensaje…" onkeydown="chatKey(event)" style="flex:1;margin:0;resize:none;max-height:90px"></textarea>';
   html+='<button class="btn-green" onclick="chatMandar()">Enviar</button>';
   html+='</div>';
   html+='</div>';
@@ -7059,7 +7234,7 @@ function renderUsuarios(){
   html += '<div style="background:#fff;padding:18px;border-radius:12px;max-width:420px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
   html += '<div class="field"><label>Usuario (para iniciar sesión)</label><input id="u-user"></div>';
   html += '<div class="field"><label>Nombre completo</label><input id="u-nombre"></div>';
-  html += '<div class="field"><label>Contraseña</label><input id="u-pass"></div>';
+  html += '<div class="field"><label>Contraseña</label><input id="u-pass" class="puedeMinus"></div>';
   html += '<div class="field"><label>Rol</label><select id="u-rol">'+rolOptions('recepcion')+'</select></div>';
   html += '<button class="btn-primary" style="margin-top:10px" onclick="addUser()">Crear usuario</button></div>';
   html += renderEnLinea();
@@ -7119,7 +7294,7 @@ function editUserModal(user){
   let body='<button class="close" onclick="cerrarModal()">×</button><h2>Editar usuario</h2>';
   body+='<div class="field"><label>Usuario</label><input value="'+escA(u.user)+'" disabled style="background:#f3f6fb;color:#8893a5"></div>';
   body+='<div class="field"><label>Nombre completo</label><input id="eu-nombre" value="'+escA(u.nombre)+'"></div>';
-  body+='<div class="field"><label>Contraseña</label><input id="eu-pass" value="'+escA(u.pass)+'"></div>';
+  body+='<div class="field"><label>Contraseña</label><input id="eu-pass" class="puedeMinus" value="'+escA(u.pass)+'"></div>';
   body+='<div class="field"><label>Rol</label><select id="eu-rol">'+rolOptions(u.rol)+'</select></div>';
   body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="guardarEdicionUsuario(\''+u.user+'\')">Guardar cambios</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(body);
@@ -8813,6 +8988,17 @@ function imprimirReciboGrupo(numsStr){
 let cajaFecha = diaKey();
 let corteBusqCtrl='', corteBusqDoc='', corteBusqFecha='', corteBusqActiva=false;
 function setCajaFecha(v){ cajaFecha = v || diaKey(); render(); }
+/* [CAJA-TURNO] El arqueo se puede ver POR DIA (como antes) o POR TURNO: todo lo que
+   cobro esa persona, aunque el turno empiece un dia y termine al dia siguiente. */
+let cajaCobroAlcance = 'dia';   /* 'dia' | 'turno' */
+let cajaTurnoSel = '';          /* id del turno elegido en Caja */
+function setCajaAlcance(v){
+  cajaCobroAlcance = (v==='turno')?'turno':'dia';
+  if(cajaCobroAlcance==='turno'){ const _t=turnoActual(); if(_t) cajaTurnoSel=_t.id; }
+  render();
+}
+function cajaCambioTurno(id){ cajaCobroAlcance='turno'; cajaTurnoSel=String(id||''); render(); }
+function turnoActual(){ const a=turnoActivo(); if(a) return a; const ts=turnos(); return ts.length?ts[ts.length-1]:null; }
 function docDeCliente(id){ if(!id) return ''; const c=(typeof clienteById==='function')?clienteById(id):null; if(!c) return ''; return ((c.docTipo?c.docTipo+'-':'')+(c.docNum||'')).trim(); }
 function buscarCorteCliente(){
   corteBusqFecha=((document.getElementById('cb-fecha')||{}).value||'').trim();
@@ -8914,13 +9100,18 @@ function _turnoPorId(id){
 function turnoNombre(id){ var t=_turnoPorId(id); return t?((t.nombre||t.usuario||'Turno')):'Sin turno'; }
 function turnoRango(id){ var t=_turnoPorId(id); if(!t) return ''; return 'de '+horaCorta(t.inicio)+(t.fin?(' a '+horaCorta(t.fin)):' · abierto'); }
 function renderCaja(){
-  const pagosDia = DB.get('pagos',[]).filter(p=>p.dia===cajaFecha);
+  /* [CAJA-TURNO] Alcance del arqueo: todo el turno de una persona, o el dia completo. */
+  const _porTurno = (cajaCobroAlcance==='turno');
+  let _tCaja = null;
+  if(_porTurno){ var _tl=turnos(); _tCaja=_tl.find(function(x){ return String(x.id)===String(cajaTurnoSel); })||null; if(!_tCaja) _tCaja=turnoActual(); }
+  const pagosDia = _tCaja ? pagosDelTurno(_tCaja.id) : DB.get('pagos',[]).filter(p=>p.dia===cajaFecha);
   let pagos = pagosDia;
-  let h = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">';
-  h += '<div style="flex:1;min-width:160px"><label>Fecha del arqueo</label><input type="date" value="'+cajaFecha+'" onchange="setCajaFecha(this.value)"></div>';
+  let h = cajaAlcanceBloque(_tCaja);
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">';
+  if(!_tCaja) h += '<div style="flex:1;min-width:160px"><label>Fecha del arqueo</label><input type="date" value="'+cajaFecha+'" onchange="setCajaFecha(this.value)"></div>';
   h += '<button class="btn-primary" onclick="pagoManualModal()">Registrar cobro manual</button>';
   h += '<button class="btn-gray" onclick="imprimirArqueo()">Imprimir / PDF</button>';
-  h += '<button class="btn-primary" onclick="imprimirCorte()">Corte detallado del día</button>';
+  h += '<button class="btn-primary" onclick="imprimirCorte()">Corte detallado</button>';
   h += '<button class="btn-orange" onclick="enviarAdminModal(\'caja\')">📤 Enviar a administración</button>';
   h += '<button class="btn-ghost" onclick="exportarCajaCSV()">Exportar a Excel</button></div>';
   h += corteBusqBloque();
@@ -8929,35 +9120,61 @@ function renderCaja(){
   /* [CORTE-MONTO] se descartan de los totales los cobros ANULADOS (su metodo dice "Anulado") */
   const _anulTodos = pagos.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0; });
   pagos = pagos.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')<0; });
-  pagos.forEach(p=>{ cajaLineasDePago(p).forEach(m=>{ const k=String(m.metodo||'Otro'); if(!porMetodo[k]) porMetodo[k]={bs:0,usd:0,n:0}; porMetodo[k].bs+=Number(m.montoBs)||0; porMetodo[k].usd+=Number(m.montoUsd)||0; porMetodo[k].n++; }); var _tpRc=pagoTotal(p); totBs+=_tpRc.bs; totUsd+=_tpRc.usd; });
-  h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(totBs)+'</div><div class="l">Total del día (Bs)</div></div>';
+  const _qui={}; pagos.forEach(function(p){ const _u=String(p.usuario||'').trim(); if(_u) _qui[_u]=1; });
+  const _quiCobro=(_tCaja && Object.keys(_qui).length)? Object.keys(_qui).join(', ') : '';
+  pagos.forEach(p=>{ lineasDivisa(p).forEach(m=>{ const k=String(m.metodo||'Otro'); if(!porMetodo[k]) porMetodo[k]={bs:0,usd:0,n:0,ubs:0,uusd:0}; porMetodo[k].n++; if(m.divisa==='Bs'){ porMetodo[k].bs+=Number(m.montoBs)||0; } else { porMetodo[k].usd+=Number(m.montoUsd)||0; porMetodo[k].ubs+=Number(m.montoBs)||0; } }); var _tpRc=pagoTotal(p); totBs+=_tpRc.bs; totUsd+=_tpRc.usd; });
+  const _lTot = _tCaja ? 'Total del turno (Bs)' : 'Total del día (Bs)';
+  h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(totBs)+'</div><div class="l">'+_lTot+'</div></div>';
   h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtUSD(totUsd)+'</div><div class="l">Equivalente USD</div></div>';
   h += '<div class="stat" style="border-left-color:var(--gris)"><div class="n">'+pagos.length+'</div><div class="l">Transacciones</div></div></div>';
-  const _efMs=Object.keys(porMetodo).filter(function(k){ return /efectivo/i.test(k); });
+  const _quienCobro = _quiCobro ? ('<div style="font-size:12px;color:#2a5c3d;margin-top:7px">👤 En este turno cobraron: <b>'+esc(_quiCobro)+'</b></div>') : '';
+  /* [EFECTIVO-REAL] Dinero fisico en caja: se toma EXACTAMENTE lo que muestra el
+     desglose por forma de pago, sumando solo las formas de efectivo.
+     Efectivo Bs. -> columna Total Bs. Efectivo USD -> columna Total USD. */
   let efBs=0, efUsd=0;
-  _efMs.forEach(function(k){ efBs+=Number(porMetodo[k].bs)||0; efUsd+=Number(porMetodo[k].usd)||0; });
+  Object.keys(porMetodo).forEach(function(k){
+    var x=porMetodo[k]; if(!x) return;
+    var _esBs = /efectivo/i.test(k) && /(^|[^A-Za-z])Bs([^A-Za-z]|$)|boliv/i.test(k);
+    var _esUsd = /efectivo/i.test(k) && (/USD|US\$|\$/.test(k) || /d[oó]lar/i.test(k));
+    if(_esBs) efBs += Number(x.bs)||0;
+    if(_esUsd) efUsd += Number(x.usd)||0;
+  });
   h += '<div style="background:#eef9f1;border:1px solid #bfe6cd;border-radius:12px;padding:16px 18px;margin-bottom:18px">';
   h += '<div style="font-weight:800;color:#1d6b38;margin-bottom:10px;font-size:15px">💵 Dinero en caja (efectivo)</div>';
   h += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
-  h += '<div style="flex:1;min-width:150px;background:#fff;border-radius:10px;padding:12px 14px"><div style="font-size:22px;font-weight:800;color:var(--verde)">'+fmtBs(efBs)+'</div><div style="font-size:12.5px;color:#55637a">Efectivo en bolívares</div></div>';
-  h += '<div style="flex:1;min-width:150px;background:#fff;border-radius:10px;padding:12px 14px"><div style="font-size:22px;font-weight:800;color:var(--azul2)">'+fmtUSD(efUsd)+'</div><div style="font-size:12.5px;color:#55637a">Efectivo en dólares</div></div>';
-  h += '</div><div style="font-size:11.5px;color:#8893a5;margin-top:8px">Es el dinero físico que deberías tener en caja hoy. Los pagos móviles, transferencias, punto y Zelle van aparte, en el desglose de abajo.</div></div>';
+  h += '<div style="flex:1;min-width:150px;background:#fff;border-radius:10px;padding:12px 14px"><div style="font-size:22px;font-weight:800;color:var(--verde)">'+fmtBs(efBs)+'</div><div style="font-size:12.5px;color:#55637a">Efectivo cobrado en bolívares</div></div>';
+  h += '<div style="flex:1;min-width:150px;background:#fff;border-radius:10px;padding:12px 14px"><div style="font-size:22px;font-weight:800;color:var(--azul2)">'+fmtUSD(efUsd)+'</div><div style="font-size:12.5px;color:#55637a">Efectivo cobrado en dólares</div></div>';
+  h += '</div><div style="font-size:11.5px;color:#8893a5;margin-top:8px">Es el dinero físico que deberías tener en caja '+(_tCaja?'en este turno':('el día '+fechaDDMMYYYY(cajaFecha)))+'. Los dos montos son lo que realmente se cobró en cada moneda, según la forma de pago (Efectivo Bs. o Efectivo USD). No se convierte nada: si nadie pagó en bolívares, ese monto queda en Bs. 0,00. Los pagos móviles, transferencias, punto y Zelle van aparte, en el desglose de abajo.</div>'+_quienCobro+'</div>';
   h += '<div class="section-title" style="font-size:15px">Desglose por forma de pago</div>';
   h += '<table class="users-table"><tr><th>Forma de pago</th><th>N°</th><th>Total Bs</th><th>Total USD</th></tr>';
   let keys = Object.keys(porMetodo);
-  keys.forEach(m=>{ const x=porMetodo[m]; if(x.n===0 && getMetodos().indexOf(m)<0) return; h += '<tr><td>'+esc(m)+'</td><td>'+x.n+'</td><td>'+fmtBs(x.bs)+'</td><td>'+fmtUSD(x.usd)+'</td></tr>'; });
+  keys.forEach(m=>{ const x=porMetodo[m]; if(x.n===0 && getMetodos().indexOf(m)<0) return;
+    var _cBs='—', _cUsd='—';
+    /* [DESGLOSE] Cada forma muestra su total en Bs y su total en USD (los dos, siempre). */
+    var _bsV=Number(x.bs)||0, _usdV=Number(x.usd||x.uusd)||0;
+    if(_bsV<=0.004 && _usdV>0.004) _bsV=precioBs(_usdV);
+    if(_usdV<=0.004 && _bsV>0.004) _usdV=_bsV/tasa();
+    _cBs=fmtBs(_bsV); _cUsd=fmtUSD(_usdV);
+    h += '<tr><td>'+esc(m)+'</td><td>'+x.n+'</td><td style="text-align:right">'+_cBs+'</td><td style="text-align:right">'+_cUsd+'</td></tr>'; });
+  /* [CAJA-DIVISA] Si un cobro viejo quedo con la forma 'Efectivo' sin decir la moneda,
+     se aclara que cuenta como dolares (asi estaba guardado). */
+  if(porMetodo['Efectivo'] && porMetodo['Efectivo'].n>0 && !(porMetodo['Efectivo Bs']&&porMetodo['Efectivo Bs'].n)){
+    h += '<tr style="background:#f8fbff"><td style="font-size:12.2px;color:#55637a;padding-left:22px">↳ Efectivo cobrado: '+fmtUSD(porMetodo['Efectivo'].usd)+' · '+porMetodo['Efectivo'].n+' cobro(s)</td><td></td><td></td><td></td></tr>';
+  }
   h += '<tr style="font-weight:800;background:#f3f6fb"><td>TOTAL</td><td>'+pagos.length+'</td><td>'+fmtBs(totBs)+'</td><td>'+fmtUSD(totUsd)+'</td></tr></table>';
   if(_anulTodos.length){
     let _anBs=0,_anUsd=0; _anulTodos.forEach(function(p){ const _t=pagoTotal(p); _anBs+=(Number(p.montoBs)||_t.bs); _anUsd+=(Number(p.montoUsd)||_t.usd); });
-    h += '<div style="background:#fdf7f7;border:1px solid #f2c2c2;border-radius:10px;padding:10px 13px;margin-bottom:12px;font-size:12.6px;color:#8a2f2f">🚫 <b>'+_anulTodos.length+' cobro(s) anulado(s) este día · '+fmtBs(_anBs)+' / '+fmtUSD(_anUsd)+'</b>. No se suman al total del día. Aparecen abajo marcados como anulados.</div>';
+    h += '<div style="background:#fdf7f7;border:1px solid #f2c2c2;border-radius:10px;padding:10px 13px;margin-bottom:12px;font-size:12.6px;color:#8a2f2f">🚫 <b>'+_anulTodos.length+' cobro(s) anulado(s) '+(_tCaja?'en este turno':'este día')+' · '+fmtBs(_anBs)+' / '+fmtUSD(_anUsd)+'</b>. No se suman al total del día. Aparecen abajo marcados como anulados.</div>';
   }
-  h += '<div class="section-title" style="font-size:15px;margin-top:22px">Movimientos del día</div>';
-  if(pagos.length===0){ h += '<div class="empty">No hay cobros registrados en esta fecha.</div>'; return h; }
+  h += '<div class="section-title" style="font-size:15px;margin-top:22px">'+(_tCaja?'Movimientos del turno':'Movimientos del día')+'</div>';
+  if(pagos.length===0){ h += '<div class="empty">'+(_tCaja?'No hay cobros en este turno.':'No hay cobros registrados en esta fecha.')+'</div>'; return h; }
   h += '<div class="task-list">';
   pagos.concat(_anulTodos).forEach(p=>{
     const _esAn=String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0;
     var _tpR=pagoTotal(p);
     var _metTxt=esc(metodoTextoDesdeLineas(cajaLineasDePago(p))||p.metodo||'');
+    var _efP=(cajaLineasDePago(p)||[]).filter(function(l){ return /efectivo/i.test(String(l.metodo||'')); });
+    if(_efP.length){ _efP.forEach(function(l){ if(Number(l.montoUsd||0)>0) _metTxt += ' <span style="color:#55637a">· efectivo '+fmtUSD(Number(l.montoUsd||0))+' ('+fmtBs(Number(l.montoBs||0))+' equiv.)</span>'; }); }
     var _avisoMonto=_tpR.sinMonto?' <span style="display:inline-block;background:#fff4e5;color:#a05a00;border:1px solid #f3d3a0;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">⚠️ Sin monto</span>':'';
     h += '<div class="task"'+( _esAn?' style="opacity:.62"':'')+'><div class="info"><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+(_esAn?' <b style="color:#b23b3b">· ANULADO</b>':'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+_metTxt+' · '+p.fechaStr+' · '+esc(p.usuario||'')+_avisoMonto+'</div></div>';
     h += '<div style="text-align:right"><div style="font-weight:800;color:'+(_tpR.sinMonto?'#a05a00':'var(--azul)')+'">'+(_tpR.sinMonto?'Sin monto':fmtBs(_tpR.bs))+'</div><div style="font-size:12px;color:#8893a5">'+( _tpR.sinMonto?'—':fmtUSD(_tpR.usd))+'</div>';
@@ -8996,7 +9213,7 @@ function pmCalcManual(){
 function guardarPagoManual(btn){
   if(guardTurno()) return;
   if(procesoDoble(btn)) return;
-  const concepto = document.getElementById('pm-concepto').value.trim();
+  const concepto = mayusculasYa(document.getElementById('pm-concepto').value.trim());
   const monto = parseFloat(document.getElementById('pm-monto').value)||0;
   const moneda = document.getElementById('pm-moneda').value;
   if(monto<=0){ alert('Escribe el monto'); return; }
@@ -9082,7 +9299,7 @@ function confirmarAnularPago(id, btn){
   if(!(session().rol==='admin'||puedeSup('anularPagos'))){ alert('No tienes permiso para anular cobros.'); cerrarModal(); return; }
   const pagos=DB.get('pagos',[]); const p=pagos.find(x=>x.id===id);
   if(!p){ alert('No se encontró el cobro.'); cerrarModal(); return; }
-  const motivo=(document.getElementById('anul-motivo')||{}).value||'';
+  const motivo=mayusculasYa((document.getElementById('anul-motivo')||{}).value||'');
   if(!motivo.trim()){ alert('Escribe el motivo de la anulación.'); return; }
   const s=session();
   const detalle='ANULADO por '+(s?s.nombre:'')+' ('+(s?s.rol:'')+')'+(p.control?(' · Control N° '+fmtControl(p.control)):'')+(p.metodo?(' · '+p.metodo):'')+' · Motivo: '+motivo.trim();
@@ -9131,7 +9348,37 @@ function pagoTotal(p){
   var sbs=0, susd=0;
   lins.forEach(function(l){ sbs+=Number(l.montoBs)||0; susd+=Number(l.montoUsd)||0; });
   if(Math.abs(usd)<0.005 && Math.abs(bs)<0.005 && (Math.abs(susd)>0.005 || Math.abs(sbs)>0.005)){ bs=sbs; usd=susd; }
-  return {bs:bs, usd:usd, sinMonto:(Math.abs(bs)<0.005 && Math.abs(usd)<0.005)};
+  /* [DIVISA] Si el cobro se declaro en una sola forma de pago, la divisa es ESA.
+     Asi lo cobrado en bolivares no se cuenta como si fueran dolares. */
+  var _d=divisaDeForma(p);
+  return {bs:bs, usd:usd, divisa:_d, sinMonto:(Math.abs(bs)<0.005 && Math.abs(usd)<0.005)};
+}
+function lineaEnBs(l){
+  /* Una linea esta cobrada en bolivares si su forma lo dice o si sus Bs no cuadran
+     con sus USD a la tasa de la operacion. */
+  var met=String((l&&l.metodo)||'');
+  if(/(^|\s)bs\b|boliv/i.test(met)) return true;
+  var b=Number(l&&l.montoBs)||0, u=Number(l&&l.montoUsd)||0;
+  if(!(b>0.004)) return false;
+  if(!(u>0.004)) return true;
+  try{ if(Math.abs(b/precioBs(u)-1)>0.02) return true; }catch(e){}
+  return false;
+}
+function divisaDeForma(p){
+  /* 'USD' = lo cobrado se cuenta en dolares; 'Bs' = se cobro en bolivares. */
+  try{
+    var lins=cajaLineasDePago(p).filter(function(l){ return Number(l.montoUsd||0)>0.004 || Number(l.montoBs||0)>0.004; });
+    if(!lins.length) return '';
+    if(lins.length>1) return '';
+    return lineaEnBs(lins[0]) ? 'Bs' : 'USD';
+  }catch(e){ return ''; }
+}
+function lineasDivisa(p){
+  /* Para las pantallas: cada linea con su divisa ya resuelta (una sola forma -> la del cobro). */
+  var lins=cajaLineasDePago(p);
+  var d=divisaDeForma(p);
+  lins.forEach(function(l){ l.divisa = d || (lineaEnBs(l)?'Bs':'USD'); });
+  return lins;
 }
 /* Arma el texto de la forma de pago desde las lineas reales. */
 function metodoTextoDesdeLineas(metodos){
@@ -9140,25 +9387,31 @@ function metodoTextoDesdeLineas(metodos){
   return metodos.map(function(l){ var t=String(l.metodo||''); if(metodos.length>1) t+=' ('+fmtUSD(Number(l.montoUsd||0))+')'; if(l.ref) t+=' [Ref: '+l.ref+']'; return t; }).join(' + ');
 }
 function resumenCaja(fecha){
-  const pagos = DB.get('pagos',[]).filter(p=>p.dia===fecha);
-  const porMetodo = {}; let totBs=0, totUsd=0;
-  METODOS.forEach(m=>porMetodo[m]={bs:0,usd:0,n:0});
+  /* [CAJA-TURNO] No se suman los cobros ANULADOS (igual que en pantalla y en el corte). */
+  const _todosP = DB.get('pagos',[]).filter(p=>p.dia===fecha);
+  const pagos = _todosP.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')<0; });
+  const porMetodo = {}; let totBs=0, totUsd=0, efBs=0, efUsd=0;
+  getMetodos().forEach(function(m){ porMetodo[m]={bs:0,usd:0,n:0}; });
   pagos.forEach(p=>{
     cajaLineasDePago(p).forEach(m=>{
       const k=String(m.metodo||'Otro');
       if(!porMetodo[k]) porMetodo[k]={bs:0,usd:0,n:0};
       porMetodo[k].bs+=Number(m.montoBs)||0; porMetodo[k].usd+=Number(m.montoUsd)||0; porMetodo[k].n++;
+      if(/efectivo/i.test(k)){ efBs+=Number(m.montoBs)||0; efUsd+=Number(m.montoUsd)||0; }
     });
     var _tp=pagoTotal(p); totBs+=_tp.bs; totUsd+=_tp.usd;
   });
-  return {pagos:pagos, porMetodo:porMetodo, totBs:totBs, totUsd:totUsd};
+  return {pagos:pagos, porMetodo:porMetodo, totBs:totBs, totUsd:totUsd, efBs:efBs, efUsd:efUsd, personas:[], anulados:_todosP.length-pagos.length};
 }
 function fechaLarga(dia){
   const p = dia.split('-'); const d = new Date(+p[0],+p[1]-1,+p[2]);
   return d.toLocaleDateString('es-VE',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
 }
-function imprimirArqueo(){
-  const R = resumenCaja(cajaFecha);
+function imprimirArqueo(turnoArg){
+  /* [CAJA-TURNO] Si se pide un turno, el arqueo sale con TODO lo de ese turno. */
+  const _tId = (turnoArg && turnoArg!=='todos') ? String(turnoArg) : (typeof turnoDeCajaActual==='function' && turnoDeCajaActual() ? String(turnoDeCajaActual().id) : null);
+  const _tObj = _tId ? (turnos().find(function(x){ return String(x.id)===_tId; })||null) : null;
+  const R = _tId ? arqueoTurnoDatos(_tId) : resumenCaja(cajaFecha);
   let filasM = '';
   Object.keys(R.porMetodo).forEach(m=>{ const x=R.porMetodo[m]; if(x.n===0 && getMetodos().indexOf(m)<0) return;
     filasM += '<tr><td>'+esc(m)+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; });
@@ -9175,23 +9428,107 @@ function imprimirArqueo(){
   html += '.card .l{font-size:11px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}';
   html += '.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}';
   html += 'h2{font-size:14px;color:#0d3b66;margin:16px 0 8px}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
-  html += (hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('arqueo','Arqueo de Caja Diario'))+'</h1>'+hotelLinePrint()+'<div class="sub">'+fechaLarga(cajaFecha)+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
-  html += '<div class="cards"><div class="card"><div class="l">Total del día (Bs)</div><div class="n">'+fmtBs(R.totBs)+'</div></div>';
+  html += (hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('arqueo',(_tObj?'Arqueo de Caja del Turno':'Arqueo de Caja Diario')))+'</h1>'+hotelLinePrint()+'<div class="sub">'+(_tObj?('Turno de '+esc(_tObj.nombre||_tObj.usuario||'')+' · Empezó '+fechaHoraCorta(_tObj.inicio)+(_tObj.fin?(' · Terminó '+fechaHoraCorta(_tObj.fin)):' · abierto')):fechaLarga(cajaFecha))+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
+  html += '<div class="cards"><div class="card"><div class="l">'+(_tObj?'Total del turno (Bs)':'Total del día (Bs)')+'</div><div class="n">'+fmtBs(R.totBs)+'</div></div>';
+  if(_tObj) html += '<div class="card"><div class="l">Efectivo en caja (Bs / USD)</div><div class="n">'+fmtBs(R.efBs||0)+' · '+fmtUSD(R.efUsd||0)+'</div></div>';
+  if(_tObj && R.personas && R.personas.length) html += '<div class="card"><div class="l">Cobró</div><div class="n" style="font-size:14px">'+esc(R.personas.join(', '))+'</div></div>';
+  if(_tObj && R.anulados && R.anulados.length){ var _ab=0,_au=0; R.anulados.forEach(function(p){ var _t=pagoTotal(p); _ab+=Number(_t.bs)||0; _au+=Number(_t.usd)||0; }); html += '<div style="font-size:12px;color:#8a2f2f;margin:-8px 0 12px">🚫 '+R.anulados.length+' cobro(s) anulado(s) en este turno ('+fmtBs(_ab)+' / '+fmtUSD(_au)+') · no se suman al total.</div>'; }
   html += '<div class="card"><div class="l">Equivalente USD</div><div class="n">'+fmtUSD(R.totUsd)+'</div></div>';
   html += '<div class="card"><div class="l">Transacciones</div><div class="n">'+R.pagos.length+'</div></div></div>';
   html += '<h2>Desglose por forma de pago</h2><table><tr><th>Forma de pago</th><th class="c">N°</th><th class="r">Total Bs</th><th class="r">Total USD</th></tr>'+filasM;
   html += '<tr class="tot"><td>TOTAL</td><td class="c">'+R.pagos.length+'</td><td class="r">'+fmtBs(R.totBs)+'</td><td class="r">'+fmtUSD(R.totUsd)+'</td></tr></table>';
   html += '<h2>Detalle de movimientos</h2><table><tr><th>Control</th><th>Ubicación</th><th>Huésped / Concepto</th><th>Método</th><th>Fecha y hora</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasMov+'</table>';
-  if(impConfig().mostrarFirmas) html += '<div class="firmas"><div class="firma">Entregado por<br>(Recepción)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
+  if(impConfig().mostrarFirmas) html += '<div class="firmas"><div class="firma">Entregado por<br>('+(_tObj?('Recepcionista: '+esc(_tObj.nombre||_tObj.usuario||'')):'Recepción')+')</div><div class="firma">Recibido por<br>(Administración)</div></div>';
   html += piePaginaHTML()+'</body></html>';
   return imprimirHTML(html);
 }
-function exportarCajaCSV(){
-  const pagos = DB.get('pagos',[]).filter(p=>p.dia===cajaFecha);
-  if(!pagos.length){ alert('No hay movimientos en esta caja para exportar.'); return; }
+function exportarCajaCSV(turnoArg){
+  /* [CAJA-TURNO] Si se pide un turno, el Excel trae todo lo de ese turno. */
+  const _tId = (turnoArg && turnoArg!=='todos') ? String(turnoArg) : (typeof turnoDeCajaActual==='function' && turnoDeCajaActual() ? String(turnoDeCajaActual().id) : null);
+  const _tObj = _tId ? (turnos().find(function(x){ return String(x.id)===_tId; })||null) : null;
+  const pagos = _tId ? pagosDelTurno(_tId) : DB.get('pagos',[]).filter(p=>p.dia===cajaFecha);
+  if(!pagos.length){ alert(_tObj?'No hay movimientos en este turno para exportar.':'No hay movimientos en esta caja para exportar.'); return; }
   const headers=['Control','Ubicacion','Huesped/Concepto','Metodo','Fecha','Monto Bs','Monto USD','Usuario'];
   const rows=pagos.map(p=>[p.control?fmtControl(p.control):'', p.hab?('Hab '+p.hab):'Manual', p.huesped||p.concepto||'', p.metodo, p.fechaStr, Number(p.montoBs).toFixed(2), Number(p.montoUsd).toFixed(2), p.usuario||'']);
-  _descargarXLS('arqueo_'+cajaFecha+'.xls', headers, rows);
+  _descargarXLS('arqueo_'+(_tObj?('turno_'+(String(_tObj.nombre||_tObj.usuario||'turno').replace(/\s+/g,'_')+'_'+diaKey(new Date(_tObj.inicio)))):cajaFecha)+'.xls', headers, rows);
+}
+/* ================== CAJA POR TURNO ================== */
+/* [CAJA-TURNO] Todo lo que se cobro en un turno, aunque el turno haya empezado
+   un dia y terminado al dia siguiente. El monto de cada cobro es EXACTAMENTE el
+   mismo que se guardo (nada se recalcula): solo cambia cual se muestra. */
+function mismoDiaLocal(ts, dia){
+  try{ if(!dia) return false; return diaKey(new Date(ts))===dia; }catch(e){ return false; }
+}
+function pagosDelTurno(turnoId){
+  if(!turnoId) return [];
+  return DB.get('pagos',[]).filter(function(p){
+    if(p.turnoId!=null) return String(p.turnoId)===String(turnoId);
+    var t=turnoPorPago(p);
+    return t?String(t.id)===String(turnoId):false;
+  });
+}
+function cajaAlcanceBloque(_tCaja){
+  var esT=!!_tCaja;
+  var h='<div style="background:#f4f7fc;border:1px solid #d7e2f2;border-radius:12px;padding:12px 14px;margin-bottom:14px">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">';
+  h+='<button class="'+(esT?'btn-ghost':'btn-primary')+'" style="padding:8px 14px" onclick="setCajaAlcance(\'dia\')">📅 Por día</button>';
+  h+='<button class="'+(esT?'btn-primary':'btn-ghost')+'" style="padding:8px 14px" onclick="setCajaAlcance(\'turno\')">🕐 Por turno</button>';
+  h+='</div>';
+  if(!esT){
+    h+='<div style="font-size:12.5px;color:#55637a">Muestra los cobros del día que elijas, de todos los recepcionistas.</div>';
+    return h+'</div>';
+  }
+  var ts=turnos();
+  var abierto=turnoActivo();
+  h+='<div class="field" style="max-width:520px;margin-bottom:8px"><label>¿Qué turno quieres ver?</label><select onchange="cajaCambioTurno(this.value)">';
+  if(!ts.length) h+='<option value="">— Todavía no hay turnos —</option>';
+  ts.slice().reverse().forEach(function(t){
+    var lbl=(t.nombre||t.usuario||'Turno')+' · '+fechaHoraCorta(t.inicio)+(t.fin?(' → '+fechaHoraCorta(t.fin)):' → abierto');
+    h+='<option value="'+t.id+'"'+(String(cajaTurnoSel)===String(t.id)?' selected':'')+'>'+esc(lbl)+'</option>';
+  });
+  h+='</select></div>';
+  var lineas=[];
+  if(_tCaja){
+    lineas.push('Turno de <b>'+esc(_tCaja.nombre||_tCaja.usuario||'')+'</b>');
+    lineas.push('Empezó: <b>'+fechaHoraCorta(_tCaja.inicio)+'</b>');
+    lineas.push(_tCaja.fin?('Terminó: <b>'+fechaHoraCorta(_tCaja.fin)+'</b>'):('Sigue <b>abierto</b> · los totales se van sumando en vivo'));
+    try{ var _ini=new Date(_tCaja.inicio), _fin=_tCaja.fin?new Date(_tCaja.fin):new Date(); var _hh=Math.max(0,Math.round((_fin-_ini)/60000)); lineas.push('Duración: <b>'+Math.floor(_hh/60)+' h '+(_hh%60)+' min</b>'); }catch(e){}
+    var _otroDia=''; try{ _otroDia = (diaKey(new Date(_tCaja.inicio))!==diaKey(new Date(_tCaja.fin||Date.now()))); }catch(e){}
+    lineas.push(_otroDia?'Cruza la medianoche: se suma lo cobrado ayer y lo cobrado hoy hasta que cerró.':'Todo el turno es del mismo día.');
+  }else{
+    lineas.push('Todavía no hay turnos registrados. Cuando alguien abra su turno en Recepción aparecerá aquí.');
+  }
+  h+='<div style="font-size:12.8px;color:#33445f;line-height:1.75">'+lineas.join('<br>')+'</div>';
+  if(abierto && _tCaja && String(abierto.id)===String(_tCaja.id)) h+='<div style="font-size:12px;color:#1d6b38;margin-top:6px">✅ Este turno está abierto: lo que ves es lo acumulado hasta ahora.</div>';
+  h+='</div>';
+  return h;
+}
+/* Totales del turno para el arqueo impreso y el Excel (con las mismas reglas del arqueo del dia:
+   se descartan los cobros anulados y se separa el efectivo). */
+function arqueoTurnoDatos(turnoId){
+  var lista = turnoId ? pagosDelTurno(turnoId) : DB.get('pagos',[]).filter(function(p){ return p.dia===cajaFecha; });
+  var porMetodo={}; getMetodos().forEach(function(m){ porMetodo[m]={bs:0,usd:0,n:0}; });
+  var totBs=0, totUsd=0, efBs=0, efUsd=0, personas={}, anulados=[];
+  var validos=[];
+  lista.forEach(function(p){
+    if(String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0){ anulados.push(p); return; }
+    validos.push(p);
+    cajaLineasDePago(p).forEach(function(m){
+      var k=String(m.metodo||'Otro');
+      if(!porMetodo[k]) porMetodo[k]={bs:0,usd:0,n:0};
+      porMetodo[k].bs+=Number(m.montoBs)||0; porMetodo[k].usd+=Number(m.montoUsd)||0; porMetodo[k].n++;
+      if(/efectivo/i.test(k)){ efBs+=Number(m.montoBs)||0; efUsd+=Number(m.montoUsd)||0; }
+    });
+    var t=pagoTotal(p); totBs+=Number(t.bs)||0; totUsd+=Number(t.usd)||0;
+    var u=String(p.usuario||'').trim(); if(u) personas[u]=1;
+  });
+  return { pagos:validos, anulados:anulados, porMetodo:porMetodo, totBs:totBs, totUsd:totUsd, efBs:efBs, efUsd:efUsd, personas:Object.keys(personas), turnoId:turnoId||null };
+}
+function turnoDeCajaActual(){
+  if(cajaCobroAlcance!=='turno') return null;
+  var ts=turnos(); var t=ts.find(function(x){ return String(x.id)===String(cajaTurnoSel); })||null;
+  if(!t) t=turnoActual();
+  return t;
 }
 function corteDatos(fecha, turno){
   /* [CORTE-TURNOS] Los turnos son los de RECEPCION (se abren uno por uno y quedan
@@ -9252,8 +9589,11 @@ function turnoEtiqueta(t){
   return (t.nombre||t.usuario||'Turno')+' ('+horaCorta(t.inicio)+(t.fin?(' a '+horaCorta(t.fin)):' · abierto')+')';
 }
 function imprimirCorte(turnoArg, _modo){
-  const _turno = turnoArg && turnoArg!=='todos' ? String(turnoArg) : null;
-  const D = corteDatos(cajaFecha, _turno);
+  const _turno = (turnoArg && turnoArg!=='todos') ? String(turnoArg) : (typeof turnoDeCajaActual==='function' && turnoDeCajaActual() ? String(turnoDeCajaActual().id) : null);
+  /* [CAJA-TURNO] Si el corte es de un turno que cruza de un día a otro, se toma la fecha en que empezó. */
+  let _fCorte = cajaFecha;
+  if(_turno){ var _tF=turnos().find(function(x){ return String(x.id)===_turno; }); if(_tF && _tF.inicio) _fCorte = diaKey(new Date(_tF.inicio)); }
+  const D = corteDatos(_fCorte, _turno);
   const _tObj = _turno ? (turnos().find(function(x){ return String(x.id)===_turno; })||null) : null;
   const rs=rooms(); const totalHab=rs.length; const ocup=rs.filter(r=>r.estado==='ocupada').length;
   const libres=rs.filter(r=>r.estado==='libre').length; const pct=totalHab?Math.round(ocup*100/totalHab):0;
@@ -9298,7 +9638,7 @@ function imprimirCorte(turnoArg, _modo){
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Corte '+cajaFecha+'</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.cards{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}.aviso{border:1px solid #f0d58a;background:#fffdf5;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#8a5a00;margin-bottom:12px}.ok{color:#1d6b38;font-weight:700}.mal{color:#b23b3b;font-weight:700}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   html+='<h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('corte','Corte detallado del día'))+(_tObj?(' · Turno de '+esc(_tObj.nombre||_tObj.usuario||'')):'')+'</h1>'+hotelLinePrint();
-  html+='<div class="sub">'+fechaLarga(cajaFecha)+(_tObj?(' &nbsp;·&nbsp; Turno de '+esc(_tObj.nombre||_tObj.usuario||'')+' ('+horaCorta(_tObj.inicio)+( _tObj.fin?(' a '+horaCorta(_tObj.fin)):' · abierto')+')'):' &nbsp;·&nbsp; Todos los turnos')+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
+  html+='<div class="sub">'+fechaLarga(_fCorte)+(_tObj?(' &nbsp;·&nbsp; Turno de '+esc(_tObj.nombre||_tObj.usuario||'')+' ('+horaCorta(_tObj.inicio)+( _tObj.fin?(' a '+horaCorta(_tObj.fin)):' · abierto')+')'):' &nbsp;·&nbsp; Todos los turnos')+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
   if(D.sinMontoN>0) html+='<div class="aviso">⚠️ Hay <b>'+D.sinMontoN+' cobro(s) sin monto</b> registrado. No se suman al total (aparecen marcados “Sin monto” en la tabla). Corrígelos en Caja con el botón ✏️ Corregir.</div>';
   html+='<div class="cards"><div class="card"><div class="l">Total vendido (Bs)</div><div class="n">'+fmtBs(D.totBs)+'</div></div>';
   html+='<div class="card"><div class="l">Equivalente USD</div><div class="n">'+fmtUSD(D.totUsd)+'</div></div>';
@@ -9308,10 +9648,10 @@ function imprimirCorte(turnoArg, _modo){
   if(D.credUsd>0.009) html+='<div class="card" style="border-color:#f0d58a;background:#fffdf5"><div class="l">A crédito (por cobrar)</div><div class="n" style="color:#b36b00">'+fmtUSD(D.credUsd)+'</div><div class="l">'+fmtBs(D.credBs)+' · '+D.cred.length+' cuenta(s)</div></div>';
   html+='<div class="card"><div class="l">Ocupación ahora</div><div class="n">'+pct+'%</div><div class="l">'+ocup+' ocup. · '+libres+' libres · '+totalHab+' total</div></div></div>';
   // CUADRE contra el arqueo
-  let _arq=0; try{ _arq=(resumenCaja(cajaFecha).totBs)||0; }catch(e){ _arq=0; }
+  let _arq=0; try{ _arq=(_tObj? arqueoTurnoDatos(String(_tObj.id)) : resumenCaja(cajaFecha)).totBs||0; }catch(e){ _arq=0; }
   if(!_tObj){
     const _dif=Math.round((D.totBs-_arq)*100)/100;
-    html+='<div class="aviso" style="'+(Math.abs(_dif)<0.02?'border-color:#bfe6cd;background:#f5fdf8;color:#1d6b38':'')+'">Cuadre con el arqueo del día: <b>'+fmtBs(D.totBs)+'</b> (corte) vs <b>'+fmtBs(_arq)+'</b> (arqueo) · '+(Math.abs(_dif)<0.02?'<span class="ok">CUADRA ✔</span>':('<span class="mal">DIFERENCIA '+fmtBs(_dif)+'</span>'))+'</div>';
+    html+='<div class="aviso" style="'+(Math.abs(_dif)<0.02?'border-color:#bfe6cd;background:#f5fdf8;color:#1d6b38':'')+'">Cuadre con el arqueo '+(_tObj?'del turno':'del día')+': <b>'+fmtBs(D.totBs)+'</b> (corte) vs <b>'+fmtBs(_arq)+'</b> (arqueo) · '+(Math.abs(_dif)<0.02?'<span class="ok">CUADRA ✔</span>':('<span class="mal">DIFERENCIA '+fmtBs(_dif)+'</span>'))+'</div>';
   }
   html+='<div class="cards"><div class="card"><div class="l">Ocupadas</div><div class="n">'+lOcup.length+'</div></div>';
   html+='<div class="card"><div class="l">Libres</div><div class="n">'+lLibre.length+'</div></div>';
@@ -9784,8 +10124,8 @@ function cxcNuevaModal(id){
   }
   b+='<div class="field"><label>¿Quién debe?</label><select id="cxc-tipo"><option value="empresa"'+(d.tipo==='empresa'?' selected':'')+'>🏢 Empresa</option><option value="huesped"'+(d.tipo==='huesped'?' selected':'')+'>🧍 Huésped / persona</option></select></div>';
   b+='<div class="field"><label>Nombre de la empresa o persona</label><input id="cxc-nombre" value="'+escA(d.nombre)+'" placeholder="Ej: Corporación XYZ, C.A."></div>';
-  b+='<div style="display:flex;gap:8px"><div class="field" style="flex:1"><label>RIF / Cédula (opcional)</label><input id="cxc-doc" value="'+escA(d.docRef)+'" placeholder="J-12345678-9"></div>';
-  b+='<div class="field" style="flex:1"><label>Teléfono (opcional)</label><input id="cxc-tel" value="'+escA(d.telefono)+'"></div></div>';
+  b+='<div style="display:flex;gap:8px"><div class="field" style="flex:1"><label>RIF / Cédula (opcional)</label><input id="cxc-doc" class="puedeMinus" value="'+escA(d.docRef)+'" placeholder="J-12345678-9"></div>';
+  b+='<div class="field" style="flex:1"><label>Teléfono (opcional)</label><input id="cxc-tel" class="puedeMinus" value="'+escA(d.telefono)+'"></div></div>';
   b+='<div class="field"><label>Concepto (por qué debe)</label><input id="cxc-concepto" value="'+escA(d.concepto)+'" placeholder="Ej: Hospedaje 3 noches a crédito"></div>';
   b+='<div style="display:flex;gap:8px"><div class="field" style="flex:1"><label>Habitación (opcional)</label><input id="cxc-hab" value="'+escA(String(d.hab||''))+'"></div>';
   b+='<div class="field" style="flex:1"><label>Monto total (USD)</label><input id="cxc-monto" type="number" step="0.01" min="0" value="'+escA(String(d.montoUsd||''))+'"></div></div>';
@@ -9831,12 +10171,12 @@ function cxcGuardar(){
     nombre:nombre,
     docRef:(document.getElementById('cxc-doc').value||'').trim(),
     telefono:(document.getElementById('cxc-tel').value||'').trim(),
-    concepto:(document.getElementById('cxc-concepto').value||'').trim(),
+    concepto:mayusculasYa((document.getElementById('cxc-concepto').value||'').trim()),
     hab:(document.getElementById('cxc-hab').value||'').trim(),
     montoUsd:monto,
     fecha:document.getElementById('cxc-fecha').value||hoyISO(),
     vencimiento:document.getElementById('cxc-venc').value||'',
-    notas:(document.getElementById('cxc-notas').value||'').trim()
+    notas:mayusculasYa((document.getElementById('cxc-notas').value||'').trim())
   };
   const l=cxc();
   if(cxcEdit){ const i=l.findIndex(x=>x.id===cxcEdit); if(i>=0){ l[i]=Object.assign(l[i],datos); } }
@@ -9885,7 +10225,7 @@ function cxcAgregarCargoModal(id){
 }
 function cxcAgregarCargoConfirm(id){
   const l=cxc(); const e=l.find(x=>x.id===id); if(!e) return;
-  const concepto=((document.getElementById('cxc-cg-concepto')||{}).value||'').trim();
+  const concepto=mayusculasYa(((document.getElementById('cxc-cg-concepto')||{}).value||'').trim());
   const monto=Number((document.getElementById('cxc-cg-monto')||{}).value||0);
   if(!(monto>0)){ alert('Escribe el monto a agregar (mayor que 0).'); return; }
   const s=session();
@@ -10291,7 +10631,7 @@ function autoLlenarEmpresaCheckin(){
         let hh='⚠️ Esta empresa no está registrada.';
         hh+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
         hh+='<input id="m-emp-nuevo-nom" placeholder="Nombre de la empresa" value="'+escA(typed)+'" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid #d7deea;border-radius:7px">';
-        hh+='<input id="m-emp-nuevo-rif" placeholder="RIF (obligatorio) ej: J-12345678" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid #d7deea;border-radius:7px">';
+        hh+='<input id="m-emp-nuevo-rif" class="puedeMinus" placeholder="RIF (obligatorio) ej: J-12345678" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid #d7deea;border-radius:7px">';
         hh+='<button type="button" class="btn-primary" style="padding:7px 12px;white-space:nowrap" onclick="agregarEmpresaRapida()">➕ Agregarla</button>';
         hh+='</div>';
         info.innerHTML=hh;
@@ -10390,12 +10730,12 @@ function renderClientes(){
   h += '<div class="field"><label>Tipo</label><select id="cl-tipo" onchange="toggleClienteTipo()"><option value="persona">Persona</option><option value="empresa">Empresa</option></select></div>';
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label id="cl-lbl-nombre">Nombre</label><input id="cl-nombre"></div>';
   h += '<div class="field" style="flex:1;min-width:150px" id="cl-box-apellido"><label>Apellido</label><input id="cl-apellido"></div></div>';
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:170px"><label>Tipo de documento</label><select id="cl-doctipo">'+docTipoOptions('V')+'</select></div>';
-  h += '<div class="field" style="flex:1;min-width:150px"><label>N° de documento</label><input id="cl-docnum" placeholder="ej: 12345678"></div></div>';
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Correo</label><input id="cl-correo" type="email" placeholder="ejemplo@correo.com"></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:170px"><label>Tipo de documento</label><select id="cl-doctipo" class="puedeMinus">'+docTipoOptions('V')+'</select></div>';
+  h += '<div class="field" style="flex:1;min-width:150px"><label>N° de documento</label><input id="cl-docnum" class="puedeMinus" placeholder="ej: 12345678"></div></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Correo</label><input id="cl-correo" class="puedeMinus" type="email" placeholder="ejemplo@correo.com"></div>';
   h += '<div class="field" style="flex:1;min-width:150px"><label id="cl-lbl-ocup">Profesión u oficio</label><input id="cl-ocup"></div></div>';
-  h += '<div class="field"><label>Ciudad de procedencia</label><input id="cl-ciudad" placeholder="¿De dónde viene?"></div>';
-  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Teléfono</label><input id="cl-telefono" placeholder="ej: 0412-1234567"></div>';
+  h += '<div class="field"><label>Ciudad de procedencia</label><input id="cl-ciudad" list="cl-ciudad-list" style="text-transform:uppercase" placeholder="¿De dónde viene?"><datalist id="cl-ciudad-list">'+listaCiudadesUsadas().map(function(ci){ return '<option value="'+escA(ci)+'">'; }).join('')+'</datalist></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Teléfono</label><input id="cl-telefono" class="puedeMinus" placeholder="ej: 0412-1234567"></div>';
   h += '<div class="field" style="flex:1;min-width:120px" id="cl-box-edad"><label>Edad</label><input id="cl-edad" type="number" min="0" max="120" placeholder="ej: 35"></div>';
   h += '<div class="field" style="flex:1;min-width:120px" id="cl-box-estadocivil"><label>Estado civil</label><select id="cl-estadocivil">'+estadoCivilOptions('')+'</select></div></div>';
   h += '<div class="field"><label>Destino <span style="color:#8893a5;font-weight:400;font-size:12px">(¿hacia dónde va?)</span></label><input id="cl-destino" placeholder="ej: Caracas / Maracaibo"></div>';
@@ -10606,19 +10946,31 @@ function procesarImportClientes(text){
   saveClientes(list); render();
   alert('Importación terminada.\n\nAgregados: '+addP+' persona(s) y '+addE+' empresa(s).'+(skip?('\nOmitidos por estar repetidos: '+skip+'.'):'')+'\n\nYa quedaron guardados y sincronizados.');
 }
+/* [CIUDAD-MAYUS] Deja la ciudad siempre en mayuscula, sin espacios de sobra.
+   Asi "valencia", "Valencia" y "VALENCIA" se guardan igual y no se
+   duplican en la lista de "De donde nos visitan". */
+function listaCiudadesUsadas(){
+  /* Ciudades ya guardadas, en mayuscula y sin repetir, para sugerirlas al escribir. */
+  const set={};
+  try{ clientes().forEach(function(c){ const v=ciudadMayus(c&&c.ciudad); if(v) set[v]=1; }); }catch(e){}
+  return Object.keys(set).sort(function(a,b){ return a.localeCompare(b); });
+}
+function ciudadMayus(v){
+  return String(v==null?'':v).replace(/\s+/g,' ').trim().toUpperCase();
+}
 function guardarCliente(){
   const tipo=document.getElementById('cl-tipo').value;
-  const nombre=document.getElementById('cl-nombre').value.trim();
-  const apellido=document.getElementById('cl-apellido').value.trim();
+  const nombre=mayusculasYa(document.getElementById('cl-nombre').value.trim());
+  const apellido=mayusculasYa(document.getElementById('cl-apellido').value.trim());
   const docTipo=document.getElementById('cl-doctipo').value;
   const docNum=document.getElementById('cl-docnum').value.trim();
   const correo=document.getElementById('cl-correo').value.trim();
-  const ocupacion=document.getElementById('cl-ocup').value.trim();
-  const ciudad=document.getElementById('cl-ciudad').value.trim();
+  const ocupacion=mayusculasYa(document.getElementById('cl-ocup').value.trim());
+  const ciudad=ciudadMayus(document.getElementById('cl-ciudad').value);
   const telefono=document.getElementById('cl-telefono').value.trim();
-  const direccion=document.getElementById('cl-direccion').value.trim();
-  const estadoCivilEl=document.getElementById('cl-estadocivil'); const estadoCivil=estadoCivilEl?estadoCivilEl.value.trim():'';
-  const destinoEl=document.getElementById('cl-destino'); const destino=destinoEl?destinoEl.value.trim():'';
+  const direccion=mayusculasYa(document.getElementById('cl-direccion').value.trim());
+  const estadoCivilEl=document.getElementById('cl-estadocivil'); const estadoCivil=estadoCivilEl?mayusculasYa(estadoCivilEl.value.trim()):'';
+  const destinoEl=document.getElementById('cl-destino'); const destino=destinoEl?mayusculasYa(destinoEl.value.trim()):'';
   if(!nombre){ alert(tipo==='empresa'?'Escribe el nombre de la empresa':'Escribe el nombre'); return; }
   if(correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ alert('El correo no parece válido'); return; }
   const list=clientes();
@@ -10628,13 +10980,13 @@ function guardarCliente(){
   const nuevo={id:nuevoId, tipo:tipo, nombre:nombre, apellido:apellido, docTipo:docTipo, docNum:docNum, correo:correo, ocupacion:ocupacion, ciudad:ciudad, telefono:telefono, direccion:direccion, notas:'', historial:[], creado:new Date().toISOString()};
   if(tipo==='empresa'){
     nuevo.codigo=nuevoCodigoEmpresa();
-    nuevo.tipoComp=(document.getElementById('cl-tipocomp')?document.getElementById('cl-tipocomp').value.trim():'');
+    nuevo.tipoComp=(document.getElementById('cl-tipocomp')?mayusculasYa(document.getElementById('cl-tipocomp').value.trim()):'');
     nuevo.diasCredito=(document.getElementById('cl-diascredito')?document.getElementById('cl-diascredito').value.trim():'');
   } else {
     nuevo.edad=(document.getElementById('cl-edad')?document.getElementById('cl-edad').value.trim():'');
     nuevo.estadoCivil=estadoCivil;
     nuevo.destino=destino;
-    nuevo.empresaRef=(document.getElementById('cl-empresaref')?document.getElementById('cl-empresaref').value.trim():'');
+    nuevo.empresaRef=(document.getElementById('cl-empresaref')?mayusculasYa(document.getElementById('cl-empresaref').value.trim()):'');
   }
   list.push(nuevo);
   saveClientes(list);
@@ -10649,12 +11001,12 @@ function editClienteModal(id){
   body+='<div class="field"><label>Tipo</label><select id="ec-tipo"><option value="persona"'+(c.tipo!=='empresa'?' selected':'')+'>Persona</option><option value="empresa"'+(c.tipo==='empresa'?' selected':'')+'>Empresa</option></select></div>';
   body+='<div class="field"><label>Nombre / Empresa</label><input id="ec-nombre" value="'+escA(c.nombre)+'"></div>';
   body+='<div class="field"><label>Apellido</label><input id="ec-apellido" value="'+escA(c.apellido||'')+'"></div>';
-  body+='<div class="field"><label>Tipo de documento</label><select id="ec-doctipo">'+docTipoOptions(c.docTipo)+'</select></div>';
-  body+='<div class="field"><label>N° de documento</label><input id="ec-docnum" value="'+escA(c.docNum||'')+'"></div>';
-  body+='<div class="field"><label>Correo</label><input id="ec-correo" value="'+escA(c.correo||'')+'"></div>';
+  body+='<div class="field"><label>Tipo de documento</label><select id="ec-doctipo" class="puedeMinus">'+docTipoOptions(c.docTipo)+'</select></div>';
+  body+='<div class="field"><label>N° de documento</label><input id="ec-docnum" class="puedeMinus" value="'+escA(c.docNum||'')+'"></div>';
+  body+='<div class="field"><label>Correo</label><input id="ec-correo" class="puedeMinus" value="'+escA(c.correo||'')+'"></div>';
   body+='<div class="field"><label>Profesión u oficio / Actividad</label><input id="ec-ocup" value="'+escA(c.ocupacion||'')+'"></div>';
-  body+='<div class="field"><label>Ciudad de procedencia</label><input id="ec-ciudad" value="'+escA(c.ciudad||'')+'"></div>';
-  body+='<div class="field"><label>Teléfono</label><input id="ec-telefono" value="'+escA(c.telefono||'')+'"></div>';
+  body+='<div class="field"><label>Ciudad de procedencia</label><input id="ec-ciudad" list="ec-ciudad-list" style="text-transform:uppercase" value="'+escA(c.ciudad||'')+'"><datalist id="ec-ciudad-list">'+listaCiudadesUsadas().map(function(ci){ return '<option value="'+escA(ci)+'">'; }).join('')+'</datalist></div>';
+  body+='<div class="field"><label>Teléfono</label><input id="ec-telefono" class="puedeMinus" value="'+escA(c.telefono||'')+'"></div>';
   body+='<div class="field"><label>Dirección</label><input id="ec-direccion" value="'+escA(c.direccion||'')+'"></div>';
   if(c.tipo==='empresa'){
     body+='<div class="field"><label>Código de la empresa</label><input id="ec-codigo" value="'+escA(c.codigo||'')+'"></div>';
@@ -10673,7 +11025,7 @@ function editClienteModal(id){
 }
 function guardarEdicionCliente(id){
   const list=clientes(); const i=list.findIndex(x=>x.id===id); if(i<0) return;
-  const nombre=document.getElementById('ec-nombre').value.trim();
+  const nombre=mayusculasYa(document.getElementById('ec-nombre').value.trim());
   if(!nombre){ alert('El nombre no puede quedar vacío'); return; }
   const correo=document.getElementById('ec-correo').value.trim();
   if(correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ alert('El correo no parece válido'); return; }
@@ -10684,16 +11036,17 @@ function guardarEdicionCliente(id){
   if(_edDup){ alert(_edDup); return; }
   list[i]=Object.assign(list[i],{
     tipo:document.getElementById('ec-tipo').value,
-    nombre:nombre, apellido:document.getElementById('ec-apellido').value.trim(),
+    nombre:nombre, apellido:mayusculasYa(document.getElementById('ec-apellido').value.trim()),
     docTipo:document.getElementById('ec-doctipo').value,
     docNum:document.getElementById('ec-docnum').value.trim(),
-    correo:correo, ocupacion:document.getElementById('ec-ocup').value.trim(),
-    ciudad:document.getElementById('ec-ciudad').value.trim(),
-    notas:(document.getElementById('ec-notas')?document.getElementById('ec-notas').value:(list[i].notas||''))
+    correo:correo, ocupacion:mayusculasYa(document.getElementById('ec-ocup').value.trim()),
+    ciudad:ciudadMayus(document.getElementById('ec-ciudad').value),
+    notas:mayusculasYa(document.getElementById('ec-notas')?document.getElementById('ec-notas').value:(list[i].notas||''))
   });
   const _v=function(id){ const e=document.getElementById(id); return e?e.value.trim():null; };
   const _campos={telefono:'ec-telefono',direccion:'ec-direccion',codigo:'ec-codigo',tipoComp:'ec-tipocomp',diasCredito:'ec-diascredito',edad:'ec-edad',empresaRef:'ec-empresaref',estadoCivil:'ec-estadocivil',destino:'ec-destino',pais:'ec-pais'};
-  Object.keys(_campos).forEach(function(k){ const val=_v(_campos[k]); if(val!==null) list[i][k]=val; });
+  const _enMayus={direccion:1,codigo:1,tipoComp:1,empresaRef:1,estadoCivil:1,destino:1,pais:1};
+  Object.keys(_campos).forEach(function(k){ const val=_v(_campos[k]); if(val!==null) list[i][k]=(_enMayus[k]?mayusculasYa(val):val); });
   saveClientes(list); cerrarModal(); render();
 }
 function deleteCliente(id){
@@ -11966,11 +12319,11 @@ function renderIdentidad(){
   html+='<div class="section-title" style="font-size:15px;margin-top:0">Datos del hotel</div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-6px 0 12px;line-height:1.6">Aquí van los <b>datos del hotel</b> (nombre, RIF, dirección), los <b>mensajes al huésped</b> y las <b>formas de pago</b>. El <b>logo, los colores y quién autoriza</b> están en la pestaña <b>🏨 Marca del Hotel</b>.</p>';
   html+='<div class="field"><label>Nombre del hotel</label><input id="h-nombre" value="'+escA(h.nombre)+'" placeholder="ej: Hotel Las Palmas"></div>';
-  html+='<div class="field"><label>RIF</label><input id="h-rif" value="'+escA(h.rif)+'" placeholder="ej: J-12345678-9"></div>';
+  html+='<div class="field"><label>RIF</label><input id="h-rif" class="puedeMinus" value="'+escA(h.rif)+'" placeholder="ej: J-12345678-9"></div>';
   html+='<div class="field"><label>Dirección</label><input id="h-dir" value="'+escA(h.direccion)+'" placeholder="Av. principal, ciudad, estado"></div>';
   html+='<div class="field"><label>Eslogan</label><input id="h-eslogan" value="'+escA(h.eslogan)+'" placeholder="Frase corta del hotel"></div>';
   html+='<div class="field"><label>WhatsApp del hotel</label><input id="h-whatsapp" value="'+escA(h.whatsapp||'')+'" placeholder="ej: 0412-1234567"></div>';
-  html+='<div class="field"><label>Correo del hotel</label><input id="h-correo" value="'+escA(h.correo||'')+'" placeholder="recepcion@tuhotel.com"></div>';
+  html+='<div class="field"><label>Correo del hotel</label><input id="h-correo" class="puedeMinus" value="'+escA(h.correo||'')+'" placeholder="recepcion@tuhotel.com"></div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px">Estos dos datos se añaden al final de los mensajes de WhatsApp y correo que le envías al huésped, para que sepa cómo responderte. <b>No</b> es el número desde el que se envía: eso depende del WhatsApp abierto en este equipo (ver abajo).</p>';
   html+='<div class="section-title" style="font-size:15px;margin-top:18px">Mensajes al huésped</div>';
   html+='<div class="field"><label>Mensaje de bienvenida (al hacer check-in)</label><textarea id="h-tpl-bienvenida" oninput="hotelTplCambio()" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(_hotelTplDraft.bienvenida!==undefined?_hotelTplDraft.bienvenida:(h.plantillaBienvenida||plantillaBienvenidaDefault()))+'</textarea></div>';
@@ -12467,6 +12820,13 @@ function guiaDueno(){
   P('Entras con tu usuario y contraseña.');
   P('Tu rol solo <b>mira los números</b>: ingresos del día y del mes, ocupación y movimientos. No cobra ni cambia nada.');
   P('Los gráficos sirven para ver cómo va el hotel de un vistazo.');
+  FIN();
+  H('📍 De dónde nos visitan');
+  P('Es la lista de <b>ciudades</b> de donde vienen los huéspedes que entraron al hotel.');
+  P('Arriba tocas <b>Hoy</b>, <b>Esta semana</b> o <b>Este mes</b> y la lista cambia al momento.');
+  P('Cada huésped se cuenta <b>una sola vez</b>, aunque se quede varias noches. El número de la derecha son personas, no habitaciones.');
+  P('Sale el aviso <b>“X no tiene la ciudad anotada”</b> cuando recepción no la puso en la ficha. Para que la lista salga completa, que la anoten en <b>Huésped → Procedencia</b> al hacer el check-in.');
+  P('Con el botón 🖨️ <b>Imprimir / PDF</b> sale la misma lista en papel, con el período que tengas elegido.');
   FIN();
   H('¿Y si necesito hacer algo más?');
   P('Para operar (cobrar, reservar, configurar) se entra con el usuario <b>Master</b> o con el rol que corresponda.');
@@ -13485,7 +13845,7 @@ function epRecalc(){
 function confirmarEditarPago(id, btn){
   if(procesoDoble(btn)) return;
   if(!(session().rol==='admin'||puedeSup('anularPagos'))){ procesoListo(btn); alert('No tienes permiso para corregir cobros.'); return; }
-  var motivo=((document.getElementById('ep-motivo')||{}).value||'').trim();
+  var motivo=mayusculasYa(((document.getElementById('ep-motivo')||{}).value||'').trim());
   if(!motivo){ procesoListo(btn); alert('Escribe el motivo de la correcci\u00f3n.'); return; }
   epLeerDom();
   var lines=EP_STATE.lines.filter(function(l){ return l.metodo; });
