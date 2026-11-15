@@ -271,7 +271,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.23 · 15/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.25 · 15/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -308,7 +308,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.23 · 15/11/2026';
+const APP_VERSION = 'v1.25 · 15/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -2176,10 +2176,17 @@ function abonoCuentaUsd(a, r){
   if(!a) return 0;
   var m=Number(a.montoUsd||0); if(!(m>0)) return 0;
   if(a.soloConsumo) return 0;
+  /* [CONTROL-1] El control que manda es UNO solo para toda la cuenta: el numero mas alto
+     del grupo (la principal). Antes, si la secundaria no dejaba su control, se tomaba el
+     control propio del cuarto y un abono legitimo del grupo se descartaba. */
   var cc=parseInt(r&&r.control||0)||0; var ac=parseInt(a.control||0)||0;
-  /* [CXC-UNIDA] Si la cuenta esta unida y el cuarto es la SECUNDARIA, su control ya no
-     manda: el que manda es el control del grupo (el de la principal). Se toma ese. */
-  try{ if(!(a.cuentaUnida) && cuentaDeHab(r)!=='yo' && r.cuentaCon){ var d0=findRoom(r.cuentaCon); if(d0 && d0.estado==='ocupada'){ var cg0=parseInt(controlDeGrupoCuenta(nombresDelGrupo(d0))||0)||0; if(cg0) cc=cg0; } } }catch(e){}
+  var _baseC=(cuentaDeHab(r)!=='yo' && r.cuentaCon)?findRoomAny(r.cuentaCon):findRoom(r&&r.num);
+  try{ if(_baseC && _baseC.estado==='ocupada'){ var cg0=parseInt(controlDeGrupoCuenta(nombresDelGrupo(_baseC))||0)||0; if(cg0) cc=cg0; } }catch(e){}
+  /* [ADELANTO-UNIDA] Si el abono se cobro ANTES de unir las cuentas, trae el control de SU
+     cuarto, no el del grupo. Antes se descartaba y la cuenta seguia diciendo 'debe todo'
+     aunque el adelanto estuviera pagado. Ahora ese abono tambien cuenta; solo se descarta
+     un control de OTRA cuenta que no tenga nada que ver con este grupo. */
+  if(a.controlOtroGrupo) return 0;
   if(cc && ac && ac!==cc){
     /* [VER-SECUNDARIA] En una cuenta unida el control que manda es el del GRUPO:
        el abono se apunta en el cuarto que cobra pero puede llevar el control de la
@@ -2196,6 +2203,23 @@ function abonoCuentaUsd(a, r){
       /* [ABONO-CONTROL-GRUPO] Si este cuarto paga (secundaria), el control que manda es el
          del GRUPO: el de la principal. Antes se buscaba con findRoom() y con numeros en
          texto devolvia null: el abono se descartaba y la cuenta parecia seguir debiendo. */
+      /* [ADELANTO-UNIDA] El abono pudo cobrarse en SU cuarto ANTES de unir la cuenta: ese
+         control es suyo y sigue valiendo (si no, el adelanto ya pagado desaparecia). */
+      if(!ok && a.hab!=null && String(a.hab)!==''){
+        var _hr=findRoomAny(a.hab);
+        if(_hr && parseInt(_hr.control||0)===ac) ok=true;
+        else {
+          var _grp=(cuentaDeHab(r)!=='yo' && r.cuentaCon)?r.cuentaCon:r.num;
+          var _lgrp=[]; try{ _lgrp=nombresDelGrupo(findRoomAny(_grp)||r); }catch(e){ _lgrp=[]; }
+          var _mio=false;
+          for(var _i=0;_i<_lgrp.length;_i++){ if(parseInt(_lgrp[_i].control||0)===ac){ _mio=true; break; } }
+          /* [ADELANTO-UNIDA] Al unir, el adelanto se pasa al control del grupo y el suyo
+             queda guardado como controlOriginal: ese tambien vale. Si el control era de
+             otra cuenta, queda marcado y NO se descuenta. */
+          if(!_mio && a.controlOriginal!=null && parseInt(a.controlOriginal||0)===ac && !a.controlOtroGrupo) _mio=true;
+          if(_mio) ok=true;
+        }
+      }
       var due=(cuentaDeHab(r)!=='yo' && r.cuentaCon)?findRoomAny(r.cuentaCon):findRoomAny(r.num);
       if(!ok && due && due.estado==='ocupada'){
         if(parseInt(due.control||0)===ac) ok=true;
@@ -2210,7 +2234,15 @@ function abonoCuentaUsd(a, r){
      de una cuenta unida, un abono sin control solo cuenta en el cuarto donde esta guardado. */
   try{
     if(!ac && cc && r && cuartosQuePaganA(r).length>1){
-      if(a.hab==null || String(a.hab)==='' || Number(a.hab)!==Number(r.num)) return 0;
+      /* [ADELANTO-PRINCIPAL] Si el cuarto DONDE se cobro el adelanto es la cuenta que manda
+         (y ese abono no trae control), el dinero es de esta cuenta: cuenta igual. Antes se
+         descartaba y la principal decia que debia todo aunque estuviera pagada. */
+      var _donde=(a.hab!=null && String(a.hab)!=='')?Number(a.hab):Number(r.num);
+      if(_donde!==Number(r.num)){
+        var _rz=findRoomAny(_donde);
+        var _manda=(_rz && cuentaDeHab(_rz)==='yo');
+        if(!_manda) return 0;
+      }
     }
   }catch(e){}
   var txt=String(a.concepto||'');
@@ -4539,7 +4571,20 @@ function datosCuentaHab(r){
   });
   if(_listaG && _listaG.length>1){ try{ var _dgg=detalleCuentaHab(r); if(_dgg){ hospT=Number(_dgg.hosp||0)+Number(_dgg.cons||0); consT=Number(_dgg.cons||0); habT=Number(_dgg.abo||0); } }catch(e){} }
   const compartidos=cgs.filter(x=>!x.pagado && Number(x.hab||0)!==Number(r.num));
-  return { raiz:r, list:lista, porHab:porHab, cargos:cgs, compartidos:compartidos, tot:hospT+consT, abo:habT, saldo:Math.max(0,hospT+consT-habT), nochesTot:porHab.reduce((a,x)=>a+x.noches,0) };
+  /* [CUENTA-MANDA] La cuenta es UNA: el total, el adelanto y el saldo salen SIEMPRE del
+     detalle completo (el mismo que usa Cobrar y el corte). Asi la ficha de la que manda y
+     la de la que se le une dicen exactamente lo mismo, con consumos o sin ellos. */
+  var _totF=hospT+consT, _aboF=habT, _hospF=hospT, _consF=consT;
+  try{
+    if(lista.length>1){
+      var _df=detalleCuentaHab(r);
+      if(_df){
+        _hospF=Number(_df.hosp||0); _consF=Number(_df.cons||0); _aboF=Number(_df.abo||0);
+        _totF=_hospF+_consF;
+      }
+    }
+  }catch(e){}
+  return { raiz:r, list:lista, porHab:porHab, cargos:cgs, compartidos:compartidos, tot:_totF, abo:_aboF, hosp:_hospF, cons:_consF, saldo:Math.max(0,_totF-_aboF), nochesTot:porHab.reduce((a,x)=>a+x.noches,0) };
 }
 function saldoCuentaHab(r){ const d=datosCuentaHab(r); return d?d.saldo:0; }
 
@@ -7793,6 +7838,15 @@ function cobrarMatchRooms(q){
 }
 function saldoGrupo(list){
   let gCost=0,gAb=0;
+  /* [SALDO-UNO] Una cuenta unida es UNA sola cuenta: el saldo es el del grupo, contado una
+     vez. Antes se sumaba el saldo de cada cuarto y se podia repetir o perder el adelanto. */
+  try{
+    if(list && list.length){
+      var _raiz=list.filter(function(x){ return cuentaDeHab(x)==='yo'; })[0]||list[0];
+      var _D=datosCuentaHab(_raiz);
+      if(_D && _D.list && _D.list.length>1) return Math.max(0,Number(_D.saldo||0));
+    }
+  }catch(e){}
   list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
     try{ const D=detalleCuentaHab(r); cons=D.cons; ab=D.abo; }catch(e){}
     /* [CORTESIA-CERO] cortesia: no se cobra nada (ni hospedaje ni consumos) */
@@ -7837,6 +7891,16 @@ function cobrarPintar(){
     /* [CUADRE] se toma el total ya calculado de la cuenta (hospedaje - promo + consumos)
        para que el numero de Cobrar sea el mismo del mapa y del recibo. */
     try{ const _D=detalleMapaHab(first); gCost=Number(_D.tot||0); gAb=Number(_D.abo||0); }catch(e){ gCost=0; gAb=0; }
+    /* [COBRAR-UNIDA] Si la cuenta esta unida, Cobrar toma el MISMO paquete de la cuenta
+       completa (total, adelanto y saldo), se entre por la principal o por la secundaria. */
+    try{
+      var _uniP=(cuentaDeHab(first)!=='yo' || cuartosQueCarganA(first).length>0 || cuartosQuePaganA(first).length>1);
+      if(_uniP){
+        var _raizP=list.filter(function(x){ return cuentaDeHab(x)==='yo'; })[0]||first;
+        var _pkP=datosCobroCuentaHab(_raizP)||cobroGrupoDatos(numsStr);
+        if(_pkP && _pkP.tot>0.009){ gCost=Number(_pkP.tot||0); gAb=Number(_pkP.abo||0); }
+      }
+    }catch(e){}
     if(!(gCost>0) && !(gAb>0)){
       list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
         try{ const D=detalleCuentaHab(r); cons=D.cons; ab=D.abo; }catch(e){}
@@ -11174,7 +11238,7 @@ function duracionTurno(t){
   let min=Math.round((fin-ini)/60000); const h=Math.floor(min/60); min=min%60;
   return (h>0?h+'h ':'')+min+'min';
 }
-const KTIPO = { checkin:{t:'Check-in',c:'var(--verde)'}, checkout:{t:'Check-out',c:'var(--rojo)'}, pago:{t:'Cobro',c:'var(--azul2)'}, anulacion:{t:'Cobro ANULADO',c:'var(--rojo)'}, cliente:{t:'Cliente nuevo',c:'var(--gris)'}, cargo:{t:'Consumo',c:'var(--naranja)'}, limpieza:{t:'Limpieza',c:'var(--azul2)'}, cambio:{t:'Cambio de hab.',c:'var(--gris)'}, credito:{t:'A crédito (por cobrar)',c:'#b36b00'}, autorizada:{t:'👑 Autorizada',c:'#7c3aed'}, comidainc:{t:'🍳 Comidas incluidas',c:'#0d7a5f'}, listamanual:{t:'Habitación lista a mano',c:'var(--azul2)'}, espera:{t:'Lista de espera',c:'var(--gris)'}, correccion:{t:'Corrección',c:'var(--naranja)'}, acompanante:{t:'Acompañante agregado',c:'var(--gris)'} };
+const KTIPO = { checkin:{t:'Check-in',c:'var(--verde)'}, checkout:{t:'Check-out',c:'var(--rojo)'}, pago:{t:'Cobro',c:'var(--azul2)'}, anulacion:{t:'Cobro ANULADO',c:'var(--rojo)'}, cliente:{t:'Cliente nuevo',c:'var(--gris)'}, cargo:{t:'Consumo',c:'var(--naranja)'}, limpieza:{t:'Limpieza',c:'var(--azul2)'}, cambio:{t:'Cambio de hab.',c:'var(--gris)'}, credito:{t:'A crédito (por cobrar)',c:'#b36b00'}, autorizada:{t:'👑 Autorizada',c:'#7c3aed'}, comidainc:{t:'🍳 Comidas incluidas',c:'#0d7a5f'}, listamanual:{t:'Habitación lista a mano',c:'var(--azul2)'}, espera:{t:'Lista de espera',c:'var(--gris)'}, correccion:{t:'Corrección',c:'var(--naranja)'}, acompanante:{t:'Acompañante agregado',c:'var(--gris)'}, cuenta:{t:'🔗 Cuenta unida',c:'#7c3aed'} };
 function renderKardex(){
   let h='';
   const act = turnoActivo();
@@ -12618,8 +12682,32 @@ function asegurarControlHab(r){
   }catch(e){ return 0; }
 }
 function controlDeGrupoCuenta(list){
+  /* [CTRL-GRUPO] El control de la cuenta unida es el de LA HABITACION QUE MANDA
+     (la que no fue marcada como movida al unir). Antes se tomaba el control MAS
+     ALTO del grupo: en el caso real 219 manda con 5200 y la 204 trae 5201, entonces
+     el grupo quedaba con 5201 y el adelanto de $72 (control 5200) se "desconocia":
+     la ficha decia que no habia adelanto y el corte pedia los $160 completos. */
+  var l=(list||[]); if(!l.length) return 0;
+  var manda=null;
+  for(var i=0;i<l.length;i++){
+    var q=l[i]; if(!q) continue;
+    var esMovida=!!(Number(q.controlMovidoA||0)>0);
+    if(Number(q.cuentaCon||0)>0) continue;                 /* esta carga a otra: no manda */
+    if(esMovida) continue;                                  /* su control ya se movio al grupo */
+    manda=q; break;
+  }
+  if(!manda){
+    /* todos cargan a alguien (o falta el dato): se usa la raiz a la que apuntan */
+    for(var j=0;j<l.length;j++){
+      var z=l[j]; if(!z) continue;
+      var raiz=Number(z.cuentaCon||0);
+      if(raiz){ for(var k=0;k<l.length;k++){ if(l[k] && Number(l[k].num)===raiz){ manda=l[k]; break; } } }
+      if(manda) break;
+    }
+  }
+  if(manda){ var c0=controlDeHab(manda); if(c0>0) return c0; }
   var c=0;
-  (list||[]).forEach(function(r){ var n=controlDeHab(r); if(n>c) c=n; });
+  l.forEach(function(r){ var n=controlDeHab(r); if(n>c) c=n; });
   return c;
 }
 /* Puede mandar deuda a CXC: Recepcion, Supervisor y Master. */
@@ -12877,20 +12965,62 @@ function unirCuentasV2(numOrigen, numOtra, modo){
   if(modo==='compartida'){
     updateRoomAny(principal.num, Object.assign({cuentaCon:Number(otra.num), cuentaModo:'compartida'}, sello));
   } else {
-    var propios=[];
-    try{ propios=cargosPropios(otra).filter(function(c){ return !c.pagado; }); }catch(e){}
-    if(propios.length){
-      return {ok:false, msg:'La Hab. '+otra.num+' tiene consumos propios pendientes ('+fmtUSD(propios.reduce(function(x,c){ return x+Number(c.montoUsd||0); },0))+').\n\nUnela al reves (que la '+otra.num+' sea la principal) o cobra esos consumos antes. Asi no se cobra dos veces.'};
-    }
+    /* [UNIR-CON-CONSUMOS] Antes, si la otra habitacion tenia un consumo pendiente, la union
+       se negaba (y la pantalla no avisaba nada). Ahora si se puede: el consumo se cobra
+       dentro de la misma cuenta unida, sin duplicarse, y el corte lo cuenta una sola vez. */
+    var propios=[], _consProp=0;
+    try{ propios=cargosPropios(otra).filter(function(c){ return !c.pagado; }); _consProp=propios.reduce(function(x,c){ return x+Number(c.montoUsd||0); },0); }catch(e){ propios=[]; _consProp=0; }
     updateRoomAny(otra.num, Object.assign({cuentaCon:Number(principal.num), cuentaModo:'paga'}, sello));
   }
   /* Referencias frescas despues de grabar */
   principal=findRoomAny(numOrigen)||principal; otra=findRoomAny(numOtra)||otra;
   /* Numero de control: la que manda conserva el suyo; la otra queda anotada */
   var ctrlP=0, ctrlO=0, saldoO=0;
-  try{ ctrlP=asegurarControlHab(principal); }catch(e){ ctrlP=0; }
+  /* [CTRL-UNA-VEZ] El N° de control de la habitacion que manda se toma TAL COMO YA ESTA.
+     Antes se volvia a pedir con asegurarControlHab y la 219 podia terminar con OTRO
+     numero (el 5200 pasaba a 5201): con eso el adelanto de $72 dejaba de reconocerse
+     y la cuenta volvia a pedir los $160. Ahora no se inventa ni se cambia ninguno.
+     Solo si de verdad no tenia control, se le asigna uno nuevo. */
+  try{ ctrlP=parseInt(controlDeHab(principal)||0)||0; }catch(e){ ctrlP=0; }
+  if(!ctrlP){ try{ ctrlP=asegurarControlHab(principal); }catch(e){ ctrlP=0; } }
   try{ ctrlO=controlDeHab(otra); }catch(e){ ctrlO=0; }
   try{ saldoO=_saldoPropioHab(otra); }catch(e){ saldoO=0; }
+  /* [CONSUMOS-AL-GRUPO] Lo que la otra habitacion tenia anotado (consumos, y sus abonos)
+     se pasa a la cuenta DE LA QUE MANDA, con su origen marcado (habOriginal) para que
+     se vea de donde vino y se cobre UNA sola vez. Antes esos consumos quedaban
+     "colgados" en el cuarto que pasaba a pagar y no aparecian en el total. */
+  try{
+    var _rO=findRoomAny(otra.num);
+    var _rP=findRoomAny(principal.num);
+    if(_rO && _rP){
+      var _mov=[];
+      (_rO.cargos||[]).forEach(function(cg){
+        if(!cg) return;
+        if(Number(cg.dueno||0)===Number(_rO.num)) return;      /* ya es de otra cuenta */
+        _mov.push(Object.assign({},cg,{
+          id:(String(cg.id||('c'+Date.now())).split('_')[0])+'_'+_rO.num,
+          hab:Number(_rP.num),
+          habOriginal:Number(cg.habOriginal||_rO.num),
+          movidoDe:Number(_rO.num),
+          movidoA:Number(_rP.num),
+          movidoFecha:new Date().toISOString(),
+          dueno:Number(_rP.num)
+        }));
+      });
+      if(_mov.length){
+        var _pC=Array.isArray(_rP.cargos)?_rP.cargos.slice():[];
+        var _ya={}; _pC.forEach(function(c){ if(c&&c.id) _ya[String(c.id)]=1; });
+        var _nuevos=0;
+        _mov.forEach(function(c){ if(!_ya[String(c.id)]){ _pC.push(c); _ya[String(c.id)]=1; _nuevos++; } });
+        if(_nuevos){
+          updateRoomAny(_rP.num,{cargos:_pC});
+          updateRoomAny(_rO.num,{cargos:[]});
+          try{ logKardex('cuenta',{hab:_rP.num, huesped:_rP.huesped||'', clienteId:_rP.clienteId||'', detalle:'🔗 Se pasaron '+_nuevos+' consumo(s) de la Hab. '+_rO.num+' a la cuenta de la Hab. '+_rP.num+' ('+fmtUSD(_mov.reduce(function(a,c){ return a+Number(c.montoUsd||0); },0))+') al unir las cuentas · por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+        }
+      }
+    }
+  }catch(e){}
+  try{ principal=findRoomAny(numOrigen)||principal; otra=findRoomAny(numOtra)||otra; }catch(e){}
   if(ctrlO){ try{ updateRoomAny(otra.num,{controlMovido:ctrlO, controlMovidoA:Number(principal.num), controlMovidoFecha:new Date().toISOString(), controlMovidoPor:por}); }catch(e){} }
   /* [ABONO-CONTROL-GRUPO] Los abonos que ya estaban anotados en el cuarto que pasa a pagar
      se marcan con el control del GRUPO (el de la principal). Antes conservaban el suyo y la
@@ -12902,10 +13032,16 @@ function unirCuentasV2(numOrigen, numOtra, modo){
       var _fres=findRoomAny(otra.num);
       if(_fres && Array.isArray(_fres.abonos) && _fres.abonos.length){
         var _cambios=0;
+        /* [ADELANTO-UNIDA] Si el control del abono NO era de ninguno de los dos cuartos que
+           se unen (nadie lo reconoce en este grupo), queda marcado como de otra cuenta:
+           asi se ve el dinero, pero NO se descuenta del saldo (no se inventa un pago). */
+        var _ctrlsGrupo={};
+        try{ [principal,otra].forEach(function(q){ var _c=parseInt(q&&q.control||0)||0; if(_c) _ctrlsGrupo[_c]=1; }); }catch(e){}
         _fres.abonos=_fres.abonos.map(function(x){
           if(!x) return x;
           var _ac0=parseInt(x.control||0)||0;
-          if(_ac0 && _ac0!==_sello&& !(x.controlOriginal)){ _cambios++; return Object.assign({},x,{control:_sello, controlOriginal:_ac0, controlGrupoFecha:new Date().toISOString()}); }
+          var _otroG=!!(_ac0 && _ac0!==_sello && !_ctrlsGrupo[_ac0]);
+          if(_ac0 && _ac0!==_sello&& !(x.controlOriginal)){ _cambios++; return Object.assign({},x,{control:_sello, controlOriginal:_ac0, controlGrupoFecha:new Date().toISOString(), controlOtroGrupo:(_otroG?true:undefined)}); }
           return x;
         });
         if(_cambios){ updateRoomAny(otra.num,{abonos:_fres.abonos}); }
@@ -12914,8 +13050,13 @@ function unirCuentasV2(numOrigen, numOtra, modo){
   }catch(e){}
   try{ principal=findRoomAny(numOrigen)||principal; otra=findRoomAny(numOtra)||otra; }catch(e){}
   var txtCxc=''; try{ txtCxc=_cxcMoverA(otra, principal, por); }catch(e){ txtCxc=''; }
-  try{ logKardex('cuenta',{hab:principal.num, huesped:principal.huesped||'', clienteId:principal.clienteId||'', detalle:'🔗 Cuenta unida: Hab. '+principal.num+' manda con Control N° '+fmtControl(ctrlP)+' · Hab. '+otra.num+' conserva su Control N° '+fmtControl(ctrlO)+' pero su saldo pasa a la principal ('+fmtUSD(saldoO)+')'+(txtCxc?(' · '+txtCxc):'')+' · por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
-  try{ logKardex('cuenta',{hab:otra.num, huesped:otra.huesped||'', clienteId:otra.clienteId||'', detalle:'🔗 Cuenta unida a la Hab. '+principal.num+' · su Control N° '+fmtControl(ctrlO)+' queda anotado como movido (la cuenta se cobra en la '+principal.num+') · por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  /* [KARDEX-UNION] Queda anotado en el kardex Y en el corte del turno, en las DOS habitaciones:
+     "la Hab. 204 se unió a la cuenta de la Hab. 219". Monto $0: no entra en el cuadre de caja. */
+  var _kHab=(modo==='compartida')?(principal.num+' y '+otra.num):(otra.num+' y '+principal.num);
+  var _kModo=(modo==='compartida')
+    ? ('cada una paga su hospedaje y los consumos de la '+principal.num+' entran a la cuenta de la '+otra.num)
+    : ('la '+principal.num+' paga todo (hospedaje y consumos de las dos)');
+  try{ logKardex('cuenta',{hab:_kHab, huesped:(principal.huesped||otra.huesped||''), clienteId:(principal.clienteId||otra.clienteId||''), detalle:'Unión de cuentas: la Hab. '+otra.num+' se unió a la cuenta de la Hab. '+principal.num+' · '+_kModo+' · Control N° '+fmtControl(ctrlP)+' (el de la '+otra.num+' fue '+fmtControl(ctrlO)+') · saldo de la '+otra.num+' '+fmtUSD(saldoO)+' · no mueve dinero de caja'+(txtCxc?(' · '+txtCxc):'')+' · por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   /* Verificacion: si la union no quedo grabada, se dice (nunca en silencio) */
   var chkUno=(modo==='compartida')?findRoomAny(principal.num):findRoomAny(otra.num);
   var _hacia=(modo==='compartida')?Number(otra.num):Number(principal.num);
