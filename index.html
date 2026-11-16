@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.40 · 16/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.44 · 17/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.40 · 16/11/2026';
+const APP_VERSION = 'v1.44 · 17/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -2289,10 +2289,11 @@ function chipUnidaHab(r){
   if(!r || r.estado!=='ocupada' || !r.cuentaCon) return '';
   var d=''; try{ d=cuentaDeHab(r); }catch(e){ return ''; }
   if(d==='yo') return '';
-  var due=findRoom(r.cuentaCon);
+  var _rc=raizCuentaDe(r); var _rn=(_rc&&_rc.num!=null)?Number(_rc.num):Number(r.cuentaCon);
+  var due=findRoom(_rn);
   if(!due || due.estado!=='ocupada') return '';
-  if(d==='paga') return '<div class="badge-unida" title="Su cuenta se cobra y se paga en la Hab. '+esc(String(r.cuentaCon))+'">🔗→ '+esc(String(r.cuentaCon))+'</div>';
-  return '<div class="badge-unida" title="Paga su hospedaje, pero sus consumos entran a la Hab. '+esc(String(r.cuentaCon))+'">🧾→ '+esc(String(r.cuentaCon))+'</div>';
+  if(d==='paga') return '<div class="badge-unida" title="Su cuenta se cobra y se paga en la Hab. '+esc(String(_rn))+'">🔗→ '+esc(String(_rn))+'</div>';
+  return '<div class="badge-unida" title="Paga su hospedaje, pero sus consumos entran a la Hab. '+esc(String(_rn))+'">🧾→ '+esc(String(_rn))+'</div>';
 }
 function esCuadritoUnido(r){
   if(!r || r.estado!=='ocupada' || !r.cuentaCon) return false;
@@ -2307,7 +2308,10 @@ function roomCard(r){
     var _hp=0; try{ _hp=hospPendienteHab(r); }catch(e){ _hp=saldoHospDeHab(r); }
     var _desc=false; try{ _desc=!cuadreHab(r).ok; }catch(e){}
     badge='<div class="badge-pago'+(pasoHoraSalida()?' urgente':'')+'" title="'+(_desc?'La cuenta no cuadra con la caja: revisar en Cobrar':'Hab. '+r.num+' · Hospedaje pendiente '+fmtUSD(_hp))+'">'+
-      (_hp>0.009?('SIN PAGAR '+fmtUSD(_hp)):'NOCHE NUEVA')+(_desc?' · ⚠️':'')+'</div>';
+      (_hp>0.009?('SIN PAGAR '+fmtUSD(_hp)):(habSinPagar(r)?'POR COBRAR':'NOCHE NUEVA'))+(_desc?' · ⚠️':'')+'</div>';
+    /* [CHIP-CXC] Cuarto cuyo hospedaje YA se mando a CXC: aqui no se le pide plata.
+       Se anota que va a credito para que se sepa y no parezca que quedo libre. */
+    if(_hp<=0.009){ var _enC=false; try{ _enC=habHospEnCxc(r); }catch(e){ _enC=false; } if(_enC){ badge='<div class="badge-pago" style="background:#eef3fb;color:#2a4a73;border-color:#c9d8ee" title="El hospedaje de esta habitacion esta a credito en CXC: se cobra alla">A CREDITO (CXC)</div>'; } }
   } else if(r.estado==='ocupada' && habCortesia(r)){
     badge='<div class="badge-pago" style="background:#f3eefb;color:#5b3a86;border-color:#dccdf1">👑 CORTESIA</div>';
   }
@@ -3485,7 +3489,7 @@ function confirmarCheckinReserva(loc){
     var _abPrev=Array.isArray(a.hab.abonos)?a.hab.abonos.slice():[];
     var _abIni=_abPrev.concat(_repartoAnt[k]||[]);
     updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:a.def.personas||1, ninos:a.def.ninos||0, acompanantes:acsI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:new Date().toLocaleDateString('es-VE'), salida:r.fechaSalida||'', control:_resCtrl, abonos:_abIni});
-    logKardex('checkin', {hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
+    logKardex('checkin', {hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:(r.fechaSalida||''), detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
     abrirEstadia(a.clienteId, a.num, noches, a.tarifa);
     if(k===0 && _rPlan!=='solo'){
       updateRoom(a.num,{plan:_rPlan, planRest:_rPlanRest});
@@ -4343,7 +4347,8 @@ function checkin(num){
     noches:noches, tarifa:tarifaEf, empresaRef:empRef, control:_ciCtrl,
     autorizada:(_auth?true:false), autorizadaModo:(_auth?_auth.modo:''), autorizadaInvitado:(_auth?_auth.invitado:''), autorizadaMotivo:(_auth?_auth.motivo:''), autorizadaPor:(_auth?autNombreLog():''), autorizadaTarifaNormal:(_auth?tarifa:0),
     checkin:fechaISODeHoy(), salida:document.getElementById('m-salida').value||fechaSalidaAuto(noches)});
-  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
+  /* [POL-SALIDA] La salida REAL se sella al hacer el check-out (no la prevista) */
+  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
   if(_auth){
     const _modoTxt=autorizaModoTxt(_auth.modo);
     const _autCtrl=siguienteControl();
@@ -4378,7 +4383,7 @@ function checkin(num){
       const tar=Number(er.tarifa||0)>0?Number(er.tarifa):tarifa;
       updateRoom(mx.en,{estado:'ocupada', huesped:_xh, clienteId:_xcid, tituId:(clienteId||''), personas:1, ninos:0, acompanantes:[], noches:noches, tarifa:tar, empresaRef:empRef, control:_ciCtrl, checkin:fechaISODeHoy(), salida:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches))});
       updateRoom(mx.en,{promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc});
-      logKardex('checkin', {hab:mx.en, huesped:_xh, clienteId:_xcid, detalle:'Habitación del grupo · titular: '+h+' · '+noches+' noche(s) · '+fmtUSD(tar)+'/noche', montoUsd:0, montoBs:0, metodo:''});
+      logKardex('checkin', {hab:mx.en, huesped:_xh, clienteId:_xcid, ctrlEntrada:_ciCtrl, salidaPrev:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches)), titularHab:num, detalle:'Habitación del grupo · titular: '+h+' · '+noches+' noche(s) · '+fmtUSD(tar)+'/noche', montoUsd:0, montoBs:0, metodo:''});
       abrirEstadia(_xcid, mx.en, noches, tar);
     });
   }
@@ -4672,7 +4677,38 @@ function quitarCoronaHab(num){
   alert('Listo. Se le quitó la corona a la habitación '+num+'.');
 }
 function limpiarAutorizacionHab(num){ updateRoom(num,{autorizada:false, autorizadaModo:'', autorizadaInvitado:'', autorizadaMotivo:'', autorizadaPor:'', autorizadaTarifaNormal:0}); }
+/* [POL-SALIDA] Sella la salida REAL en el check-in del kardex y en la ficha.
+   El reporte policial se arma con ESTA fecha, no con la prevista. */
+function sellarSalidaReal(num, ctrlEntrada, tsSalida){
+  try{
+    var ts = tsSalida || new Date().toISOString();
+    var r = findRoom(num);
+    var ctrl = parseInt(ctrlEntrada||0) || (r?parseInt(r.control||0):0) || 0;
+    var k = kardexAll(); var tocado=false;
+    for(var i=0;i<k.length;i++){
+      var m=k[i];
+      if(!m || m.tipo!=='checkin') continue;
+      if(String(m.hab)!==String(num)) continue;
+      if(m.salidaReal) continue;                       /* ya sellado */
+      if(ctrl && parseInt(m.ctrlEntrada||0) && parseInt(m.ctrlEntrada||0)!==ctrl) continue;
+      var _r = findRoom(num);
+      if(!ctrl && _r && _r.checkin && m.ts && String(m.ts).slice(0,10)!==String(_r.checkin).slice(0,10)) continue;
+      m.salidaReal=ts; tocado=true; break;
+    }
+    if(tocado) DB.save('kardex', k);
+    var cid = (r&&r.clienteId)||'';
+    if(cid){
+      var cl=clientes(); var c=cl.find(function(x){ return x.id===cid; });
+      if(c){
+        if(!Array.isArray(c.historial)) c.historial=[];
+        var e=c.historial.find(function(x){ return x.estado==='activa' && String(x.hab)===String(num); }) || c.historial.find(function(x){ return x.estado==='activa'; });
+        if(e){ e.salidaReal=ts; if(e.estado==='activa'){ e.estado='cerrada'; e.salida=ts; } saveClientes(cl); }
+      }
+    }
+  }catch(e){}
+}
 function confirmCheckout(num){
+  try{ var _rS=findRoom(num); if(_rS && _rS.estado==='ocupada') sellarSalidaReal(num, _rS.control||0); }catch(e){}
   /* [MSJ-CO] Antes de borrar los datos del cuarto, se guarda a quien despedir (solo si el mensaje de check-out esta activado) */
   var _desp=null;
   try{
@@ -4710,6 +4746,7 @@ function checkoutSinCobro(num, btn){
   if(procesoDoble(btn)) return;
   const r = findRoom(num);
   if(!r || r.estado!=='ocupada'){ procesoListo(btn); alert('Esa habitación ya no está ocupada (puede que su check-out ya se haya hecho).'); return; }
+  sellarSalidaReal(num, r.control||0);
   logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out sin cobro', montoUsd:0, montoBs:0, metodo:''});
   cerrarEstadia(r.clienteId||'', num, {montoUsd:0, metodo:'Sin cobro'});
   confirmCheckout(num);
@@ -4799,23 +4836,40 @@ function cuentaDeHab(r){                       /* 'otro' = este cuarto carga a o
   if(!due || due.estado!=='ocupada' || Number(due.cuentaCon||0)===Number(r.num)) return 'yo';
   return (r.cuentaModo==='compartida')?'otro':'paga';
 }
-function cuartosQuePaganA(r){                  /* el cuarto dueño + los que cargan a el */
+/* [CUENTA-MULTI] TODAS las habitaciones de una cuenta apuntan a la MISMA dueña.
+   Antes, en modo seguro, cada cuarto apuntaba al que se le unia: con 2 cuartos
+   funcionaba, pero al tercero la que mandaba ya "estaba unida" y la app lo negaba
+   (de 7 habitaciones solo reconocia 2). Ahora siempre se apunta a la raiz. */
+function raizCuentaDe(r){
+  var cur=r, guard=0, visto={};
+  if(!r) return null;
+  while(cur){ if(cur.num!=null) visto[String(cur.num)]=1; guard++; if(guard>60) return r;
+    var n=parseInt(cur.cuentaCon||0)||0;
+    if(!n) return cur;
+    var d=findRoomAny(n);
+    if(!d || visto[String(d.num)]) return cur;
+    cur=d;
+  }
+  return r;
+}
+function esRaizCuenta(r){ if(!r) return false; var n=parseInt(r.cuentaCon||0)||0; if(!n) return true; var d=findRoomAny(n); return !d || d.estado!=='ocupada' || Number(d.num)===Number(r.num); }
+function cuartosQuePaganA(r){                  /* la dueña + TODOS los que cargan a ella (aunque sean varios) */
   if(!r) return [];
-  const yo=cuentaDeHab(r)==='yo';
-  const num=Number(r.num);
-  const _l=rooms().filter(x=>{
+  var root=raizCuentaDe(r)||r;
+  var num=Number(root.num);
+  var _l=rooms().filter(function(x){
     if(x.estado!=='ocupada') return false;
-    if(yo) return Number(x.num)===num || Number(x.cuentaCon||0)===num;
-    return Number(x.num)===Number(r.cuentaCon);
+    if(Number(x.num)===num) return true;
+    if(!(Number(x.cuentaCon||0))) return false;
+    var d=raizCuentaDe(x);
+    return !!(d && Number(d.num)===num);
   });
-  /* [ORDEN] La PRINCIPAL (la que paga / la que tiene la cuenta) va siempre primero.
-     Antes salia primero la de numero mas bajo y, si la secundaria tenia el numero
-     menor, la app creia que la cuenta vivia en ella (y cobraba un pedazo). */
+  /* [ORDEN] La PRINCIPAL (la que tiene la cuenta) va siempre primero. */
   try{
     if(_l.length>1){
-      var _raiz=_l.filter(function(x){ return !x.cuentaCon || Number(x.cuentaCon||0)===0 || !findRoom(x.cuentaCon) || findRoom(x.cuentaCon).estado!=='ocupada'; });
-      var _r0=_raiz.length?_raiz[0]:null;
-      if(_r0){ _l.sort(function(a,b){ if(Number(a.num)===Number(_r0.num)) return -1; if(Number(b.num)===Number(_r0.num)) return 1; return Number(a.num)-Number(b.num); }); }
+      _l.sort(function(a,b){ if(Number(a.num)===num) return -1; if(Number(b.num)===num) return 1; return Number(a.num)-Number(b.num); });
+      /* [SIN-REPETIDOS] una sola vez la dueña */
+      var _v={}, _u=[]; _l.forEach(function(x){ var k=String(x.num); if(_v[k]) return; _v[k]=1; _u.push(x); }); _l=_u;
     }
   }catch(e){}
   return _l;
@@ -7505,7 +7559,7 @@ function datosOcupacionTipo(){
 }
 
 /* ====== REPORTE POLICIAL ====== */
-let polFiltro = 'dia';   // 'dia' | 'rango'
+let polFiltro = 'salida';   // 'salida' (por defecto) | 'dia' (por entrada) | 'rango'
 let polDia = '';
 let polDesde = '';
 let polHasta = '';
@@ -7541,6 +7595,35 @@ function _polDiaDe(iso){ return String(iso==null?'':iso).slice(0,10); }
    noche (hora de Venezuela) caian en el dia siguiente y NO aparecian en el
    reporte del dia. Esto los ubica en el dia correcto segun la hora local. */
 function _polDiaLocal(ts){ try{ const d=new Date(ts); if(isNaN(d.getTime())) return _polDiaDe(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(e){ return _polDiaDe(ts); } }
+/* [POL-SALIDA] Dias en hora LOCAL del equipo (no UTC) a partir de una fecha AAAA-MM-DD o de un sello ISO */
+function _polDiaDeISO(iso){
+  var t=String(iso==null?'':iso).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  try{ var d=new Date(t); if(!isNaN(d.getTime())) return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(e){}
+  return _polDiaDe(t);
+}
+/* La fecha de salida que se usa para el reporte:
+   1) la REAL (sellada al hacer check-out)
+   2) si la habitacion ya se libero y no quedo sellada, la del ultimo check-out del kardex de esa hab
+   3) la salida de la ficha del cliente
+   4) lo previsto (solo para los que aun estan dentro) */
+function polSalidaDe(f, k, r, c){
+  if(f && f.salidaReal) return _polDiaDeISO(f.salidaReal);
+  var out = _polDiasCheckout().filter(function(x){ return String(x.hab)===String(f.hab); });
+  if(out.length) return out[out.length-1];
+  if(c && Array.isArray(c.historial)){
+    var e = c.historial.filter(function(x){ return x && x.estado!=='cargo' && x.hab!=null && String(x.hab)===String(f.hab) && (x.salidaReal||x.salida); });
+    if(e.length){ var _u=e.slice().sort(function(a,b){ return new Date(b.salidaReal||b.salida)-new Date(a.salidaReal||a.salida); })[0]; return _polDiaDeISO(_u.salidaReal||_u.salida); }
+  }
+  if(r && r.estado==='ocupada' && r.salida) return _polDiaDeISO(r.salida);
+  return '';
+}
+let _polCkCache=null;
+function _polDiasCheckout(){
+  if(_polCkCache) return _polCkCache;
+  try{ _polCkCache = kardexAll().filter(function(k){ return k && k.tipo==='checkout' && k.ts; }).map(function(k){ return {hab:k.hab, dia:_polDiaLocal(k.ts)}; }).sort(function(a,b){ return a.dia<b.dia?-1:1; }); }catch(e){ _polCkCache=[]; }
+  return _polCkCache;
+}
 function docSigla(t){ return {V:'V',E:'E',P:'P',J:'J',G:'G'}[String(t||'').toUpperCase()]||''; }
 function docCorto(tipo,num){ var s=docSigla(tipo); return (s&&num)?(s+'-'+num):String(num||''); }
 /* Destino por defecto del reporte policial (lo configura el Master).
@@ -7558,16 +7641,20 @@ function polGuardarDestinoDefecto(){
   try{ if(typeof render==='function') render(); }catch(e){}
 }
 function polRegistros(){
-  // Toma los check-ins del kardex (cada huésped que entró) y cruza con la habitación y el cliente.
-  const todos = kardexAll().filter(k=>k.tipo==='checkin');
+  /* [POL-SALIDA] El reporte se arma con la SALIDA REAL del huesped.
+     - Se toma el check-in de cada huesped (el kardex) y se le busca su salida real.
+     - Sale si su SALIDA cae en el dia (o rango) elegido. NO se mira la entrada.
+     - Se puede imprimir cualquier fecha, incluso la de ayer: se busca en el historico.
+     - Un cuarto de una cuenta unida NO se repite si su titular ya lo trae. */
+  _polCkCache=null;
+  const todos = kardexAll().filter(k=>k && k.tipo==='checkin');
   let desde, hasta;
   if(polFiltro==='dia'){ desde=polDia; hasta=polDia; }
-  else { desde=polDesde; hasta=polHasta; }
+  else { desde=(polFiltro==='rango'?polDesde:polDia); hasta=(polFiltro==='rango'?polHasta:polDia); }
+  const porSalida = (polFiltro!=='dia');
   const filas=[];
   todos.forEach(k=>{
-    const dia = _polDiaLocal(k.ts);
-    if(desde && dia<desde) return;
-    if(hasta && dia>hasta) return;
+    const en = _polDiaLocal(k.ts);
     const r = findRoom(k.hab);
     const c = (k.clienteId?clientes().find(x=>x.id===k.clienteId):null) || null;
     let entrada = '', salida = '', nom = k.huesped||'', doc='', edad='', ec='', prof='', proc='', dest='', pais='';
@@ -7577,20 +7664,28 @@ function polRegistros(){
       doc = c.docNum?docCorto(c.docTipo,c.docNum):'';
       edad = c.edad||''; ec = c.estadoCivil||''; prof = c.ocupacion||''; proc = c.ciudad||''; dest = c.destino||''; pais = c.pais||'';
     }
-    // entrada/salida desde la habitación (histórico del kardex no las guarda, se toman de la room si sigue)
-    if(r){ entrada = r.checkin||''; salida = r.salida||''; }
-    if(!entrada && c && Array.isArray(c.historial)){ const h=c.historial.find(x=>x.hab===k.hab); if(h){ entrada = h.entrada?fechaDDMMYYYY(_polDiaDe(h.entrada)):''; salida = h.salida?fechaDDMMYYYY(_polDiaDe(h.salida)):''; } }
-    if(!String(dest==null?'':dest).trim()) dest = destDef;   // sin destino propio: el que puso el Master
-    filas.push({ ts:k.ts, clienteId:String(k.clienteId||''), dia:String(dia==null?'':dia), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), pais:String(pais==null?'':pais), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida) });
+    const vivo = !!(r && r.estado==='ocupada' && String(r.huesped||'').trim() && (!k.ctrlEntrada || !r.control || String(r.control)===String(k.ctrlEntrada)));
+    if(vivo){ entrada = r.checkin||''; }
+    else if(c && Array.isArray(c.historial)){
+      const h = c.historial.find(x=>x && String(x.hab)===String(k.hab) && (x.entrada||x.salida));
+      if(h && h.entrada) entrada = _polDiaDeISO(h.entrada);
+    }
+    const salDia = polSalidaDe(k, k, r, c);
+    salida = salDia;
+    if(!String(dest==null?'':dest).trim()) dest = destDef;
+    const f = { ts:k.ts, clienteId:String(k.clienteId||''), dia:String(en), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), pais:String(pais==null?'':pais), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida), salDia:String(salDia||''), dentro:vivo, titularHab:(k.titularHab?String(k.titularHab):''), acompDeK:(Array.isArray(k.acompanantes)?k.acompanantes:null) };
+    const _cmp = porSalida ? f.salDia : f.dia;
+    if(!_cmp) return;                          /* sin fecha: no entra (todavia esta dentro) */
+    if(desde && _cmp<desde) return;
+    if(hasta && _cmp>hasta) return;
+    filas.push(f);
   });
-  filas.sort((a,b)=> new Date(a.ts)-new Date(b.ts));
-  /* Acompanantes: se toman del check-in (o de la habitacion si sigue adentro).
-     Van DESPUES de su principal, para que la hoja se lea igual que antes. */
+  filas.sort((a,b)=> String(porSalida?a.salDia:a.dia).localeCompare(String(porSalida?b.salDia:b.dia)) || String(a.hab).localeCompare(String(b.hab)));
+  /* Acompanantes: van DESPUES de su principal, con la MISMA salida del titular. */
   const conAcomp=[];
   filas.forEach(f=>{
     conAcomp.push(f);
-    const k = todos.find(x=>x && x.ts===f.ts && String(x.hab)===String(f.hab));
-    let acs = (k && Array.isArray(k.acompanantes) && k.acompanantes.length) ? k.acompanantes : null;
+    let acs = f.acompDeK;
     if(!acs){ const rA = findRoom(f.hab); acs = acompDe(rA); }
     const clienteA = f.clienteId ? clientes().find(x=>x.id===f.clienteId) : null;
     (acs||[]).forEach(a=>{
@@ -7610,11 +7705,16 @@ function polRegistros(){
       }));
     });
   });
-  if(polSoloAcomp) return conAcomp.filter(f=>f.ac);
-  if(polSoloExtr) return conAcomp.filter(f=>esExtranjeroPais(f.pais));
-  return conAcomp;
+  /* En una cuenta unida, las habitaciones hijas solo salen si ELLAS registraron su propio titular
+     distinto (el caso normal es que el grupo lleve un renglon por habitacion). No se borra plata ni gente. */
+  let out = conAcomp;
+  if(polSoloAcomp) out = conAcomp.filter(f=>f.ac);
+  else if(polSoloExtr) out = conAcomp.filter(f=>esExtranjeroPais(f.pais));
+  return out;
 }
 function polFechaTxt(iso){ return iso?fechaDDMMYYYY(iso):'—'; }
+/* AAAA-MM-DD o sello ISO -> DD/MM/AAAA */
+function _polDiaFmt(v){ const d=_polDiaDeISO(v); return d?fechaDDMMYYYY(d):'—'; }
 
 function renderPolicialSeguro(){ try{ return renderPolicial(); }catch(e){ return '<div class="empty-guia"><span class="ico">🚔</span><div class="t">No se pudo cargar el reporte policial</div><div class="s">Recarga la página con Ctrl+F5. Si sigue igual, avisa para revisarlo.</div></div>'; } }
 function renderPolicial(){
@@ -7622,30 +7722,32 @@ function renderPolicial(){
   const filas = polRegistros();
   let h='';
   h += '<div class="section-title" style="font-size:15px;margin-top:0">🚔 Reporte policial de huéspedes</div>';
-  h += '<p style="font-size:13px;color:#8893a5;margin:0 0 14px;line-height:1.6">Detalle de los huéspedes que entraron al hotel. Elige <b>un día</b> o un <b>rango de fechas</b>. Este es el reporte pensado para <b>salir por la impresora Epson LX-300</b> (una hoja, blanco y negro).</p>';
+  h += '<p style="font-size:13px;color:#8893a5;margin:0 0 14px;line-height:1.6">Sale por la <b>fecha de salida del huésped</b> (la salida real, no la prevista). Puedes poner la fecha de ayer y salen todas las salidas de ese día. Pensado para <b>salir por la impresora Epson LX-300</b> (una hoja, blanco y negro).</p>';
 
   h += '<div style="background:#fff;padding:14px 16px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px">';
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
-  h += '<button class="'+(polFiltro==='dia'?'btn-primary':'btn-ghost')+'" onclick="polSetFiltro(\'dia\')">Un día</button>';
+  h += '<button class="'+(polFiltro==='salida'?'btn-primary':'btn-ghost')+'" onclick="polSetFiltro(\'salida\')">🚪 Salidas del día</button>';
+  h += '<button class="'+(polFiltro==='dia'?'btn-primary':'btn-ghost')+'" onclick="polSetFiltro(\'dia\')">📥 Por fecha de entrada</button>';
   h += '<button class="'+(polFiltro==='rango'?'btn-primary':'btn-ghost')+'" onclick="polSetFiltro(\'rango\')">Rango de fechas</button>';
   h += '</div>';
-  if(polFiltro==='dia'){
-    h += '<div class="field" style="max-width:240px"><label>Día</label><input type="date" value="'+polDia+'" onchange="polSetDia(this.value)"></div>';
+  if(polFiltro==='dia' || polFiltro==='salida'){
+    h += '<div class="field" style="max-width:240px"><label>'+(polFiltro==='salida'?'Día de la salida':'Día de la entrada')+'</label><input type="date" value="'+polDia+'" onchange="polSetDia(this.value)"></div>';
   } else {
-    h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:170px"><label>Desde</label><input type="date" value="'+polDesde+'" onchange="polSetDesde(this.value)"></div>';
-    h += '<div class="field" style="flex:1;min-width:170px"><label>Hasta</label><input type="date" value="'+polHasta+'" onchange="polSetHasta(this.value)"></div></div>';
+    h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:170px"><label>Salidas desde</label><input type="date" value="'+polDesde+'" onchange="polSetDesde(this.value)"></div>';
+    h += '<div class="field" style="flex:1;min-width:170px"><label>Salidas hasta</label><input type="date" value="'+polHasta+'" onchange="polSetHasta(this.value)"></div></div>';
   }
   h += '<div class="divider"></div>';
+  if(polFiltro==='salida'){ h += '<div style="font-size:12px;color:#2a4a73;background:#eef3fb;border:1px solid #c9d8ee;border-radius:9px;padding:8px 11px;margin-bottom:12px">Reporte por <b>fecha de salida</b>. Solo salen los huéspedes que <b>ya salieron</b> ese día. Los que aún están dentro no entran (su salida todavía no ha ocurrido).</div>'; }
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><button class="'+(polSoloExtr?'btn-primary':'btn-ghost')+'" onclick="polSetSoloExtr('+(polSoloExtr?'false':'true')+')">'+(polSoloExtr?'🌎 Mostrando SOLO extranjeros':'🌎 Solo extranjeros')+'</button><span style="font-size:12px;color:#8893a5">'+(polSoloExtr?'Toca para volver a ver a todos los huéspedes.':'Muestra solo huéspedes de otro país (no Venezuela).')+'</span></div>';
   h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><button class="'+(polSoloAcomp?'btn-primary':'btn-ghost')+'" onclick="polSetSoloAcomp('+(polSoloAcomp?'false':'true')+')">'+(polSoloAcomp?'👫 Mostrando SOLO acompañantes':'👫 Solo acompañantes')+'</button><span style="font-size:12px;color:#8893a5">'+(polSoloAcomp?'Toca para volver a ver también a los huéspedes principales.':'Muestra solo a los acompañantes, sin los huéspedes principales.')+'</span></div>';
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn-primary" onclick="imprimirPolicial()">🖨️ Imprimir (Epson LX-300)</button>';
   h += '<button class="btn-ghost" onclick="exportarPolicialXLS()">⬇️ Excel</button></div>';
   h += '</div>';
 
-  h += '<div class="stats"><div class="stat" style="border-left-color:#7c3aed"><div class="n">'+filas.length+'</div><div class="l">'+(polSoloAcomp?'Acompañantes en el período':(polSoloExtr?'Extranjeros en el período':'Huéspedes en el período'))+'</div></div></div>';
+  h += '<div class="stats"><div class="stat" style="border-left-color:#7c3aed"><div class="n">'+filas.length+'</div><div class="l">'+(polSoloAcomp?'Acompañantes en el período':(polSoloExtr?'Extranjeros en el período':(polFiltro==='salida'?'Salidas del día':'Huéspedes en el período')))+'</div></div></div>';
 
   if(!filas.length){
-    h += '<div class="empty-guia"><span class="ico">🚔</span><div class="t">No hay huéspedes registrados en '+(polFiltro==='dia'?'ese día':'ese rango')+'</div><div class="s">Cuando Recepción haga check-in a un huésped, aquí aparecerá su registro.</div></div>';
+    h += '<div class="empty-guia"><span class="ico">🚔</span><div class="t">No hay '+(polFiltro==='salida'?'salidas registradas':'huéspedes registrados')+' en '+(polFiltro==='rango'?'ese rango':'ese día')+'</div><div class="s">'+(polFiltro==='salida'?'Aquí sale cada huésped cuando Recepción le hace el check-out.':'Cuando Recepción haga check-in a un huésped, aquí aparecerá su registro.')+'</div></div>';
     return h;
   }
 
@@ -7653,13 +7755,17 @@ function renderPolicial(){
   h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th></tr>';
   filas.forEach(f=>{
     const _nmTxt = (f.ac?('↳ '+esc(f.nom||'—')+' <span style="font-weight:400;color:#8893a5;font-size:11px">(Acomp.)</span>'):('<b>'+esc(f.nom||'—')+'</b>'));
-    h += '<tr'+(f.ac?' style="background:#f7f9fc"':'')+'><td style="white-space:nowrap">'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td>'+_nmTxt+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td></tr>';
+    h += '<tr'+(f.ac?' style="background:#f7f9fc"':'')+'><td style="white-space:nowrap">'+esc(f.entrada?_polDiaFmt(f.entrada):_polDiaFmt(f.dia))+'</td><td>'+_nmTxt+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida?_polDiaFmt(f.salida):'En el hotel')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td></tr>';
   });
   h += '</table></div>';
   return h;
 }
 
-function polTituloTexto(){ return (polFiltro==='dia')?(mesFechaTxt(polDia)):('Del '+fechaDDMMYYYY(polDesde)+' al '+fechaDDMMYYYY(polHasta)); }
+function polTituloTexto(){
+  if(polFiltro==='rango') return 'Salidas del '+fechaDDMMYYYY(polDesde)+' al '+fechaDDMMYYYY(polHasta);
+  if(polFiltro==='salida') return 'Salidas del '+fechaDDMMYYYY(polDia);
+  return 'Entradas del '+fechaDDMMYYYY(polDia);
+}
 function mesFechaTxt(iso){ return fechaDDMMYYYY(iso); }
 
 function imprimirPolicial(){
@@ -7677,16 +7783,16 @@ function imprimirPolicial(){
     rows += '<span class="c-proc">'+esc(f.proc||'—')+'</span>';
     rows += '<span class="c-dest">'+esc(f.dest||'—')+'</span>';
     if(incPais) rows += '<span class="c-pais">'+esc(f.pais||'—')+'</span>';
-    rows += '<span class="c-ent">'+esc(f.entrada||polFechaTxt(f.dia))+'</span>';
-    rows += '<span class="c-sal">'+esc(f.salida||'—')+'</span>';
+    rows += '<span class="c-ent">'+esc(f.entrada?_polDiaFmt(f.entrada):_polDiaFmt(f.dia))+'</span>';
+    rows += '<span class="c-sal">'+esc(f.salida?_polDiaFmt(f.salida):'—')+'</span>';
     rows += '<span class="c-hab">'+esc(f.hab||'—')+'</span>';
     rows += '</div>';
   });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte policial</title>';
   html+='<style>@page{size:letter portrait;margin:8mm}*{font-family:"Courier New",monospace;box-sizing:border-box}body{margin:0;padding:0;color:#000;font-size:10px}h1{font-size:13px;margin:0;text-align:center;text-transform:uppercase;font-weight:bold}.sub{font-size:10px;text-align:center;margin:2px 0 6px}table.descr{width:100%;border:1px solid #000;border-collapse:collapse;margin-bottom:8px}table.descr td{border:1px solid #000;padding:3px 6px;font-size:9px;line-height:1.5}.cab{display:flex;font-weight:bold;border-bottom:1px solid #000;padding:2px 0;margin-bottom:2px}.fila{display:flex;padding:1px 0;page-break-inside:avoid}.fila:nth-child(odd){background:#f4f4f4}.cab span,.fila span{overflow:hidden;white-space:nowrap;padding-right:4px}'+(incPais?'.c-nom{flex:1 1 18%}.c-doc{flex:0 0 13%}.c-ed{flex:0 0 5%}.c-ec{flex:0 0 5%}.c-prof{flex:1 1 12%}.c-proc{flex:1 1 10%}.c-dest{flex:1 1 10%}.c-pais{flex:1 1 9%}.c-ent{flex:0 0 9%}.c-sal{flex:0 0 9%}.c-hab{flex:0 0 5%}':'.c-nom{flex:1 1 20%}.c-doc{flex:0 0 14%}.c-ed{flex:0 0 5%}.c-ec{flex:0 0 5%}.c-prof{flex:1 1 15%}.c-proc{flex:1 1 12%}.c-dest{flex:1 1 12%}.c-ent{flex:0 0 10%}.c-sal{flex:0 0 10%}.c-hab{flex:0 0 5%}')+'.firmas{display:flex;gap:30px;margin-top:30px}.firma{flex:1;border-top:1px solid #000;padding-top:4px;font-size:9px;text-align:center}@media print{body{padding:0}.fila:nth-child(odd){background:none}}</style></head><body>';
   html+='<h1>'+esc(hotelNombre())+'</h1>';
-  html+='<div class="sub">'+(polSoloAcomp?'REPORTE DE ACOMPAÑANTES':(polSoloExtr?'REPORTE DE HUÉSPEDES EXTRANJEROS':'REPORTE DE HUÉSPEDES'))+' · '+esc(polTituloTexto())+'</div>';
-  html+='<table class="descr"><tr><td><b>Período:</b> '+esc(polTituloTexto())+'</td><td><b>Huéspedes registrados:</b> '+filas.length+'</td></tr><tr><td colspan="2"><b>Detalle de los huéspedes que entraron al hotel</b> (fecha de entrada, apellidos y nombres, documento, edad, estado civil, profesión, procedencia, destino, fecha de salida y habitación). Generado: '+esc(new Date().toLocaleString('es-VE'))+'</td></tr></table>';
+  html+='<div class="sub">'+(polSoloAcomp?'REPORTE DE ACOMPAÑANTES':(polSoloExtr?'REPORTE DE HUÉSPEDES EXTRANJEROS':((polFiltro==='salida'||polFiltro==='rango')?'REPORTE DE SALIDAS DE HUÉSPEDES':'REPORTE DE HUÉSPEDES')))+' · '+esc(polTituloTexto())+'</div>';
+  html+='<table class="descr"><tr><td><b>Período:</b> '+esc(polTituloTexto())+'</td><td><b>'+(polFiltro==='salida'||polFiltro==='rango'?'Huéspedes que salieron:':'Huéspedes registrados:')+' '+filas.length+'</td></tr><tr><td colspan="2"><b>'+(polFiltro==='salida'||polFiltro==='rango'?'Salidas de huéspedes del hotel':'Detalle de los huéspedes que entraron al hotel')+'</b> (fecha de salida, apellidos y nombres, documento, edad, estado civil, profesión, procedencia, destino, fecha de entrada y habitación). Generado: '+esc(new Date().toLocaleString('es-VE'))+'</td></tr></table>';
   html+='<div class="cab"><span class="c-nom">Apellidos y nombres</span><span class="c-doc">Cédula</span><span class="c-ed">Edad</span><span class="c-ec">E. civ.</span><span class="c-prof">Profesión u oficio</span><span class="c-proc">Procedencia</span><span class="c-dest">Destino</span>'+(incPais?'<span class="c-pais">País</span>':'')+'<span class="c-ent">Entrada</span><span class="c-sal">Salida</span><span class="c-hab">Hab.</span></div>';
   html+=rows;
   html+='<div class="firmas"><div class="firma">Recepción</div><div class="firma">Revisado por</div></div>';
@@ -7698,8 +7804,8 @@ function exportarPolicialXLS(){
   const filas = polRegistros();
   if(!filas.length){ alert('No hay huéspedes para exportar en ese período.'); return; }
   const headers=['Fecha entrada','Apellidos y nombres','Huésped / Acompañante','Edad','E. civil','Profesión u oficio','Procedencia','Destino','Cédula','Fecha salida','Hab.'];
-  const rows=filas.map(f=>[f.entrada||polFechaTxt(f.dia), f.nom||'', (f.ac?'Acompañante':'Huésped'), f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.doc||'', f.salida||'', f.hab||'']);
-  _descargarXLS((polSoloAcomp?'reporte_acompanantes_':(polSoloExtr?'reporte_extranjeros_':'reporte_policial_'))+((polFiltro==='dia')?polDia:(polDesde+'_'+polHasta))+'.xls', headers, rows);
+  const rows=filas.map(f=>[(f.entrada?fechaDDMMYYYY(f.entrada):fechaDDMMYYYY(f.dia)), f.nom||'', (f.ac?'Acompañante':'Huésped'), f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.doc||'', (f.salida?fechaDDMMYYYY(f.salida):''), f.hab||'']);
+  _descargarXLS((polSoloAcomp?'reporte_acompanantes_':(polSoloExtr?'reporte_extranjeros_':'reporte_policial_'))+((polFiltro==='rango')?(polDesde+'_'+polHasta):polDia)+'.xls', headers, rows);
 }
 
 function renderOcupacionTipo(){
@@ -8379,7 +8485,7 @@ function cobrarPintar(){
   if(!matches.length){ cont.innerHTML='<div class="empty">'+(q?'No se encontró ninguna habitación ocupada con “'+esc(q)+'”.':'No hay habitaciones ocupadas en este momento.')+'</div>'; return; }
   const groups={}; const order=[];
   matches.forEach(r=>{ let k=r.tituId||r.clienteId||('h:'+(r.huesped||r.num));
-    if(cuentaDeHab(r)!=='yo') k='cta:'+r.cuentaCon;
+    if(cuentaDeHab(r)!=='yo') k='cta:'+(raizCuentaDe(r)||r).num;
     else if(cuartosQueCarganA(r).length) k='cta:'+r.num;
     if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(r); });
   const gs = order.map(k=>{ const list=groups[k].sort((a,b)=>a.num-b.num); const saldo=saldoGrupo(list); return {list:list, pagado:saldo<=0.009}; });
@@ -8438,6 +8544,15 @@ function cobrarPintar(){
     h+='<div style="font-size:12.5px;color:#55637a;margin-top:2px">'+(_uni?('🔗 Cuenta unida · Hab. '+esc(_unidos)):(list.length>1?('Cuenta combinada · '+list.length+' habitaciones ('+esc(numsStr)+')'):('Habitación '+esc(numsStr))))+'</div></div>';
     h+='<div>'+(pagado?'<span style="background:#e9f8ee;color:#1d6b38;border:1px solid #9fdcb4;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:800">✓ PAGADO</span>':'<span style="background:#fff4e5;color:#9a6a00;border:1px solid #f3c96b;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:800">SIN PAGAR</span>')+'</div>';
     h+='</div>';
+    /* [CTA-CXC] Si toda esta cuenta esta a credito en CXC, se dice claro: se cobra en CXC, no aqui. */
+    try{
+      var _cxcAll=list.length>0; list.forEach(function(x){ if(!habHospEnCxc(x)) _cxcAll=false; });
+      if(_cxcAll && gSaldo<=0.009){
+        var _eCx=list.map(function(x){ return parseInt(x.creditoCxcId?1:0)||0; });
+        var _idC=''; try{ _idC=String((list[0]||{}).creditoCxcId||''); }catch(e){}
+        h+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:9px;padding:9px 12px;margin-bottom:10px;font-size:12.6px;color:#2a4a73">💳 <b>Hospedaje a crédito en CXC</b>: esta cuenta se cobra alla (no aqui). Al registrar el pago en CXC, estas habitaciones quedan en cero.</div>';
+      }
+    }catch(e){}
     /* [CTA-UNIDA-TARJETA] se ve de una quien manda y quien carga */
     try{ h+=ctaUnidaTarjetaHTML(first, list); }catch(e){}
     list.forEach(r=>{
@@ -8804,6 +8919,23 @@ function datosCobroCuentaHab(r){
     cuentas:lista.map(x=>({raiz:x.num, list:[x.num]})), compartidos:D.compartidos, habsExtra:extra, uni:true };
 }
 
+/* [CUENTA-MULTI] Numeros de TODAS las habitaciones de la cuenta. En una cuenta
+   unida el paquete de cobro solo trae la principal (list:[raiz]); al pasarla a CXC
+   o a una empresa hay que llevar el grupo completo, o las otras quedaban "sueltas". */
+function numsCuentaCompleta(g){
+  var out=[];
+  function add(n){ n=parseInt(n,10); if(!isNaN(n) && out.indexOf(n)<0) out.push(n); }
+  try{
+    (g&&g.nums||[]).forEach(add);
+    (g&&g.list||[]).forEach(function(r){
+      if(!r) return;
+      add(r.num);
+      try{ cuartosQuePaganA(r).forEach(function(q){ add(q.num); }); }catch(e){}
+    });
+    if(g&&g.uni&&g.habsExtra) g.habsExtra.forEach(add);
+  }catch(e){}
+  return out;
+}
 /* ====== PANTALLA PARA UNIR CUENTAS (Recepcion y Master) ====== */
 function _cxpued(cod){ try{ if(typeof puede==='function' && puede(cod)) return true; }catch(e){} try{ var ss=session(); return !!(ss && (ss.esMaster||ss.rol==='master'||ss.rol==='admin')); }catch(e){ return false; } }
 function puedeUnirCuenta(){ return _cxpued('unirCuenta'); }
@@ -8887,9 +9019,6 @@ function unirVariasConfirm(){
      avisaba y no unia nada (el boton parecia no hacer nada). Ahora cambia sola al
      modo seguro: cada una paga su hospedaje y todos los CONSUMOS entran a la que
      manda. Nadie pierde ni paga doble. */
-  var sumaConsumo=function(n){
-    try{ return cargosPropios(findRoom(n)).filter(function(c){ return !c.pagado; }).reduce(function(x,c){ return x+Number(c.montoUsd||0); },0); }catch(e){ return 0; }
-  };
   var autoModo='';
   if(modo==='paga'){
     var conConsumo=sel.filter(function(n){ return sumaConsumo(n)>0.009; });
@@ -8966,18 +9095,19 @@ function separarCuenta(num){
 function avisoPasaCuentaHTML(r){
   if(!r || r.estado!=='ocupada') return '';
   if(cuentaDeHab(r)==='yo') return '';
-  var due=findRoom(r.cuentaCon);
+  var _rc2=raizCuentaDe(r); var _rn2=(_rc2&&_rc2.num!=null)?Number(_rc2.num):Number(r.cuentaCon);
+  var due=findRoom(_rn2);
   if(!due) return '';
   var D=null; try{ D=datosCuentaHab(due); }catch(e){ D=null; }
   var tot=(D&&D.saldo!=null)?fmtUSD(D.saldo):'—';
   var cuartos='';
   if(D&&D.list&&D.list.length){ cuartos=D.list.map(function(x){ return 'Hab. '+x.num; }).join(' + '); }
   var h='<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:11px 13px;margin:8px 0;font-size:12.8px;color:#7a5200">';
-  h+='<div style="font-weight:800;font-size:13.4px;margin-bottom:4px">🔗 Esta cuenta pasa a la Hab. '+esc(String(r.cuentaCon))+'</div>';
-  h+='<div>Lo que se cargue aquí se cobra y se paga en la <b>Hab. '+esc(String(r.cuentaCon))+'</b> ('+esc(due.huesped||'—')+').</div>';
+  h+='<div style="font-weight:800;font-size:13.4px;margin-bottom:4px">🔗 Esta cuenta pasa a la Hab. '+esc(String(_rn2))+'</div>';
+  h+='<div>Lo que se cargue aquí se cobra y se paga en la <b>Hab. '+esc(String(_rn2))+'</b> ('+esc(due.huesped||'—')+').</div>';
   if(cuartos) h+='<div style="margin-top:4px">Cuenta completa: <b>'+esc(cuartos)+'</b> · Total '+tot+'</div>';
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
-  h+='<button class="btn-ghost" style="padding:6px 11px" onclick="abrirHab('+Number(r.cuentaCon)+')">Ver la cuenta de la '+esc(String(r.cuentaCon))+'</button>';
+  h+='<button class="btn-ghost" style="padding:6px 11px" onclick="abrirHab('+Number(_rn2)+')">Ver la cuenta de la '+esc(String(_rn2))+'</button>';
   if(puedeUnirCuenta()) h+='<button class="btn-ghost" style="padding:6px 11px" onclick="separarCuenta('+Number(r.num)+')">✂️ Separar cuentas</button>';
   h+='</div></div>';
   return h;
@@ -9169,6 +9299,17 @@ function cobrarCuentaModal(numsStr){
   let _uni=false;
   if(g.list.length===1){ try{ g=datosCobroCuentaHab(g.list[0]); _uni=true; }catch(e){ _uni=false; } }
   if(g.saldo<=0.009){ alert('Esta cuenta ya está totalmente pagada. No hay saldo por cobrar.\n\nSi en la caja no se cobró, entra a la habitación y usa “Reabrir la cuenta”.'); return; }
+  /* [CXC-DOBLE] Si la cuenta ya esta a credito en CXC (pagada alla), no se vuelve a
+     cobrar aqui: el dinero entraria dos veces. */
+  try{
+    var _allCxc=g.list.length>0;
+    g.porHab.forEach(function(x){ if(!habHospEnCxc(x.r)) _allCxc=false; });
+    var _cxcOk=0; g.porHab.forEach(function(x){ if(x.cons>0.009) _cxcOk+=Number(x.cons||0); });
+    if(_allCxc && _cxcOk<=0.009){
+      alert('💳 Esta cuenta YA está a crédito en CXC y su pago se registra allá.\n\nPara cobrarla, entra a la pestaña CXC y registra el pago en esa cuenta. Así el dinero no se cuenta dos veces.');
+      return;
+    }
+  }catch(e){}
   const r0=g.list[0]; const multi=g.list.length>1;
   let body='<button class="close" onclick="cerrarModal()">×</button>';
   body+='<h2>Cobrar · '+esc(g.tituNombre||r0.huesped||'Huésped')+'</h2>';
@@ -9178,7 +9319,16 @@ function cobrarCuentaModal(numsStr){
   }
   body+=cobroHoyAvisoHTML(r0);
   body+='<div style="background:#f3f6fb;border-radius:10px;padding:14px">';
-  g.porHab.forEach(x=>{ const r=x.r; if(r && r.autorizada && r.autorizadaModo==='gratis'){ body+='<div style="border-bottom:1px solid #e4e9f2;padding:7px 0;font-size:13px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Hab. '+r.num+' · '+esc(r.tipo||'')+'</span><span>'+fmtUSD(x.cons)+'</span></div><div style="color:#5b3a86">👑 Cortesía · hospedaje no se cobra'+((x.cons||0)>0.009?(' · solo consumos '+fmtUSD(x.cons)):'')+'</div></div>'; return; } body+='<div style="border-bottom:1px solid #e4e9f2;padding:7px 0;font-size:13px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Hab. '+r.num+' · '+esc(r.tipo||'')+'</span><span>'+fmtUSD(x.hosp-x.d+x.cons)+'</span></div><div style="color:#55637a">'+fmtUSD(r.tarifa)+' × '+x.noches+(x.d>0.009?(' −'+promoPct(r)+'%'):'')+(x.cons>0?(' + consumos '+fmtUSD(x.cons)):'')+'</div></div>'; });
+  g.porHab.forEach(x=>{ const r=x.r; if(r && r.autorizada && r.autorizadaModo==='gratis'){ body+='<div style="border-bottom:1px solid #e4e9f2;padding:7px 0;font-size:13px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Hab. '+r.num+' · '+esc(r.tipo||'')+'</span><span>'+fmtUSD(x.cons)+'</span></div><div style="color:#5b3a86">👑 Cortesía · hospedaje no se cobra'+((x.cons||0)>0.009?(' · solo consumos '+fmtUSD(x.cons)):'')+'</div></div>'; return; }
+    /* [CXC-NO-COBRA] Si el hospedaje de este cuarto esta a credito en CXC, aqui NO se
+       puede volver a pedir: se muestra en 0 y se avisa donde se cobra.
+       Antes la lista decia "$90 x 6 = $540" aunque el pago estuviera hecho en CXC. */
+    var _encx=false; try{ _encx=habHospEnCxc(r); }catch(e){ _encx=false; }
+    if(_encx){
+      body+='<div style="border-bottom:1px solid #e4e9f2;padding:7px 0;font-size:13px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Hab. '+r.num+' · '+esc(r.tipo||'')+'</span><span>'+fmtUSD(x.cons)+'</span></div><div style="color:#2a4a73">💳 Hospedaje a crédito en CXC (Control '+(r.creditoCxcControl?fmtControl(r.creditoCxcControl):'—')+') · aquí no se cobra'+(x.cons>0.009?(' · solo consumos '+fmtUSD(x.cons)):'')+'</div></div>';
+      return;
+    }
+    body+='<div style="border-bottom:1px solid #e4e9f2;padding:7px 0;font-size:13px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Hab. '+r.num+' · '+esc(r.tipo||'')+'</span><span>'+fmtUSD(x.hosp-x.d+x.cons)+'</span></div><div style="color:#55637a">'+fmtUSD(r.tarifa)+' × '+x.noches+(x.d>0.009?(' −'+promoPct(r)+'%'):'')+(x.cons>0?(' + consumos '+fmtUSD(x.cons)):'')+'</div></div>'; });
   if(g.abo>0) body+='<div style="display:flex;justify-content:space-between;color:var(--verde);font-size:14px;margin-top:6px"><span>Pagos / adelantos previos</span><span>- '+fmtUSD(g.abo)+'</span></div>';
   body+='<div class="divider"></div>';
   body+='<div style="display:flex;justify-content:space-between;font-weight:800;color:var(--azul);font-size:18px"><span>Total a cobrar USD</span><span>'+fmtUSD(g.saldo)+'</span></div>';
@@ -9332,6 +9482,7 @@ function checkoutCuenta(numsStr){
   g.porHab.forEach(x=>{ const r=x.r; const abR=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+Number(a.montoUsd||0),0);
     try{ if(checkoutMsgOn() && (r.huesped||'').trim()){ var _cc=clienteDeHab(r); _despC.push({nombre:r.huesped||'', noches:Number(r.noches||1)||1, tel:(_cc&&_cc.telefono)||'', correo:(_cc&&_cc.correo)||'', hab:r.num}); } }catch(e){}
     limpiarAutorizacionHab(r.num);
+    sellarSalidaReal(r.num, r.control||0);
     logKardex('checkout', {hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out'+(sinCobro?' SIN cobro (quedó saldo)':' (cuenta pagada)')+(multi?(' · cuenta '+g.nums.join(', ')):''), montoUsd:0, montoBs:0, metodo:sinCobro?'Sin cobro':'Pagado'});
     cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:abR, metodo:sinCobro?'Sin cobro':'Pagado'});
     updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, control:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''});
@@ -11137,7 +11288,7 @@ function cerrarEstadia(clienteId, hab, info){
   const list=clientes(); const c=list.find(x=>x.id===clienteId); if(!c) return;
   if(!Array.isArray(c.historial)) c.historial=[];
   let e = c.historial.find(x=>x.estado==='activa' && x.hab===hab) || c.historial.find(x=>x.estado==='activa');
-  if(e){ e.salida=new Date().toISOString(); e.estado='cerrada'; }
+  if(e){ e.salida=new Date().toISOString(); e.estado='cerrada'; e.salidaReal=(info&&info.salidaReal)?info.salidaReal:new Date().toISOString(); }
   else { e={ id:'e'+Date.now(), hab:hab, entrada:'', salida:new Date().toISOString(), noches:1, tarifa:0, montoUsd:0, metodo:'', estado:'cerrada' }; c.historial.unshift(e); }
   if(info){ if(info.noches!=null) e.noches=info.noches; e.montoUsd=Number(info.montoUsd||0); e.metodo=info.metodo||''; }
   saveClientes(list);
@@ -12073,8 +12224,16 @@ function asigEmpAplicar(btn){
   if(!f){ procesoListo(btn); cerrarModal(); return; }
   const e=clientes().find(x=>x.id===f.empId)||null;
   if(!e){ procesoListo(btn); alert('Ya no encuentro esa empresa. Vuelve a intentarlo.'); return; }
-  const g=cobroGrupoDatos(Array.isArray(f.nums)?f.nums.join(','):String(f.nums||''));
+  /* [CUENTA-MULTI] se abre la cuenta COMPLETA antes de armar el paquete */
+  var _numsAsig=numsCuentaCompleta({nums:(Array.isArray(f.nums)?f.nums:String(f.nums||'').split(','))});
+  if(!_numsAsig.length) _numsAsig=(Array.isArray(f.nums)?f.nums:String(f.nums||'').split(',')).map(function(x){ return parseInt(x,10); }).filter(function(x){ return !isNaN(x); });
+  var _raizAsig=_numsAsig.map(findRoom).filter(function(r){ return r && r.estado==='ocupada' && esRaizCuenta(r); })
+                  .sort(function(a,b){ return Number(a.num)-Number(b.num); })[0];
+  const g=cobroGrupoDatos(_raizAsig?_raizAsig.num:_numsAsig.join(','));
   if(!g.list.length){ procesoListo(btn); alert('Esas habitaciones ya no están ocupadas.'); return; }
+  /* todas las habitaciones de la cuenta, para la empresa y para CXC */
+  var _todasAsig=numsCuentaCompleta(g);
+  if(!_todasAsig.length) _todasAsig=_numsAsig;
   const porEl=((session()||{}).nombre)||'';
   let pers='';
   const quienEl=document.getElementById('ae-quien');
@@ -12088,9 +12247,9 @@ function asigEmpAplicar(btn){
   // 2) La habitación (y toda la cuenta combinada) queda con la empresa
   /* [EMP-UNIDA] En una cuenta unida la empresa se pone en TODOS los cuartos del grupo,
      no solo en el que manda (si no, la ficha del otro cuarto no muestra la empresa). */
-  _idsGrupoCxc(g).forEach(function(n){ updateRoom(n,{empresaRef:f.ref}); });
-  logKardex('empresa',{hab:g.nums.join(', '), huesped:g.tituNombre||'', clienteId:g.tituId||'', detalle:'🏢 Cuenta asignada a la empresa '+(e.nombre||f.ref)+(e.codigo?(' ['+e.codigo+']'):'')+' (por '+porEl+') · Hab. '+g.nums.join(', ')+'', montoUsd:0, montoBs:0, metodo:''});
-  let msg='Listo. La cuenta de la Hab. '+g.nums.join(', ')+' quedó a nombre de la empresa:\n\n'+(e.nombre||f.ref)+'\n\nEl huésped sigue igual. En el check-out se cobra con normalidad.';
+  _todasAsig.forEach(function(n){ updateRoom(n,{empresaRef:f.ref}); });
+  logKardex('empresa',{hab:_todasAsig.join(', '), huesped:g.tituNombre||'', clienteId:g.tituId||'', detalle:'🏢 Cuenta asignada a la empresa '+(e.nombre||f.ref)+(e.codigo?(' ['+e.codigo+']'):'')+' (por '+porEl+') · Hab. '+_todasAsig.join(', ')+'', montoUsd:0, montoBs:0, metodo:''});
+  let msg='Listo. La cuenta de la Hab. '+_todasAsig.join(', ')+' quedó a nombre de la empresa:\n\n'+(e.nombre||f.ref)+'\n\nEl huésped sigue igual. En el check-out se cobra con normalidad.';
   if(f.cxc){
     if(g.saldo<=0.009){
       msg='La cuenta quedó a nombre de la empresa '+(e.nombre||f.ref)+'.\n\nYa estaba pagada, así que no se pasó nada a CXC.';
@@ -12113,7 +12272,7 @@ function asigEmpAplicar(btn){
         const ce=l.find(function(x){return x.id===prev[0].id;});
         if(ce){
           if(!Array.isArray(ce.cargos)) ce.cargos=[];
-          ce.cargos.push({ts:new Date().toISOString(), concepto:concepto, montoUsd:Number(g.saldo||0), montoBs:precioBs(g.saldo), control:ctrl, hab:g.nums.join(', '), usuario:(s?s.nombre:'')});
+          ce.cargos.push({ts:new Date().toISOString(), concepto:concepto, montoUsd:Number(g.saldo||0), montoBs:precioBs(g.saldo), control:ctrl, hab:_todasAsig.join(', '), usuario:(s?s.nombre:'')});
           ce.montoUsd=Number(ce.montoUsd||0)+Number(g.saldo||0);
           if(!ce.vencimiento && venc) ce.vencimiento=venc;
         }
@@ -12121,15 +12280,15 @@ function asigEmpAplicar(btn){
         l.unshift({ id:'cx'+Date.now()+Math.random().toString(36).slice(2,5), control:ctrl, tipo:'empresa',
           nombre:e.nombre||e.codigo||'Empresa', docRef:docEmp, telefono:e.telefono||'',
           clienteId:e.id, codigoEmpresa:e.codigo||'',
-          concepto:concepto, hab:g.nums.join(', '), montoUsd:Number(g.saldo||0), fecha:hoyISO(), vencimiento:venc,
+          concepto:concepto, hab:_todasAsig.join(', '), montoUsd:Number(g.saldo||0), fecha:hoyISO(), vencimiento:venc,
           notas:'Cuenta de habitación asignada a la empresa', abonos:[],
-          cargos:[{ts:new Date().toISOString(), concepto:concepto, montoUsd:Number(g.saldo||0), montoBs:precioBs(g.saldo), control:ctrl, hab:g.nums.join(', '), usuario:(s?s.nombre:'')}],
+          cargos:[{ts:new Date().toISOString(), concepto:concepto, montoUsd:Number(g.saldo||0), montoBs:precioBs(g.saldo), control:ctrl, hab:_todasAsig.join(', '), usuario:(s?s.nombre:'')}],
           creadoPor:(s?s.nombre:''), origen:'asignacion-empresa' });
       }
       saveCxc(l); confirmarControl(ctrl);
-      _idsGrupoCxc(g).forEach(function(n){ updateRoom(n,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:ctrl}); });
-      try{ logKardex('credito',{hab:g.nums.join(', '), huesped:g.tituNombre||'', clienteId:g.tituId||'', control:ctrl, detalle:'Cuenta de Hab. '+g.nums.join(', ')+' pasada a crédito → CXC de EMPRESA '+(e.nombre||'')+' · Control N° '+fmtControl(ctrl)+' · '+fmtUSD(g.saldo), credUsd:Number(g.saldo||0), credBs:precioBs(g.saldo), montoUsd:0, montoBs:0, metodo:'Crédito empresa (CXC)'}); }catch(err){}
-      msg='Listo. La cuenta de la Hab. '+g.nums.join(', ')+' quedó a nombre de la empresa:\n\n'+(e.nombre||f.ref)+'\n\nSe pasó a crédito '+fmtUSD(g.saldo)+' con el N° de control '+fmtControl(ctrl)+'.\n\nEn el check-out no se vuelve a cobrar el hospedaje.';
+      _todasAsig.forEach(function(n){ updateRoom(n,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:ctrl}); });
+      try{ logKardex('credito',{hab:_todasAsig.join(', '), huesped:g.tituNombre||'', clienteId:g.tituId||'', control:ctrl, detalle:'Cuenta de Hab. '+_todasAsig.join(', ')+' pasada a crédito → CXC de EMPRESA '+(e.nombre||'')+' · Control N° '+fmtControl(ctrl)+' · '+fmtUSD(g.saldo), credUsd:Number(g.saldo||0), credBs:precioBs(g.saldo), montoUsd:0, montoBs:0, metodo:'Crédito empresa (CXC)'}); }catch(err){}
+      msg='Listo. La cuenta de la Hab. '+_todasAsig.join(', ')+' quedó a nombre de la empresa:\n\n'+(e.nombre||f.ref)+'\n\nSe pasó a crédito '+fmtUSD(g.saldo)+' con el N° de control '+fmtControl(ctrl)+'.\n\nEn el check-out no se vuelve a cobrar el hospedaje.';
     }
   }
   cerrarModal(); render();
@@ -13717,7 +13876,6 @@ function imprimirGuiaUso(){
   setTimeout(function(){ try{ w.print(); }catch(e){} },500);
 }
 
-
 /* ===================================================================
    [CUADRE 1] UNA SOLA CUENTA: lo que se muestra, lo que se cobra.
    Antes: el mapa y "Cobrar" sumaban distinto (el mapa de una forma y
@@ -13765,12 +13923,23 @@ function estadoCuentaHab(r){
 }
 /* Lo que vale el HOSPEDAJE pendiente de ESTE cuarto (para el chip del plano).
    Ya descuenta los abonos que le tocan. No incluye consumos de otros cuartos. */
+/* [CXC-NO-MARCA] Si el hospedaje de este cuarto YA SE MANDO A CXC (a credito), aqui no
+   se vuelve a pedir dinero: el plano no debe decir "SIN PAGAR". Manda lo que se cobra
+   de verdad en Cobrar (hospCobro = 0 cuando el hospedaje esta a credito). */
 function hospPendienteHab(r){
   if(!r || r.estado!=='ocupada') return 0;
+  var _enCxc=false; try{ _enCxc=habHospEnCxc(r); }catch(e){ _enCxc=false; }
+  if(_enCxc) return 0;
   var D=detalleMapaHab(r);
   var f=(D.filas||[]).filter(function(x){ return x && x.r && Number(x.r.num)===Number(r.num); })[0];
-  if(f) return Math.max(0,Number(f.hosp||0)-Number(f.d||0)-Number(f.ab||0));
-  return Math.max(0,Number(D.hosp||0)-Number(D.abo||0));
+  /* [CXC-CHIP] Lo pendiente de ESTE cuarto es lo que de verdad se le cobra ahi:
+     hospedaje (con su descuento y sus abonos) MAS los consumos que quedaron sin pagar.
+     Antes el chip solo miraba el hospedaje: un cuarto que ya pago todo salia "SIN PAGAR"
+     por un consumo viejo (o al reves, con consumos pagados seguia pidiendo hospedaje). */
+  var v=0;
+  if(f){ v=Math.max(0,Number(f.neto!=null?f.neto:((Number(f.hosp||0)-Number(f.d||0))+Number(f.cons||0)-Number(f.ab||0)))); }
+  else { v=Math.max(0,Number(D.hosp||0)-Number(D.abo||0)); }
+  return Math.round(v*100)/100;
 }
 /* ¿Esta cuenta ya no tiene NADA por cobrar? (hospedaje + consumos - abonos) */
 function cuentaSinNadaPorCobrar(r){
@@ -14163,14 +14332,20 @@ function unirCuentasV2(numOrigen, numOtra, modo){
   if(!principal || !otra) return {ok:false, msg:'No se encontraron las habitaciones.'};
   if(principal.estado!=='ocupada' || otra.estado!=='ocupada') return {ok:false, msg:'Las dos habitaciones tienen que estar ocupadas.'};
   if(numOrigen===numOtra) return {ok:false, msg:'Son la misma habitacion.'};
-  if(cuentaDeHab(principal)!=='yo') return {ok:false, msg:'La Hab. '+principal.num+' ya esta unida a otra cuenta. Primero separala desde la ficha.'};
-  if(cuentaDeHab(otra)!=='yo') return {ok:false, msg:'La Hab. '+otra.num+' ya esta unida a otra cuenta. Primero separala desde la ficha.'};
+  /* [CUENTA-MULTI] La que manda puede tener YA otras habitaciones unidas: se le siguen
+     sumando cuartos a la MISMA cuenta (antes se negaba y solo quedaban 2). Solo se
+     niega si la que manda carga a OTRA cuenta (ahi manda la otra). */
+  var rootP=raizCuentaDe(principal)||principal;
+  if(Number(rootP.num)!==Number(principal.num)) return {ok:false, msg:'La Hab. '+principal.num+' ya esta unida a la cuenta de la Hab. '+rootP.num+'. Para sumarle mas cuartos, abre la Hab. '+rootP.num+' y une desde ahi.'};
+  var rootO=raizCuentaDe(otra)||otra;
+  if(Number(rootO.num)!==Number(otra.num)) return {ok:false, msg:'La Hab. '+otra.num+' ya esta unida a la cuenta de la Hab. '+rootO.num+'. Primero separala desde la ficha.'};
   var por=''; try{ por=(session()&&session().nombre)||''; }catch(e){}
   var sello={cuentaPor:por, cuentaFecha:new Date().toISOString()};
   /* [UNION-PRIMERO] La union se graba LO PRIMERO que se escribe cada habitacion.
      Asi ningun paso posterior (control, CXC, kardex) la deja sin efecto. */
   if(modo==='compartida'){
-    updateRoomAny(principal.num, Object.assign({cuentaCon:Number(otra.num), cuentaModo:'compartida'}, sello));
+    /* la que se suma SIEMPRE apunta a la dueña de la cuenta (nunca a un secundario) */
+    updateRoomAny(otra.num, Object.assign({cuentaCon:Number(principal.num), cuentaModo:'compartida'}, sello));
   } else {
     /* [UNIR-CON-CONSUMOS] Antes, si la otra habitacion tenia un consumo pendiente, la union
        se negaba (y la pantalla no avisaba nada). Ahora si se puede: el consumo se cobra
@@ -14265,8 +14440,8 @@ function unirCuentasV2(numOrigen, numOtra, modo){
     : ('la '+principal.num+' paga todo (hospedaje y consumos de las dos)');
   try{ logKardex('cuenta',{hab:_kHab, huesped:(principal.huesped||otra.huesped||''), clienteId:(principal.clienteId||otra.clienteId||''), detalle:'Unión de cuentas: la Hab. '+otra.num+' se unió a la cuenta de la Hab. '+principal.num+' · '+_kModo+' · Control N° '+fmtControl(ctrlP)+' (el de la '+otra.num+' fue '+fmtControl(ctrlO)+') · saldo de la '+otra.num+' '+fmtUSD(saldoO)+' · no mueve dinero de caja'+(txtCxc?(' · '+txtCxc):'')+' · por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   /* Verificacion: si la union no quedo grabada, se dice (nunca en silencio) */
-  var chkUno=(modo==='compartida')?findRoomAny(principal.num):findRoomAny(otra.num);
-  var _hacia=(modo==='compartida')?Number(otra.num):Number(principal.num);
+  var chkUno=findRoomAny(otra.num);
+  var _hacia=Number(principal.num);
   if(!chkUno || Number(chkUno.cuentaCon||0)!==_hacia){
     return {ok:false, msg:'La cuenta no se pudo unir con la Hab. '+principal.num+'.\n\nNo se cambió nada de dinero. Intenta de nuevo o separa las cuentas desde la ficha.'};
   }
@@ -14389,7 +14564,6 @@ function cxcUnirHacer(gi, btn){
   cerrarModal(); render();
   alert('Cuentas unidas.\n\nQuedo una sola cuenta a nombre de '+res.dest.nombre+' con el Control N° '+fmtControl(res.dest.control)+'.\nSe juntaron '+fmtUSD(res.tot)+'.\n\nLas cuentas viejas quedan marcadas como unidas (no se borro nada).');
 }
-
 
 /* ====== [AUTORIZADA] LA HABITACIÓN AUTORIZADA NO LLEVA CONSUMOS NI CAMBIOS DE PLAN ======
    Regla del hotel: en una habitación autorizada (cortesía, mitad de precio o a crédito)
