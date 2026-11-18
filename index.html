@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.57 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.58 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.57 · 18/11/2026';
+const APP_VERSION = 'v1.58 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -4757,7 +4757,7 @@ function guardarTarifaRecep(num){
   }catch(e){}
   updateRoom(num,_parcheTar);
   // si está cobrando por tramos, la tarifa nueva aplica al tramo de la habitación actual
-  if(r && usarTramos(r)){
+  if(r && tramosActivos(r).length){
     var t=tramosDe(r).map(function(x){ return {hab:x.hab, tarifa:Number(x.tarifa||0), noches:Number(x.noches||0)}; });
     var hits=t.filter(function(x){ return String(x.hab)===String(num); });
     if(hits.length){ hits.forEach(function(x){ x.tarifa=v; }); }
@@ -5542,8 +5542,10 @@ function cobrarSinCheckout(num){
   if(guardTurno()) return;
   const r=findRoom(num); const ids=[]; let tot=0;
   document.querySelectorAll('.cob-chk').forEach(ch=>{ if(ch.checked){ ids.push(ch.value); tot+=Number(ch.getAttribute('data-m'))||0; } });
-  const concepto=(document.getElementById('cob-concepto').value||'').trim();
-  const otro=parseFloat(document.getElementById('cob-otro').value)||0; tot+=otro;
+  const _cobC=document.getElementById('cob-concepto');
+  const _cobO=document.getElementById('cob-otro');
+  const concepto=(_cobC&&_cobC.value?_cobC.value:'').trim();
+  const otro=parseFloat((_cobO&&_cobO.value)||0)||0; tot+=otro;
   if(tot<=0){ alert('No hay nada que cobrar. Selecciona un consumo o escribe un monto.'); return; }
   if(PM_STATE['cob']) PM_STATE['cob'].total=tot;
   const pm=pmLeer('cob'); if(!pm.ok){ alert(pm.msg); return; }
