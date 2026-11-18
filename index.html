@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.51 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.52 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.51 · 18/11/2026';
+const APP_VERSION = 'v1.52 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -3074,10 +3074,10 @@ function resHabFormHTML(i,x){
   h+='<label class="lbl" style="margin-top:0">Filtrar por tipo (opcional)</label><select id="resh'+i+'-tipo" class="inp" onchange="resHabFiltroTipo('+i+')"><option value="">Todos los tipos</option>'+tipoOptions(x.tipo)+'</select>';
   h+='<label class="lbl">Habitación (se elige aquí y queda apartada) ⭐</label><select id="resh'+i+'-num" class="inp" onchange="resHabPickRoom('+i+')">'+resRoomOptions(x.hab, x.tipo)+'</select>';
   h+='<div id="resh'+i+'-precio-info" style="font-size:12.5px;color:#2b5ca8;margin:5px 0 2px"></div>';
-  h+='<div style="display:flex;gap:8px"><div style="flex:0 0 100px"><label class="lbl">Adultos</label><input type="number" min="1" id="resh'+i+'-personas" class="inp" value="'+(x.personas||1)+'" oninput="renderAcompResH('+i+')"></div>';
+  h+='<div style="display:flex;gap:8px"><div style="flex:0 0 100px"><label class="lbl">Adultos</label><input type="number" min="1" id="resh'+i+'-personas" class="inp" value="'+(x.personas||1)+'"></div>';
   h+='<div style="flex:0 0 80px"><label class="lbl">Niños</label><input type="number" min="0" id="resh'+i+'-ninos" class="inp" value="'+(x.ninos||0)+'"></div>';
   h+='<div style="flex:1"><label class="lbl">Precio por noche (USD)</label><input type="number" min="0" step="0.01" id="resh'+i+'-tarifa" class="inp" value="'+(x.tarifa||0)+'" placeholder="0" oninput="resHabsTotal()"></div></div>';
-  h+='<div id="resh'+i+'-acomp-box"></div>';
+  h+='<div style="font-size:11.5px;color:#8893a5;margin-top:6px;line-height:1.45">Aquí solo se anota <b>cuántas personas</b> vienen. Los datos de cada adulto y de cada niño se piden en el <b>check-in</b>, con el documento en la mano.</div>';
   h+='</div>';
   return h;
 }
@@ -3088,7 +3088,6 @@ function pintarResHabs(){
   _resHabs.forEach(function(x,i){
     var s=document.getElementById('resh'+i+'-tipo'); if(s && x.tipo) s.value=x.tipo;
     var n=document.getElementById('resh'+i+'-num'); if(n && x.hab) n.value=String(x.hab);
-    pintarAcomp('resh'+i, 'resh'+i+'-acomp-box', 'resh'+i+'-personas', Array.isArray(x.acompanantes)?x.acompanantes:[]);
     resHabPrecioInfo(i);
   });
   resHabsTotal();
@@ -3100,7 +3099,9 @@ function resHabsSync(){
     var p=document.getElementById('resh'+i+'-personas'); if(p) x.personas=parseInt(p.value)||1;
     var ni=document.getElementById('resh'+i+'-ninos'); if(ni) x.ninos=parseInt(ni.value)||0;
     var ta=document.getElementById('resh'+i+'-tarifa'); if(ta) x.tarifa=parseFloat(ta.value)||0;
-    x.acompanantes=colectarAcomp('resh'+i, x.personas||1);
+    /* La reserva ya no pide datos de personas: solo cuantos vienen.
+       Los nombres viejos (reservas hechas antes) se conservan tal cual. */
+    if(!Array.isArray(x.acompanantes)) x.acompanantes=[];
   });
 }
 function resHabAdd(){ resHabsSync(); _resHabs.push({tipo:'',hab:'',tarifa:0,personas:1,ninos:0,acompanantes:[]}); pintarResHabs(); }
@@ -3403,6 +3404,20 @@ function checkinReservaModal(loc){
     b+='<input id="crh'+i+'-cedula" class="inp" value="'+escA(gCed)+'" placeholder="Documento" style="flex:1"></div>';
     b+='<input id="crh'+i+'-nombre" class="inp" value="'+escA(gNom)+'" placeholder="'+(gEmp?'Razón social':'Nombre')+'" style="margin-bottom:6px">';
     b+='<div id="crh'+i+'-apellido-wrap" style="display:'+(gEmp?'none':'')+'"><input id="crh'+i+'-apellido" class="inp" value="'+escA(gApe)+'" placeholder="Apellido"></div>';
+    /* Adultos acompañantes: solo se piden sus datos aquí, con el documento en la mano */
+    var _acsPrev=Array.isArray(x.acompanantes)?x.acompanantes:[];
+    var _nAc=Math.max(0,(parseInt(x.personas)||1)-1,_acsPrev.length);
+    if(_nAc>0){
+      b+='<div style="font-size:11.5px;color:#55637a;font-weight:700;margin:10px 0 4px">👫 Datos de '+(_nAc===1?'la persona que acompaña':'las personas que acompañan')+' ('+_nAc+')</div>';
+      for(var _ka=0;_ka<_nAc;_ka++){ b+=acompFormHTML('crh'+i, _ka, _acsPrev[_ka]||{}); }
+    }
+    /* Niños: nombre, apellido y folio */
+    var _menPrev=Array.isArray(x.menores)?x.menores:[];
+    var _nMen=Math.max(0,parseInt(x.ninos)||0,_menPrev.length);
+    if(_nMen>0){
+      b+='<div style="font-size:11.5px;color:#9a6a00;font-weight:700;margin:10px 0 4px">🧒 Datos de '+(_nMen===1?'el niño':'los niños')+' ('+_nMen+')</div>';
+      for(var _km=0;_km<_nMen;_km++){ b+=menorFormHTML('crh'+i, _km, _menPrev[_km]||{}); }
+    }
     b+='</div>';
   });
   b+='</div>';
@@ -3448,9 +3463,25 @@ function confirmarCheckinReserva(loc){
     if(!nomI){ alert('Escribe el nombre del huésped de la habitación reservada '+(i+1)+'.'); return; }
     if(!ced){ alert('Escribe el documento del huésped de la habitación reservada '+(i+1)+'. Es obligatorio para el registro.'); return; }
     if(!esEmp && !apeI){ alert('Escribe el apellido del huésped de la habitación reservada '+(i+1)+'. Es obligatorio para el registro policial.'); return; }
+    /* Datos de los adultos que acompañan */
+    var _nAcI=Math.max(0,(parseInt(habsR[i].personas)||1)-1,(Array.isArray(habsR[i].acompanantes)?habsR[i].acompanantes.length:0));
+    var acsI=leerAcompDOM('crh'+i, _nAcI).map(function(ac){ return {nombre:mayusculasYa((ac.nombre||'').trim()), docTipo:ac.docTipo||'V', docNum:((ac.docNum||'').trim())}; });
+    if(acsI.length<_nAcI){ alert('Faltan los datos de alguna persona que acompaña en la habitación reservada '+(i+1)+'.'); return; }
+    for(var _ia=0;_ia<acsI.length;_ia++){
+      if(!acsI[_ia].nombre){ alert('Escribe el nombre y el apellido de la persona que acompaña '+(_ia+1)+' de la habitación reservada '+(i+1)+'.'); return; }
+      if(!acsI[_ia].docNum){ alert('Escribe el documento de la persona que acompaña '+(_ia+1)+' de la habitación reservada '+(i+1)+'. Es obligatorio para el registro.'); return; }
+    }
+    /* Datos de los niños */
+    var _nMenI=Math.max(0,parseInt(habsR[i].ninos)||0,(Array.isArray(habsR[i].menores)?habsR[i].menores.length:0));
+    var mensI=colectarMenores('crh'+i, _nMenI);
+    if(mensI.length<_nMenI){ alert('Faltan los datos de algún niño de la habitación reservada '+(i+1)+'.'); return; }
+    for(var _im=0;_im<mensI.length;_im++){
+      if(!mensI[_im].nombre){ alert('Escribe el nombre y el apellido del niño '+(_im+1)+' de la habitación reservada '+(i+1)+'.'); return; }
+      if(!mensI[_im].folio){ alert('Falta el número de folio del niño '+(_im+1)+' de la habitación reservada '+(i+1)+'. El folio es obligatorio para los menores de edad.'); return; }
+    }
     var tEl=document.getElementById('crh'+i+'-tarifa'); var tarI=tEl?(parseFloat(tEl.value)||0):(habsR[i].tarifa||0);
     vistos[numI]=1;
-    asign.push({idx:i, num:numI, tarifa:tarI, hab:habI, def:habsR[i], dt:dt, esEmp:esEmp, ced:ced, nom:nomI, ape:apeI, nombreCompleto:(nomI+' '+apeI).trim()});
+    asign.push({idx:i, num:numI, tarifa:tarI, hab:habI, def:habsR[i], dt:dt, esEmp:esEmp, ced:ced, nom:nomI, ape:apeI, nombreCompleto:(nomI+' '+apeI).trim(), acs:acsI, menores:mensI, personas:(parseInt(habsR[i].personas)||1)});
   }
   if(asign.length===0){ alert('Asigna al menos una habitación para hacer el check-in.'); return; }
   function resolverCliente(a){
@@ -3479,16 +3510,18 @@ function confirmarCheckinReserva(loc){
   var _repartoAnt=repartirAnticipoReserva(r, asign.map(function(a){ return {tarifa:a.tarifa, noches:noches}; }));
   var primerNum=asign[0].num;
   asign.forEach(function(a,k){
-    var acsI=Array.isArray(a.def.acompanantes)?a.def.acompanantes:[];
+    var acsI=Array.isArray(a.acs)?a.acs:[];
+    var _mensI=Array.isArray(a.menores)?a.menores:[];
     var reub=(a.def.tipo && (a.hab.tipo||'')!==a.def.tipo);
     var extras='';
-    if(a.def.ninos) extras+=' · '+a.def.ninos+' niño'+(a.def.ninos>1?'s':'');
+    if(_mensI.length) extras+=' · '+_mensI.length+' niño'+(_mensI.length>1?'s':'');
     extras+=acompResumenTxt(acsI);
+    extras+=menoresResumenTxt(_mensI);
     if(reub) extras+=' · 🔄 Reubicado (pidió '+(a.def.tipo||'—')+', asignado '+(a.hab.tipo||'—')+')';
     if(habsR.length>1) extras+=' · Reserva de '+asign.length+' hab. (titular: '+asign[0].nombreCompleto+')';
     var _abPrev=Array.isArray(a.hab.abonos)?a.hab.abonos.slice():[];
     var _abIni=_abPrev.concat(_repartoAnt[k]||[]);
-    updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:a.def.personas||1, ninos:a.def.ninos||0, acompanantes:acsI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:new Date().toLocaleDateString('es-VE'), salida:r.fechaSalida||'', control:_resCtrl, abonos:_abIni});
+    updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:(1+acsI.length), ninos:_mensI.length, acompanantes:acsI, menores:_mensI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:new Date().toLocaleDateString('es-VE'), salida:r.fechaSalida||'', control:_resCtrl, abonos:_abIni});
     logKardex('checkin', {hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:(r.fechaSalida||''), detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
     abrirEstadia(a.clienteId, a.num, noches, a.tarifa);
     if(k===0 && _rPlan!=='solo'){
@@ -3808,11 +3841,12 @@ function abrirHab(num){
     body += '<div class="field" style="flex:1"><label>Noches</label><div style="margin-top:4px">'+(r.noches||1)+'</div></div></div>';
     var _oacs=acompDe(r); if(_oacs.length){ body += '<div class="field"><label>'+(_oacs.length===1?'Acompañante':'Acompañantes ('+_oacs.length+')')+'</label><div style="margin-top:4px">'+_oacs.map(function(a){return esc((a.nombre||'(sin nombre)')+(a.docNum?(' · '+docLabel(a.docTipo)+' '+a.docNum):''));}).join('<br>')+'</div></div>'; }
     body += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px"><button class="btn-ghost" onclick="agregarAcompPost('+num+')">➕ Agregar acompañante</button>';
+    body += '<button class="btn-ghost" onclick="agregarMenorPost('+num+')">🧒 Agregar niño</button>';
     if(puedeUnirCuenta()) body += '<button class="btn-ghost" onclick="unirCuentaModal('+num+')">🔗 Unir cuenta</button>';
     body += '</div>';
     try{ body += avisoPasaCuentaHTML(r); }catch(e){}
     try{ body += cuentaUnidaBox(r); }catch(e){}
-    var _omen=menoresDe(r); if(_omen.length){ body += '<div class="field"><label>🧒 '+(_omen.length===1?'Menor de edad':'Menores de edad ('+_omen.length+')')+'</label><div style="margin-top:4px">'+_omen.map(function(m){return esc(((m.nombre||'')+' '+(m.apellido||'')).trim()||'(sin nombre)')+' · Folio '+esc(m.folio||'—');}).join('<br>')+'</div></div>'; }
+    var _omen=menoresDe(r); if(_omen.length){ body += '<div class="field"><label>🧒 '+(_omen.length===1?'Menor de edad':'Menores de edad ('+_omen.length+')')+'</label><div style="margin-top:4px">'+_omen.map(function(m,mi){ return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:2px 0"><span>'+esc(((m.nombre||'')+' '+(m.apellido||'')).trim()||'(sin nombre)')+' · Folio '+esc(m.folio||'—')+'</span><button class="btn-ghost" style="padding:2px 8px;font-size:11.5px;color:#b23b3b;white-space:nowrap" onclick="quitarMenorPost('+num+','+mi+')">✖ Quitar</button></div>'; }).join('')+'</div></div>'; }
     body += '<div class="field"><label>Entrada</label><div style="margin-top:4px">'+(r.checkin||'—')+'</div></div>';
     body += '<div class="field"><label>Salida prevista</label><div style="margin-top:4px">'+(r.salida?fechaDDMMYYYY(r.salida):'—')+'</div></div>';
     body += '<div class="field"><label>Promoción</label><select id="m-promo-ocup" onchange="cambiarPromoHab('+num+')">'+promoSelectOptions(r.promoId||'')+'</select>'+(r.promoTitulo?'<div style="background:#fff6e5;border:1px solid #f3c96b;border-radius:8px;padding:7px 10px;font-size:12.5px;color:#9a6a00;margin-top:6px">🎁 Promoción aplicada: <b>'+esc(r.promoTitulo)+'</b>'+(promoPct(r)>0?(' · −'+promoPct(r)+'% ('+fmtUSD(descUsd(r))+' menos)'):'')+'</div>':'')+'</div>';
@@ -4177,6 +4211,45 @@ function guardarAcompPost(num){
   try{ logKardex('acompanante', {hab:num, num:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Acompañante agregado después del check-in: '+nombreCompleto+' · '+docLabel(dt)+' '+dn, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   cerrarModal(); render(); abrirHab(num);
   try{ alert('Acompañante agregado: '+nombreCompleto); }catch(e){}
+}
+/* ====== MENORES DE EDAD: agregar o corregir despues del check-in ====== */
+function agregarMenorPost(num){
+  var r=findRoom(num); if(!r || r.estado!=='ocupada'){ alert('Esta habitación no está ocupada.'); return; }
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>🧒 Agregar niño · Hab. '+num+'</h2>';
+  h+='<p style="font-size:12.5px;color:#55637a;margin:2px 0 12px">Para cuando un niño llega después del check-in o faltó anotarlo. Queda en el registro de la habitación y en el reporte policial.</p>';
+  h+='<div style="display:flex;gap:8px"><input id="mn-nombre" class="inp" style="flex:1" placeholder="Nombre"><input id="mn-apellido" class="inp" style="flex:1" placeholder="Apellido"></div>';
+  h+='<input id="mn-folio" class="inp" style="margin-top:8px" placeholder="Número de folio (obligatorio)">';
+  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn-gray" style="flex:1" onclick="cerrarModal()">Cancelar</button><button class="btn-green" style="flex:2" onclick="guardarMenorPost('+num+')">Agregar niño</button></div>';
+  showModal(h);
+  try{ var f=document.getElementById('mn-nombre'); if(f) f.focus(); }catch(e){}
+}
+function guardarMenorPost(num){
+  var r=findRoom(num); if(!r || r.estado!=='ocupada'){ alert('Esta habitación no está ocupada.'); return; }
+  var nom=mayusculasYa(((document.getElementById('mn-nombre')||{}).value||'').trim());
+  var ape=mayusculasYa(((document.getElementById('mn-apellido')||{}).value||'').trim());
+  var fol=((document.getElementById('mn-folio')||{}).value||'').trim();
+  if(!nom){ alert('Escribe el nombre del niño.'); return; }
+  if(!ape){ alert('Escribe el apellido del niño.'); return; }
+  if(!fol){ alert('Escribe el número de folio del niño. El folio es obligatorio para los menores de edad.'); return; }
+  var mens=Array.isArray(r.menores)?r.menores.slice():[];
+  var nombreCompleto=(nom+' '+ape).trim();
+  mens.push({nombre:nom, apellido:ape, folio:fol});
+  updateRoom(num,{menores:mens, ninos:mens.length});
+  try{ logKardex('acompanante', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Menor de edad agregado después del check-in: '+nombreCompleto+' · Folio '+fol, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  cerrarModal(); render(); abrirHab(num);
+  try{ alert('Niño agregado: '+nombreCompleto); }catch(e){}
+}
+function quitarMenorPost(num, idx){
+  var r=findRoom(num); if(!r || r.estado!=='ocupada') return;
+  var mens=Array.isArray(r.menores)?r.menores.slice():[];
+  var m=mens[idx]; if(!m) return;
+  var nom=((m.nombre||'')+' '+(m.apellido||'')).trim()||'este niño';
+  if(!confirm('¿Quitar a '+nom+' de la habitación '+num+'?'+String.fromCharCode(10,10)+'Se borra del registro de la habitación. Si fue un error, tendrás que volver a anotarlo.')) return;
+  mens.splice(idx,1);
+  updateRoom(num,{menores:mens, ninos:mens.length});
+  try{ logKardex('acompanante', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Menor de edad quitado del registro: '+nom, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  cerrarModal(); render(); abrirHab(num);
 }
 function menorFormHTML(prefix, i, m){
   m=m||{};
