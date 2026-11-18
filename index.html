@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.49 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.50 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.49 · 18/11/2026';
+const APP_VERSION = 'v1.50 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -3854,7 +3854,7 @@ function abrirHab(num){
     if(cgs.length){
       body += '<div class="section-title" style="font-size:14px;margin-top:8px">Consumos en la cuenta</div>';
       body += '<table class="users-table"><tr><th>Tipo</th><th>Detalle</th><th>N° Control</th><th>Monto</th><th>Estado</th><th></th></tr>';
-      cgs.forEach(cg=>{ var _ctl=controlDeCargo(cg); body += '<tr><td>'+esc(cg.tipo)+'</td><td>'+esc(cg.desc||'—')+'</td><td>'+(_ctl?('<b>'+fmtControl(_ctl)+'</b>'):'<span style="color:#8893a5">Al cobrar</span>')+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+(cg.pagado?'<span style="color:var(--verde)">Cobrado</span>':'<span style="color:#b5651d">Pendiente</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:4px 8px" onclick="quitarCargo('+num+',\''+cg.id+'\')">Quitar</button>')+'</td></tr>'; });
+      cgs.forEach(cg=>{ var _ctl=controlDeCargo(cg); body += '<tr><td>'+esc(cg.tipo)+'</td><td>'+esc(cg.desc||'—')+'</td><td>'+(_ctl?('<b>'+fmtControl(_ctl)+'</b>'):'<span style="color:#8893a5">Al cobrar</span>')+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+(cg.pagado?'<span style="color:var(--verde)">Cobrado</span>':'<span style="color:#b5651d">Pendiente</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:4px 8px" onclick="quitarCargoModal('+num+',\''+cg.id+'\',\'hab\')">Quitar</button>')+'</td></tr>'; });
       body += '</table><div style="text-align:right;font-size:13px;color:#55637a;margin:6px 0">Consumos pendientes: <b>'+fmtUSD(totalCargosPend(r))+'</b></div>';
     }
     const abs = Array.isArray(r.abonos)?r.abonos:[];
@@ -5338,12 +5338,56 @@ function ligarCargosControl(ids, ctrl){
   k.forEach(m=>{ if(m.tipo==='cargo' && m.cargoId && ids.indexOf(m.cargoId)>=0){ if(!m.control){ m.control=ctrl; ch=true; } else if(!m.controlPago){ m.controlPago=ctrl; ch=true; } } });
   if(ch) DB.save('kardex', k);
 }
-function quitarCargo(num,id){
-  const r=findRoom(num); const cargos=cargosDe(r);
-  const cg=cargos.find(x=>x.id===id); if(!cg) return;
+/* Motivos para quitar un consumo: queda escrito en el Kardex quien lo quito y por que. */
+var MOTIVOS_QUITAR=['Se cargo dos veces','Monto equivocado','El huesped no lo consumio','Cortesia autorizada','Otro'];
+function quitarCargoMotivoHTML(num,id){
+  var r=findRoom(num); if(!r) return '';
+  var cg=cargosDe(r).find(function(x){ return x && x.id===id; });
+  if(!cg) return '';
+  var m=Number(cg.montoUsd||0);
+  var enCxc='';
+  try{ var _e=cxcCuentaDeHabCobro(r); if(_e) enCxc='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:9px;padding:9px 12px;margin-bottom:10px;font-size:12.6px;color:#2a4a73">💳 Este consumo ya esta sumado en la cuenta <b>CXC N° '+fmtControl(_e.control||0)+'</b>. Al quitarlo se <b>descuenta tambien de esa cuenta</b> ('+fmtUSD(m)+').</div>'; }catch(e){}
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>Quitar consumo · Hab. '+num+'</h2>';
+  h+='<div style="font-size:13px;color:#44526a;margin:-4px 0 10px"><b>'+esc(cg.tipo||'Consumo')+'</b>'+(cg.desc?(' · '+esc(cg.desc)):'')+' · <b>'+fmtUSD(m)+'</b></div>';
+  h+=enCxc;
+  h+='<div class="field"><label>¿Por que se quita?</label><select id="qc-motivo">'+MOTIVOS_QUITAR.map(function(x){ return '<option>'+esc(x)+'</option>'; }).join('')+'</select></div>';
+  h+='<div class="field"><label>Nota (opcional)</label><input id="qc-nota" placeholder="ej: se cobro a la 305 por error"></div>';
+  h+='<div class="divider"></div><div class="actions"><button class="btn-orange" onclick="quitarCargoConfirm('+num+',\''+id+'\',\'cobrar\')">Quitar el consumo</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  return h;
+}
+function quitarCargoModal(num,id,desde){
+  var h=quitarCargoMotivoHTML(num,id); if(!h) return;
+  var _dn={cobrar:'cobrar',hab:'hab',mapa:'mapa'}[desde]||'hab';
+  h=h.replace(/quitarCargoConfirm\([^)]*\)/, "quitarCargoConfirm("+num+",'"+id+"','"+_dn+"')");
+  showModal(h);
+}
+function quitarCargoConfirm(num,id,desde){
+  var r=findRoom(num)||findRoomAny(num); if(!r) return;
+  var cargos=cargosDe(r);
+  var cg=cargos.find(function(x){ return x && x.id===id; }); if(!cg) return;
   if(cg.pagado){ alert('Ese consumo ya fue cobrado, no se puede quitar.'); return; }
-  if(!confirm('¿Quitar este consumo de la cuenta?')) return;
-  updateRoom(num,{cargos:cargos.filter(x=>x.id!==id)}); abrirHab(num);
+  var mot=((document.getElementById('qc-motivo')||{}).value)||'';
+  var nota=(((document.getElementById('qc-nota')||{}).value)||'').trim();
+  if(nota && typeof mayusculasYa==='function'){ nota=mayusculasYa(nota); }
+  if(!mot && !nota){ alert('Escribe el motivo.'); return; }
+  var motivo=(mot||'Otro')+(nota?(' · '+nota):'');
+  var monto=Number(cg.montoUsd||0);
+  /* 1) se quita de la habitacion (esto baja el mapa, la ficha y Cobrar) */
+  updateRoom(num,{cargos:cargos.filter(function(x){ return x.id!==id; })});
+  /* 2) si estaba sumado en CXC, se descuenta alla (opcion A: automatico) */
+  var restado=0;
+  try{ restado=cxcRestarHab(num, monto, motivo); }catch(e){ restado=0; }
+  /* 3) queda en el Kardex lo que paso */
+  try{
+    logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:id,
+      detalle:'QUITO consumo · '+(cg.tipo||'')+(cg.desc?(' · '+cg.desc):'')+' · '+fmtUSD(monto)+' · motivo: '+motivo+(restado>0.009?(' · descontado de la cuenta CXC -'+fmtUSD(restado)):' · no estaba en CXC'),
+      montoUsd:0, montoBs:0, metodo:''});
+  }catch(e){}
+  if(desde==='cobrar'){ try{ cerrarModal(); render(); }catch(e){} }
+  else if(desde==='mapa'){ try{ cerrarModal(); render(); }catch(e){} }
+  else { try{ cerrarModal(); abrirHab(num); }catch(e){} }
+  alert('Consumo quitado: '+fmtUSD(monto)+String.fromCharCode(10)+'Motivo: '+motivo+(restado>0.009?(String.fromCharCode(10,10)+'Se descontó de la cuenta CXC: -'+fmtUSD(restado)):''));
 }
 function cobrarSinCheckout(num){
   if(guardTurno()) return;
@@ -8722,7 +8766,7 @@ function cobrarPintar(){
       if(cgs.length){
         h+='<div style="margin-top:8px;font-size:12.5px;color:#55637a;font-weight:600">Consumos / cargos</div>';
         h+='<table class="users-table" style="margin-top:4px"><tr><th>Concepto</th><th>Monto</th><th>Estado</th><th></th></tr>';
-        cgs.forEach(cg=>{ h+='<tr><td>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+(cg.pagado?'<span style="color:var(--verde)">Cobrado</span>':'<span style="color:#b5651d">Pendiente</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:3px 8px;font-size:12px" onclick="quitarCargoCobrar('+r.num+',\''+cg.id+'\')">Quitar</button>')+'</td></tr>'; });
+        cgs.forEach(cg=>{ h+='<tr><td>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+(cg.pagado?'<span style="color:var(--verde)">Cobrado</span>':'<span style="color:#b5651d">Pendiente</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:3px 8px;font-size:12px" onclick="quitarCargoModal('+r.num+',\''+cg.id+'\',\'cobrar\')">Quitar</button>')+'</td></tr>'; });
         h+='</table>';
       }
       h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
@@ -9005,12 +9049,7 @@ function guardarCargoExtra(num){
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, detalle:tipo+(desc?' · '+desc:'')+' · '+fmtUSD(monto), montoUsd:0, montoBs:0, metodo:''});
   cerrarModal(); render();
 }
-function quitarCargoCobrar(num,id){
-  const r=findRoom(num); const cargos=cargosDe(r); const cg=cargos.find(x=>x.id===id); if(!cg) return;
-  if(cg.pagado){ alert('Ese cargo ya fue cobrado, no se puede quitar.'); return; }
-  if(!confirm('¿Quitar este cargo de la cuenta?')) return;
-  updateRoom(num,{cargos:cargos.filter(x=>x.id!==id)}); render();
-}
+function quitarCargoCobrar(num,id){ quitarCargoModal(num,id,'cobrar'); }
 function cobroGrupoDatos(numsStr){
   const nums=String(numsStr).split(',').map(n=>parseInt(n)).filter(n=>!isNaN(n));
   const list=nums.map(findRoom).filter(r=>r&&r.estado==='ocupada');
@@ -11149,6 +11188,43 @@ function cxcSumarHab(num, op){
   /* la habitacion queda enterada de que su hospedaje sigue en CXC */
   try{ if(r && r.estado==='ocupada' && !r.creditoCxc){ updateRoom(r.num,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:Number(e.control||ctrl)}); } }catch(err){}
   return e;
+}
+/* Resta de la cuenta CXC lo que se quito de la habitacion (consumo borrado).
+   Devuelve el monto restado o 0. NUNCA deja la cuenta en negativo. */
+function cxcRestarHab(num, monto, motivo){
+  var m=Math.round(Number(monto||0)*100)/100;
+  if(!(m>0.009)) return 0;
+  var r=findRoom(num)||findRoomAny(num);
+  var ref=null; try{ ref=cxcCuentaDeHabCobro(r); }catch(e){ ref=null; }
+  if(!ref) return 0;
+  var lista=cxc(); if(!Array.isArray(lista)) lista=[];
+  var e=null;
+  for(var _i=0;_i<lista.length;_i++){ if(lista[_i] && lista[_i].id===ref.id){ e=lista[_i]; break; } }
+  if(!e) return 0;
+  if(e.anulada) return 0;
+  var total=Math.round(Number(e.montoUsd||0)*100)/100;
+  var resta=Math.min(m,total);
+  if(!(resta>0.009)) return 0;
+  var s=null; try{ s=session(); }catch(err){}
+  var now=new Date();
+  var ctrl=parseInt(e.control||0)||0;
+  var enHab=0; try{ enHab=cxcViveEnHab(e)?1:0; }catch(err){ enHab=0; }
+  /* el descuento tambien lleva el N° de control de la cuenta: es el mismo movimiento */
+  if(!ctrl){ ctrl=siguienteControl(); }
+  var renglon={ ts:now.toISOString(), concepto:('Descuento · '+(motivo||'consumo quitado')), montoUsd:-resta, montoBs:-precioBs(resta),
+    control:ctrl, hab:String(num||''), usuario:(s?s.nombre:''), motivo:'descuento-consumo', tipo2:'descuento' };
+  if(!Array.isArray(e.cargos)) e.cargos=[];
+  e.cargos.push(renglon);
+  e.montoUsd=Math.round((total-resta)*100)/100;
+  if(!Array.isArray(e.agregadoDespues)) e.agregadoDespues=[];
+  e.agregadoDespues.push({ts:now.toISOString(), hab:String(num||''), concepto:renglon.concepto, montoUsd:-resta, control:ctrl, usuario:(s?s.nombre:''), tipo2:'descuento'});
+  try{ saveCxc(lista); }catch(err){}
+  try{
+    logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
+      detalle:'DESCUENTO en la cuenta CXC N° '+fmtControl(e.control||0)+' · se quito un consumo de la Hab. '+num+' · -'+fmtUSD(resta)+' · motivo: '+(motivo||'consumo quitado')+' · deuda ahora '+fmtUSD(cxcSaldo(e)),
+      montoUsd:0, montoBs:0, metodo:''});
+  }catch(err){}
+  return resta;
 }
 /* Lo que ESTA cuenta ya tiene sumado por los consumos de una habitacion
    (para no repetir el mismo consumo cuando se vuelve a enviar la cuenta). */
