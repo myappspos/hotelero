@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.50 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.51 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.50 · 18/11/2026';
+const APP_VERSION = 'v1.51 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -11195,11 +11195,26 @@ function cxcRestarHab(num, monto, motivo){
   var m=Math.round(Number(monto||0)*100)/100;
   if(!(m>0.009)) return 0;
   var r=findRoom(num)||findRoomAny(num);
+  /* Se busca la cuenta CXC de la habitacion. Si la habitacion ya no tiene la marca
+     (por ejemplo porque se le borro), se busca igual la cuenta abierta que la menciona. */
   var ref=null; try{ ref=cxcCuentaDeHabCobro(r); }catch(e){ ref=null; }
-  if(!ref) return 0;
   var lista=cxc(); if(!Array.isArray(lista)) lista=[];
   var e=null;
-  for(var _i=0;_i<lista.length;_i++){ if(lista[_i] && lista[_i].id===ref.id){ e=lista[_i]; break; } }
+  if(ref){ for(var _i=0;_i<lista.length;_i++){ if(lista[_i] && lista[_i].id===ref.id){ e=lista[_i]; break; } } }
+  if(!e){
+    var _n=String(num||'');
+    var _cands=lista.filter(function(x){ return x && !x.anulada && !cxcPagada(x) && Array.isArray(x.habsRef) && x.habsRef.map(String).indexOf(_n)>=0; });
+    if(_cands.length){
+      /* la que tenga mas rastro de consumos de esta habitacion */
+      var _mejor=null, _peso=-1;
+      _cands.forEach(function(x){
+        var p=0;
+        (Array.isArray(x.agregadoDespues)?x.agregadoDespues:[]).forEach(function(a){ if(a && String(a.hab)===_n) p+=Math.abs(Number(a.montoUsd||0)); });
+        if(p>_peso){ _peso=p; _mejor=x; }
+      });
+      e=_mejor||_cands[0];
+    }
+  }
   if(!e) return 0;
   if(e.anulada) return 0;
   var total=Math.round(Number(e.montoUsd||0)*100)/100;
@@ -11208,16 +11223,70 @@ function cxcRestarHab(num, monto, motivo){
   var s=null; try{ s=session(); }catch(err){}
   var now=new Date();
   var ctrl=parseInt(e.control||0)||0;
-  var enHab=0; try{ enHab=cxcViveEnHab(e)?1:0; }catch(err){ enHab=0; }
-  /* el descuento tambien lleva el N° de control de la cuenta: es el mismo movimiento */
+  /* el descuento lleva el N° de control de la cuenta: es el mismo movimiento */
   if(!ctrl){ ctrl=siguienteControl(); }
-  var renglon={ ts:now.toISOString(), concepto:('Descuento · '+(motivo||'consumo quitado')), montoUsd:-resta, montoBs:-precioBs(resta),
-    control:ctrl, hab:String(num||''), usuario:(s?s.nombre:''), motivo:'descuento-consumo', tipo2:'descuento' };
+  var hs=String(num||'');
+  var pend=resta;
+  /* 1) se saca el renglon del consumo de la lista de cargos (para que de verdad
+        desaparezca del detalle y del papel impreso). */
+  if(Array.isArray(e.cargos)){
+    for(var j=e.cargos.length-1; j>=0 && pend>0.009; j--){
+      var c=e.cargos[j]; if(!c) continue;
+      if(c.tipo2!=='consumo') continue;
+      if(String(c.hab||'')!==hs) continue;
+      var cm=Math.round(Number(c.montoUsd||0)*100)/100;
+      if(!(cm>0.009) || cm>pend+0.009) continue;
+      e.cargos.splice(j,1);
+      pend=Math.round((pend-cm)*100)/100;
+    }
+  }
+  /* 2) igual en el rastro por habitacion (para que no se vuelva a descontar al reenviar) */
+  if(Array.isArray(e.agregadoDespues)){
+    var pend2=resta;
+    for(var k=e.agregadoDespues.length-1; k>=0 && pend2>0.009; k--){
+      var a=e.agregadoDespues[k]; if(!a) continue;
+      if(a.tipo2!=='consumo') continue;
+      if(String(a.hab||'')!==hs) continue;
+      var am=Math.round(Number(a.montoUsd||0)*100)/100;
+      if(!(am>0.009) || am>pend2+0.009) continue;
+      e.agregadoDespues.splice(k,1);
+      pend2=Math.round((pend2-am)*100)/100;
+    }
+  }
+  /* 3) el papel impreso (habitaciones / consumos del envio) tambien se ajusta */
+  try{
+    var p3=resta;
+    if(Array.isArray(e.cargosDetalle)){
+      for(var q=e.cargosDetalle.length-1; q>=0 && p3>0.009; q--){
+        var d=e.cargosDetalle[q]; if(!d) continue;
+        if(String(d.hab||'')!==hs) continue;
+        var dm=Math.round(Number(d.montoUsd||0)*100)/100;
+        if(!(dm>0.009) || dm>p3+0.009) continue;
+        e.cargosDetalle.splice(q,1);
+        p3=Math.round((p3-dm)*100)/100;
+      }
+    }
+    if(Array.isArray(e.habitaciones)){
+      e.habitaciones.forEach(function(x){
+        if(!x) return;
+        var nh=String(x.num||'');
+        if(nh!==hs && nh.split(',').map(function(z){return z.trim();}).indexOf(hs)<0) return;
+        x.cons=Math.max(0,Math.round((Number(x.cons||0)-resta)*100)/100);
+        x.neto=Math.max(0,Math.round((Number(x.neto||0)-resta)*100)/100);
+      });
+    }
+  }catch(err){}
+  /* 4) si no se encontro el renglon exacto, se deja el descuento como renglon aparte
+        (para que la suma del detalle siga cuadrando con el total de la cuenta) */
   if(!Array.isArray(e.cargos)) e.cargos=[];
-  e.cargos.push(renglon);
+  var _sobra=Math.round(pend*100)/100;
+  if(_sobra>0.009){
+    e.cargos.push({ ts:now.toISOString(), concepto:('Descuento · '+(motivo||'consumo quitado')), montoUsd:-_sobra, montoBs:-precioBs(_sobra),
+      control:ctrl, hab:hs, usuario:(s?s.nombre:''), motivo:'descuento-consumo', tipo2:'descuento' });
+  }
   e.montoUsd=Math.round((total-resta)*100)/100;
-  if(!Array.isArray(e.agregadoDespues)) e.agregadoDespues=[];
-  e.agregadoDespues.push({ts:now.toISOString(), hab:String(num||''), concepto:renglon.concepto, montoUsd:-resta, control:ctrl, usuario:(s?s.nombre:''), tipo2:'descuento'});
+  if(!Array.isArray(e.quitas)) e.quitas=[];
+  e.quitas.push({ts:now.toISOString(), hab:hs, montoUsd:resta, control:ctrl, usuario:(s?s.nombre:''), motivo:(motivo||'consumo quitado'), deudaDespues:Math.round((total-resta)*100)/100});
   try{ saveCxc(lista); }catch(err){}
   try{
     logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
@@ -11581,6 +11650,18 @@ function cxcVerCargos(id){
     b+='</table></div>';
     b+='<div style="margin-top:10px;font-size:13px">Total agregado: <b>+'+fmtUSD(_tc)+'</b> · Total de la cuenta: <b>'+fmtUSD(e.montoUsd)+'</b> · Saldo: <b>'+fmtUSD(cxcSaldo(e))+'</b></div>';
   }
+  /* [QUITAS] lo que se quito de la cuenta, con el motivo */
+  try{
+    var _q=Array.isArray(e.quitas)?e.quitas:[];
+    if(_q.length){
+      b+='<div style="margin-top:12px;background:#fff6f4;border:1px solid #f0c4b8;border-radius:10px;padding:10px 12px;font-size:12.6px;color:#8a3a22">';
+      b+='<div style="font-weight:800;margin-bottom:4px">✖ Se quitó de esta cuenta</div>';
+      _q.forEach(function(x){ b+='<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span>'+esc(fechaHoraCorta(x.ts))+' · Hab. '+esc(String(x.hab||'-'))+' · '+esc(x.motivo||'')+(x.usuario?(' · '+esc(x.usuario)):'')+'</span><span><b>-'+fmtUSD(x.montoUsd)+'</b></span></div>'; });
+      b+='</div>';
+    }
+  }catch(err){}
+  /* [QUITAS] igual en el papel impreso */
+
   b+='<div class="divider"></div><div class="actions"><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(b);
 }
@@ -11597,6 +11678,12 @@ function cxcImprimirDetalle(id){
   h+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:26px;color:#1c2430;max-width:720px}h1{font-size:19px;color:#0d3b66;margin:0}h2{font-size:13.5px;color:#0d3b66;margin:18px 0 7px;text-transform:uppercase;letter-spacing:.4px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px}td,th{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#f3f6fb;color:#44526a}.r{text-align:right}.tot td{font-weight:800;background:#f3f6fb;font-size:14px}.sub{color:#667;font-size:12.5px;margin-top:3px}@media print{body{padding:0}}</style></head><body>';
   h+='<h1>'+esc(hotelNombre())+' · Cuenta por cobrar</h1>';
   h+='<div class="sub">N° de control <b>'+fmtControl(e.control||0)+'</b> · Emitido: '+new Date().toLocaleString('es-VE')+'</div>';
+  var _quit=Array.isArray(e.quitas)?e.quitas:[];
+  if(_quit.length){
+    h+='<h2>Se quitó de esta cuenta</h2><table><tr><th>Fecha</th><th>Hab.</th><th>Motivo</th><th>Quitó</th><th class="r">Monto</th></tr>';
+    _quit.forEach(function(x){ h+='<tr><td>'+esc(new Date(x.ts).toLocaleString('es-VE'))+'</td><td>'+esc(String(x.hab||'-'))+'</td><td>'+esc(x.motivo||'')+'</td><td>'+esc(x.usuario||'')+'</td><td class="r">-'+fmtUSD(x.montoUsd)+'</td></tr>'; });
+    h+='</table>';
+  }
   h+='<h2>Cliente</h2><table><tr><td style="width:45%">Nombre</td><td><b>'+esc(cxcNombreDe(e))+'</b></td></tr>'+(e.docRef?('<tr><td>Documento</td><td>'+esc(e.docRef)+'</td></tr>'):'')+(e.telefono?('<tr><td>Telefono</td><td>'+esc(e.telefono)+'</td></tr>'):'')+'<tr><td>Concepto</td><td>'+esc(e.concepto||'')+'</td></tr>'+((e.hab)?('<tr><td>Habitacion(es)</td><td>'+esc(String(e.hab))+'</td></tr>'):'')+'</table>';
   if(habs.length){
     h+='<h2>Hospedaje y consumos por habitacion</h2><table><tr><th>Hab.</th><th>Tipo</th><th class="r">Noches</th><th class="r">Hospedaje</th><th class="r">Descuento</th><th class="r">Consumos</th><th class="r">Neto</th></tr>';
