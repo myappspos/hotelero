@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.52 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.53 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.52 · 18/11/2026';
+const APP_VERSION = 'v1.53 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -3522,7 +3522,7 @@ function confirmarCheckinReserva(loc){
     var _abPrev=Array.isArray(a.hab.abonos)?a.hab.abonos.slice():[];
     var _abIni=_abPrev.concat(_repartoAnt[k]||[]);
     updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:(1+acsI.length), ninos:_mensI.length, acompanantes:acsI, menores:_mensI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:new Date().toLocaleDateString('es-VE'), salida:r.fechaSalida||'', control:_resCtrl, abonos:_abIni});
-    logKardex('checkin', {hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:(r.fechaSalida||''), detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
+    logKardex('checkin', {hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:(r.fechaSalida||''), personas:(1+acsI.length), acompanantes:acsI.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum}; }), detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
     abrirEstadia(a.clienteId, a.num, noches, a.tarifa);
     if(k===0 && _rPlan!=='solo'){
       updateRoom(a.num,{plan:_rPlan, planRest:_rPlanRest});
@@ -4209,6 +4209,7 @@ function guardarAcompPost(num){
   }
   if(r.clienteId) registrarAcompanante(r.clienteId, {nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num});
   try{ logKardex('acompanante', {hab:num, num:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Acompañante agregado después del check-in: '+nombreCompleto+' · '+docLabel(dt)+' '+dn, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  try{ polAcompKardexAdd(num, {nombre:nombreCompleto, docTipo:dt, docNum:dn}); }catch(e){}
   cerrarModal(); render(); abrirHab(num);
   try{ alert('Acompañante agregado: '+nombreCompleto); }catch(e){}
 }
@@ -4422,7 +4423,7 @@ function checkin(num){
     autorizada:(_auth?true:false), autorizadaModo:(_auth?_auth.modo:''), autorizadaInvitado:(_auth?_auth.invitado:''), autorizadaMotivo:(_auth?_auth.motivo:''), autorizadaPor:(_auth?autNombreLog():''), autorizadaTarifaNormal:(_auth?tarifa:0),
     checkin:fechaISODeHoy(), salida:document.getElementById('m-salida').value||fechaSalidaAuto(noches)});
   /* [POL-SALIDA] La salida REAL se sella al hacer el check-out (no la prevista) */
-  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
+  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), personas:adultos, acompanantes:acompanantes.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum}; }), detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
   if(_auth){
     const _modoTxt=autorizaModoTxt(_auth.modo);
     const _autCtrl=siguienteControl();
@@ -4457,7 +4458,7 @@ function checkin(num){
       const tar=Number(er.tarifa||0)>0?Number(er.tarifa):tarifa;
       updateRoom(mx.en,{estado:'ocupada', huesped:_xh, clienteId:_xcid, tituId:(clienteId||''), personas:1, ninos:0, acompanantes:[], noches:noches, tarifa:tar, empresaRef:empRef, control:_ciCtrl, checkin:fechaISODeHoy(), salida:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches))});
       updateRoom(mx.en,{promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc});
-      logKardex('checkin', {hab:mx.en, huesped:_xh, clienteId:_xcid, ctrlEntrada:_ciCtrl, salidaPrev:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches)), titularHab:num, detalle:'Habitación del grupo · titular: '+h+' · '+noches+' noche(s) · '+fmtUSD(tar)+'/noche', montoUsd:0, montoBs:0, metodo:''});
+      logKardex('checkin', {hab:mx.en, huesped:_xh, clienteId:_xcid, ctrlEntrada:_ciCtrl, salidaPrev:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches)), titularHab:num, personas:1, acompanantes:[], detalle:'Habitación del grupo · titular: '+h+' · '+noches+' noche(s) · '+fmtUSD(tar)+'/noche', montoUsd:0, montoBs:0, metodo:''});
       abrirEstadia(_xcid, mx.en, noches, tar);
     });
   }
@@ -7901,6 +7902,26 @@ function polGuardarDestinoDefecto(){
   DB.set('policialDestino', v);
   try{ if(typeof render==='function') render(); }catch(e){}
 }
+/* [POL-ACOMP] Guarda al acompanante tambien en el registro de ENTRADA del kardex.
+   Asi el reporte policial lo conserva aunque la habitacion se vuelva a ocupar. */
+function polAcompKardexAdd(num, ac){
+  try{
+    if(!ac || (!String(ac.nombre||'').trim() && !String(ac.docNum||'').trim())) return false;
+    var k=kardexAll(); var r=findRoom(Number(num)) || findRoom(num); var ctrl=r?parseInt(r.control||0):0;
+    for(var i=0;i<k.length;i++){
+      var m=k[i]; if(!m || m.tipo!=='checkin') continue;
+      if(String(m.hab)!==String(num)) continue;
+      if(m.salidaReal) continue;
+      if(ctrl && parseInt(m.ctrlEntrada||0) && parseInt(m.ctrlEntrada||0)!==ctrl) continue;
+      if(!Array.isArray(m.acompanantes)) m.acompanantes=[];
+      var ya=m.acompanantes.some(function(x){ return x && ((String(x.docNum||'').trim() && String(x.docNum||'').trim()===String(ac.docNum||'').trim()) || String(x.nombre||'').trim()===String(ac.nombre||'').trim()); });
+      if(!ya) m.acompanantes.push({nombre:ac.nombre||'', docTipo:ac.docTipo||'', docNum:ac.docNum||''});
+      DB.save('kardex', k);
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
 function polRegistros(){
   /* [POL-SALIDA] El reporte se arma con la SALIDA REAL del huesped.
      - Se toma el check-in de cada huesped (el kardex) y se le busca su salida real.
@@ -7934,7 +7955,7 @@ function polRegistros(){
     const salDia = polSalidaDe(k, k, r, c);
     salida = salDia;
     if(!String(dest==null?'':dest).trim()) dest = destDef;
-    const f = { ts:k.ts, clienteId:String(k.clienteId||''), dia:String(en), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), pais:String(pais==null?'':pais), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida), salDia:String(salDia||''), dentro:vivo, titularHab:(k.titularHab?String(k.titularHab):''), acompDeK:(Array.isArray(k.acompanantes)?k.acompanantes:null) };
+    const f = { ts:k.ts, clienteId:String(k.clienteId||''), dia:String(en), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), pais:String(pais==null?'':pais), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida), salDia:String(salDia||''), dentro:vivo, titularHab:(k.titularHab?String(k.titularHab):''), ctrlEntrada:String(k.ctrlEntrada||''), esViejo:(k.personas==null), acompDeK:(Array.isArray(k.acompanantes)?k.acompanantes:null) };
     const _cmp = porSalida ? f.salDia : f.dia;
     if(!_cmp) return;                          /* sin fecha: no entra (todavia esta dentro) */
     if(desde && _cmp<desde) return;
@@ -7946,8 +7967,23 @@ function polRegistros(){
   const conAcomp=[];
   filas.forEach(f=>{
     conAcomp.push(f);
-    let acs = f.acompDeK;
-    if(!acs){ const rA = findRoom(f.hab); acs = acompDe(rA); }
+    /* [POL-ACOMP] Los acompanantes salen del registro de ENTRADA (kardex), que no se
+       borra. Si es un registro viejo sin datos, se toma la lista que quedo en la
+       habitacion, pero SOLO si es de la misma estadia (no de un huesped posterior). */
+    let acs = Array.isArray(f.acompDeK) ? f.acompDeK.slice() : [];
+    const rA = findRoom(Number(f.hab)) || findRoom(f.hab);
+    if(rA){
+      const cR = parseInt(rA.control||0) || 0, cK = parseInt(f.ctrlEntrada||0) || 0;
+      /* Solo se usa la lista de la habitacion si es de ESTA misma estadia:
+         mismo numero de control, o un registro viejo (hecho antes de que el
+         registro de entrada guardara a los acompanantes). */
+      const mismaEstadia = (cR && cK && cR===cK) || (f.esViejo && !acs.length);
+      if(mismaEstadia){
+        const _kde = a=>String((a&&a.docNum)||'').trim().toUpperCase()+'|'+String((a&&a.nombre)||'').trim().toUpperCase();
+        const ya = {}; acs.forEach(a=>{ ya[_kde(a)]=1; });
+        acompDe(rA).forEach(a=>{ if(!a) return; const k2=_kde(a); if(ya[k2]) return; ya[k2]=1; acs.push(a); });
+      }
+    }
     const clienteA = f.clienteId ? clientes().find(x=>x.id===f.clienteId) : null;
     (acs||[]).forEach(a=>{
       if(!a) return;
