@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.53 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.54 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.53 · 18/11/2026';
+const APP_VERSION = 'v1.54 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -4822,7 +4822,7 @@ function checkoutSinCobro(num, btn){
   const r = findRoom(num);
   if(!r || r.estado!=='ocupada'){ procesoListo(btn); alert('Esa habitación ya no está ocupada (puede que su check-out ya se haya hecho).'); return; }
   sellarSalidaReal(num, r.control||0);
-  logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out sin cobro', montoUsd:0, montoBs:0, metodo:''});
+  logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:'Check-out sin cobro', montoUsd:0, montoBs:0, metodo:''});
   cerrarEstadia(r.clienteId||'', num, {montoUsd:0, metodo:'Sin cobro'});
   confirmCheckout(num);
 }
@@ -4868,7 +4868,7 @@ function cobrarYCheckout(num, btn){
     var _cort=habCortesia(r);
     if(!confirm((_cort?'Habitación autorizada como CORTESÍA: el hospedaje no se cobra.':(enCxc?'El hospedaje de esta habitación ya está en CXC a crédito.':'Esta cuenta ya quedó cubierta con los adelantos ('+fmtUSD(abonoUsd)+').'))+' No hay saldo por cobrar aquí.\n\n¿Hacer el check-out?')) return;
     const det0 = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+(_cort?' · cortesía autorizada (no se cobra hospedaje)':(enCxc?' · hospedaje a crédito en CXC (Control '+fmtControl(r.creditoCxcControl)+')':' · pagado por adelantado'))+detAb;
-    logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det0, montoUsd:0, montoBs:0, metodo:(_cort?'Cortesia autorizada':(enCxc?'Hospedaje en CXC':'Pagado por adelantado'))});
+    logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:det0, montoUsd:0, montoBs:0, metodo:(_cort?'Cortesia autorizada':(enCxc?'Hospedaje en CXC':'Pagado por adelantado'))});
     cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:0, metodo:(_cort?'Cortesia autorizada':(enCxc?'Hospedaje en CXC':'Pagado por adelantado'))});
     confirmCheckout(num); return;
   }
@@ -4889,7 +4889,7 @@ function cobrarYCheckout(num, btn){
     detalle:'Cobro al hacer check-out · '+noches+' noche(s)'+(consUsd>0?(' + consumos '+fmtUSD(consUsd)):'')+detAb,
     montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), metodo:metodo}); }catch(_eKP){}
   const det = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+' cobradas'+detAb;
-  logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det, montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), metodo:metodo});
+  logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:ctrl, detalle:det, montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), metodo:metodo});
   cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:saldoUsd, metodo:metodo});
   confirmCheckout(num);
 }
@@ -9818,7 +9818,7 @@ function checkoutCuenta(numsStr){
     try{ if(checkoutMsgOn() && (r.huesped||'').trim()){ var _cc=clienteDeHab(r); _despC.push({nombre:r.huesped||'', noches:Number(r.noches||1)||1, tel:(_cc&&_cc.telefono)||'', correo:(_cc&&_cc.correo)||'', hab:r.num}); } }catch(e){}
     limpiarAutorizacionHab(r.num);
     sellarSalidaReal(r.num, r.control||0);
-    logKardex('checkout', {hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out'+(sinCobro?' SIN cobro (quedó saldo)':' (cuenta pagada)')+(multi?(' · cuenta '+g.nums.join(', ')):''), montoUsd:0, montoBs:0, metodo:sinCobro?'Sin cobro':'Pagado'});
+    logKardex('checkout', {hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:'Check-out'+(sinCobro?' SIN cobro (quedó saldo)':' (cuenta pagada)')+(multi?(' · cuenta '+g.nums.join(', ')):''), montoUsd:0, montoBs:0, metodo:sinCobro?'Sin cobro':'Pagado'});
     cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:abR, metodo:sinCobro?'Sin cobro':'Pagado'});
     updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, control:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''});
     try{ soltarCuentasDeHab(r.num); }catch(e){}
@@ -13123,7 +13123,7 @@ function salidaLiberarHab(num, motivo, enGrupo){
   try{ if(!enGrupo && checkoutMsgOn() && (r.huesped||'').trim()){ var _cs=clienteDeHab(r); _despS={nombre:r.huesped||'', noches:Number(r.noches||1)||1, tel:(_cs&&_cs.telefono)||'', correo:(_cs&&_cs.correo)||'', hab:num}; } }catch(e){}
   const abR=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0);
   limpiarAutorizacionHab(num);
-  try{ logKardex('checkout',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out'+(motivo?(' ('+motivo+')'):'')+' · salida anticipada (reservó '+(r.nochesReservadas||r.noches||1)+' noche(s), se cobraron '+(r.noches||1)+')', montoUsd:0, montoBs:0, metodo:(motivo||'')}); }catch(e){}
+  try{ logKardex('checkout',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:'Check-out'+(motivo?(' ('+motivo+')'):'')+' · salida anticipada (reservó '+(r.nochesReservadas||r.noches||1)+' noche(s), se cobraron '+(r.noches||1)+')', montoUsd:0, montoBs:0, metodo:(motivo||'')}); }catch(e){}
   cerrarEstadia(r.clienteId||'', num, {noches:r.noches||1, montoUsd:abR, metodo:(motivo||'')});
   updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined, empresaRef:'', nochesReservadas:0});
   return _despS;
@@ -13482,7 +13482,52 @@ function corteListadoHabitaciones(){
   h+='<div style="font-size:11px;color:#8893a5;margin-bottom:6px">Foto de cómo quedan las habitaciones al cerrar el turno.</div>';
   return h;
 }
-function corteCtrl(k){ if(!k) return '—'; if(k.control) return '<b>'+fmtControl(k.control)+'</b>'; var h=k.hab||k.num; if(h){ var r=findRoom(h); if(r && r.control) return '<b>'+fmtControl(r.control)+'</b>'; } return '—'; }
+/* [CORTE-CTRL] Numero de control de un movimiento del corte.
+   Antes solo se miraba el numero del movimiento o el de la habitacion; cuando la
+   habitacion ya habia salido (check-out) quedaba en "—" aunque el numero SI existia.
+   Ahora, si el movimiento no lo trae, se busca en la ENTRADA de esa habitacion
+   (el check-in guarda el numero) anterior a ese movimiento. */
+function _ctrlDeEntradaDeHab(hab, tsLimite){
+  try{
+    var h=String(hab==null?'':hab).split(/[,+\s]+/)[0];
+    if(!h) return 0;
+    var lim = tsLimite?new Date(tsLimite).getTime():Date.now();
+    var k=kardexAll(); var best=0, bestTs=-1;
+    for(var i=0;i<k.length;i++){
+      var m=k[i]; if(!m || m.tipo!=='checkin') continue;
+      if(String(m.hab)!==h) continue;
+      if(!m.ctrlEntrada) continue;
+      var t=new Date(m.ts).getTime(); if(isNaN(t)) continue;
+      if(lim && t>lim+60000) continue;              /* solo entradas anteriores (1 min de holgura) */
+      if(t>bestTs){ bestTs=t; best=parseInt(m.ctrlEntrada)||0; }
+    }
+    return best;
+  }catch(e){ return 0; }
+}
+function _fechaTsCorte(v){
+  var t=String(v==null?'':v).trim(); if(!t) return 0;
+  var m=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
+  if(m) return new Date(Number(m[3]),Number(m[2])-1,Number(m[1])).getTime();
+  var d=new Date(t); return isNaN(d.getTime())?0:d.getTime();
+}
+function corteCtrl(k){
+  if(!k) return '—';
+  var n = parseInt(k.control||0) || parseInt(k.ctrlEntrada||0) || 0;
+  if(n) return '<b>'+fmtControl(n)+'</b>';
+  var h=k.hab||k.num;
+  if(!h) return '—';
+  var r=findRoom(h) || findRoom(Number(String(h).split(',')[0]));
+  var roomTs = r?_fechaTsCorte(r.checkin):0;
+  var kTs = _fechaTsCorte(k.ts);
+  /* El numero de la habitacion solo vale si el movimiento es de la estadia que
+     esta ahora mismo adentro. Si el movimiento es mas viejo, se busca en su
+     propia entrada (asi no se le pega el numero de un huesped posterior). */
+  if(r && parseInt(r.control||0) && roomTs && kTs && kTs>=roomTs-60000) return '<b>'+fmtControl(r.control)+'</b>';
+  var nx=_ctrlDeEntradaDeHab(h, k.ts);
+  if(nx) return '<b>'+fmtControl(nx)+'</b>';
+  if(r && parseInt(r.control||0) && !roomTs) return '<b>'+fmtControl(r.control)+'</b>';
+  return '—';
+}
 function corteTurnoCuentas(pagos, movs, sinPagar){
   /* [CORTE-CUENTAS] Esta tabla ya no sale vacia cuando la habitacion sigue ocupada.
      Antes solo listaba las habitaciones que tuvieron un COBRO en el turno: si se
@@ -15072,7 +15117,7 @@ function checkoutCxcConfirm(numsStr, btn){
     try{ if(checkoutMsgOn() && (r.huesped||'').trim()){ var _cc=clienteDeHab(r); desp.push({nombre:r.huesped||'', noches:Number(r.noches||1)||1, tel:(_cc&&_cc.telefono)||'', correo:(_cc&&_cc.correo)||'', hab:r.num}); } }catch(e){}
     var abR=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0);
     try{ limpiarAutorizacionHab(r.num); }catch(e){}
-    try{ logKardex('checkout',{hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out con deuda enviada a CXC (Control N° '+fmtControl(controlDeHab(r))+' · '+fmtUSD(abR)+' cobrado de verdad)', montoUsd:0, montoBs:0, metodo:'Credito (CXC)'}); }catch(e){}
+    try{ logKardex('checkout',{hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:'Check-out con deuda enviada a CXC (Control N° '+fmtControl(controlDeHab(r))+' · '+fmtUSD(abR)+' cobrado de verdad)', montoUsd:0, montoBs:0, metodo:'Credito (CXC)'}); }catch(e){}
     try{ cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:abR, metodo:'Credito (CXC)'}); }catch(e){}
     try{ updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promotitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:'', empresaRef:'', nochesReservadas:0}); }catch(e){}
     try{ soltarCuentasDeHab(r.num); }catch(e){}
