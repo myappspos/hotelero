@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.48 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.49 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.48 · 18/11/2026';
+const APP_VERSION = 'v1.49 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -5315,7 +5315,13 @@ function guardarCargo(num){
   const _cgId='cg'+Date.now();
   var _acompId=''; try{ var _ae=document.getElementById('cg-acomp'); if(_ae) _acompId=_ae.value||''; }catch(e){}
   var _acNom=''; if(_acompId){ var _aa=(Array.isArray(r.acompanantes)?r.acompanantes:[]).find(function(x){ return x && x.id===_acompId; }); if(_aa) _acNom=_aa.nombre||''; }
-  const _cgCtrl=siguienteControl(); /* cada cargo del día lleva su propio N° de control (así estaban los recibos viejos) */
+  /* [CXC-CONTROL] Si el hospedaje de esta habitacion ya esta a credito en CXC, el consumo
+     entra a ESA cuenta y lleva SU N° de control (no se gasta un numero nuevo por gusto).
+     Si la habitacion no esta en CXC, el consumo lleva su propio numero, como siempre. */
+  var _cgEnCxc=false; try{ _cgEnCxc=!!cxcCuentaDeHabCobro(findRoom(num)); }catch(e){ _cgEnCxc=false; }
+  var _cgCtrl=0;
+  if(_cgEnCxc){ try{ var _cgCu=cxcCuentaDeHabCobro(findRoom(num)); _cgCtrl=parseInt((_cgCu&&_cgCu.control)||0)||0; }catch(e){} }
+  if(!_cgCtrl) _cgCtrl=siguienteControl();
   function _ligaCargosCtrl(_ids,_c){ if(!_ids||!_ids.length||!_c) return; const _l=cargosDe(findRoom(num)).map(function(x){ return _ids.indexOf(x.id)>=0?Object.assign({},x,{control:(x.control||_c),controlPago:_c}):x; }); updateRoom(num,{cargos:_l}); }
   cargos.push({id:_cgId, tipo:tipo, desc:(_acNom?('['+_acNom+'] '+(desc||'')):desc), montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false, control:_cgCtrl, acompId:_acompId, hab:num, habOriginal:num});
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
@@ -9738,6 +9744,25 @@ function enviarACxCModal(numsStr){
 function enviarACxCConfirm(numsStr){
   if(guardTurno()) return;
   const g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones.'); return; }
+  /* [CXC-YA-SUMADO] Lo que ya se sumo a la cuenta CXC de esta habitacion (consumos
+     cargados mientras el hospedaje estaba a credito) NO se cobra otra vez aqui. */
+  var _yaEnCxc=0;
+  try{ g.porHab.forEach(function(x){ var _e=cxcCuentaDeHabCobro(x.r); if(_e) _yaEnCxc=Math.round((_yaEnCxc+cxcSumaHabConsumos(_e, x.r.num))*100)/100; }); }catch(e){ _yaEnCxc=0; }
+  if(_yaEnCxc>0.009){
+    g.saldo=Math.round((g.saldo-_yaEnCxc)*100)/100;
+    g.porHab.forEach(function(x){
+      var _ya=cxcSumaHabConsumos(cxcCuentaDeHabCobro(x.r), x.r.num);
+      if(_ya>0.009){
+        x.cons=Math.max(0,Math.round((Number(x.cons||0)-_ya)*100)/100);
+        x.neto=Math.max(0,Math.round((Number(x.neto||0)-_ya)*100)/100);
+        /* los consumos ya sumados no se vuelven a listar como detalle nuevo */
+        x.dupConsumo=_ya;
+      }
+    });
+    /* el hospedaje de esta cuenta ya no cuenta el consumo repetido
+       (en la ficha del cuarto el hospedaje se cobra aqui, no en CXC) */
+    g.porHab.forEach(function(x){ try{ x.hosp=_yaEnCxc>0.009?Number(x.hosp||0):x.hosp; }catch(e){} });
+  }
   if(g.saldo<=0.009){ alert('Esta cuenta ya está pagada.'); return; }
   const r0=g.list[0]; const c=g.titu||clienteDeHab(r0); const now=new Date(); const multi=g.list.length>1;
   const nombre=(c?clienteNombre(c):'')||g.tituNombre||r0.huesped||'Huésped';
@@ -11124,6 +11149,16 @@ function cxcSumarHab(num, op){
   /* la habitacion queda enterada de que su hospedaje sigue en CXC */
   try{ if(r && r.estado==='ocupada' && !r.creditoCxc){ updateRoom(r.num,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:Number(e.control||ctrl)}); } }catch(err){}
   return e;
+}
+/* Lo que ESTA cuenta ya tiene sumado por los consumos de una habitacion
+   (para no repetir el mismo consumo cuando se vuelve a enviar la cuenta). */
+function cxcSumaHabConsumos(e, num){
+  var out=0;
+  if(!e) return 0;
+  var hs=String(num==null?'':num);
+  var arr=Array.isArray(e.agregadoDespues)?e.agregadoDespues:[];
+  arr.forEach(function(x){ if(!x) return; if(x.tipo2!=='consumo') return; if(hs===''|| String(x.hab)!==hs) return; out+=Number(x.montoUsd||0); });
+  return Math.round(out*100)/100;
 }
 /* Cuanto se sumo despues del enviado (para el desglose de la ficha) */
 function cxcAgregadoDeCuenta(e, num){
