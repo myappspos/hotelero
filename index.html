@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.54 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.55 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.54 · 18/11/2026';
+const APP_VERSION = 'v1.55 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -7990,14 +7990,19 @@ function polRegistros(){
       const nm = String(a.nombre||'').trim();
       const dn = String(a.docNum||'').trim();
       if(!nm && !dn) return;
-      let paisA='';
+      let paisA='', _edA='', _ecA='', _prA='';
       try{
-        const reg = clienteA && Array.isArray(clienteA.acompanantes) ? clienteA.acompanantes.find(x=>x && ((dn && String(x.docNum||'').trim()===dn) || (nm && String(x.nombre||'').trim()===nm))) : null;
-        if(reg) paisA = reg.pais||'';
+        const _arrA = clienteA && Array.isArray(clienteA.acompanantes) ? clienteA.acompanantes : [];
+        const _mismo = function(x){ return x && ((dn && String(x.docNum||'').trim()===dn) || (nm && String(x.nombre||'').trim()===nm)); };
+        const _regsA = _arrA.filter(_mismo);
+        /* Si la persona tiene varios registros, se usa el que ya tenga datos completos
+           (los que se completaron despues desde la ficha del cliente en Clientes). */
+        const reg = _regsA.filter(function(x){ return acompEdadDe(x)||acompEcDe(x)||acompProfDe(x); })[0] || _regsA[0] || null;
+        if(reg){ paisA = reg.pais||''; _edA=acompEdadDe(reg); _ecA=acompEcDe(reg); _prA=acompProfDe(reg); }
       }catch(e){}
       conAcomp.push(Object.assign({}, f, {
         ac:true, nom:nm, doc:(a.docTipo&&dn)?docCorto(a.docTipo,dn):dn,
-        edad:a.edad||'', ec:a.estadoCivil||a.ec||'', prof:a.ocupacion||a.prof||'', pais:paisA,
+        edad:String(a.edad||'').trim()||_edA, ec:String(a.estadoCivil||a.ec||'').trim()||_ecA, prof:String(a.ocupacion||a.prof||'').trim()||_prA, pais:paisA,
         parentesco:a.parentesco||''
       }));
     });
@@ -12041,6 +12046,27 @@ function guardarNotasCliente(id){
   saveClientes(list); cerrarModal(); render(); alert('Notas guardadas.');
 }
 function fichaLinea(k,v){ return '<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="color:#55637a">'+esc(k)+'</span><span>'+esc(v)+'</span></div>'; }
+/* [ACOMP-DATOS] Edad, estado civil y profesion del acompanante.
+   En el check-in son OPCIONALES (solo se pide nombre y documento); se completan
+   despues desde la ficha del cliente, en la pestana Clientes. */
+function acompEdadDe(a){ if(!a) return ''; var v=(a.edad!=null?a.edad:a.edadAA); return String(v==null?'':v).trim(); }
+function acompEcDe(a){ if(!a) return ''; return String((a.estadoCivil!=null?a.estadoCivil:(a.ec!=null?a.ec:'')).toString()).trim().toUpperCase(); }
+function acompProfDe(a){ if(!a) return ''; return String((a.ocupacion!=null?a.ocupacion:(a.prof!=null?a.prof:'')).toString()).trim(); }
+function acompFaltantes(a){
+  var f=[];
+  if(!acompEdadDe(a)) f.push('Edad');
+  if(!acompEcDe(a)) f.push('Estado civil');
+  if(!acompProfDe(a)) f.push('Profesion');
+  return f;
+}
+function acompResumenDatos(a){
+  var p=[]; var ed=acompEdadDe(a); if(ed) p.push(ed+' años');
+  var ec=acompEcDe(a); if(ec) p.push(estadoCivilTxt(ec));
+  var pr=acompProfDe(a); if(pr) p.push(pr);
+  return p.join(' · ');
+}
+/* Las tres etiquetas se muestran con acentos (el codigo va sin acentos para no romper nada). */
+function acompFaltantesTxt(a){ return acompFaltantes(a).map(function(x){ return x==='Edad'?'Edad':(x==='Estado civil'?'Estado civil':'Profesión'); }).join(', '); }
 function verClienteModal(id){
   const c=clienteById(id); if(!c) return;
   const cr=clienteResumen(c); const nom=clienteNombre(c);
@@ -12059,10 +12085,15 @@ function verClienteModal(id){
     if(c.diasCredito) body+=fichaLinea('Días de crédito', c.diasCredito);
   } else {
     if(c.edad) body+=fichaLinea('Edad', c.edad);
+    if(c.estadoCivil) body+=fichaLinea('Estado civil', estadoCivilTxt(c.estadoCivil));
     if(c.empresaRef) body+=fichaLinea('Viene por empresa', c.empresaRef);
   }
   body+=fichaLinea('Registrado', fmtFecha(c.creado));
   body+='</div>';
+  if(c.tipo!=='empresa'){
+    var _faltH=[]; if(!String(c.edad||'').trim()) _faltH.push('Edad'); if(!String(c.estadoCivil||'').trim()) _faltH.push('Estado civil'); if(!String(c.ocupacion||'').trim()) _faltH.push('Profesión');
+    if(_faltH.length) body+='<div style="background:#fff8ec;border:1px solid #f3d9ac;border-radius:10px;padding:10px 12px;margin:0 0 14px;font-size:12.5px;color:#7a4b00;line-height:1.6">Para el reporte policial falta: <b>'+_faltH.join(', ')+'</b>. <button class="btn-ghost" style="padding:5px 10px;font-size:12px;margin-left:4px" onclick="editClienteModal(\''+id+'\')">Completar datos</button></div>';
+  }
   body+='<div class="section-title" style="font-size:14px;margin-top:0">Notas del cliente</div>';
   body+='<textarea id="vc-notas" rows="3" placeholder="Preferencias, acuerdos, observaciones…">'+esc(c.notas||'')+'</textarea>';
   body+='<button class="btn-green" style="margin-top:8px" onclick="guardarNotasCliente(\''+id+'\')">Guardar notas</button>';
@@ -12080,15 +12111,56 @@ function verClienteModal(id){
     body+='</table><div style="text-align:right;margin-top:8px;font-weight:700;color:var(--azul)">Total hospedado: '+fmtUSD(tot)+' · '+completas+' estadía(s) completada(s)</div>';
   }
   const acs=Array.isArray(c.acompanantes)?c.acompanantes:[];
-  body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Historial de acompañantes ('+acs.length+')</div>';
+  body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Acompañantes ('+acs.length+')</div>';
   if(acs.length===0){ body+='<div class="empty">Aún no se ha registrado ningún acompañante.</div>'; }
   else{
-    body+='<table class="users-table"><tr><th>Fecha</th><th>Acompañante</th><th>Documento</th><th>Hab.</th></tr>';
-    acs.forEach(a=>{ body+='<tr><td>'+fmtFecha(a.fecha)+'</td><td>'+esc(a.nombre||'—')+'</td><td>'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'—')+'</td><td>'+esc(a.hab?String(a.hab):'—')+'</td></tr>'; });
+    var _faltTot=acs.filter(function(a){ return acompFaltantes(a).length>0; }).length;
+    body+='<div style="font-size:12px;color:#2a4a73;background:#eef3fb;border:1px solid #c9d8ee;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.6">Aquí puedes completar la <b>edad, el estado civil y la profesión</b> de cada acompañante: son opcionales en el check-in, pero con ellos el <b>reporte policial</b> sale completo.'+(_faltTot?(' <b>Faltan datos en '+_faltTot+' acompañante(s).</b>'):'')+'</div>';
+    body+='<table class="users-table"><tr><th>Fecha</th><th>Acompañante</th><th>Documento</th><th style="width:46px;text-align:center">Hab.</th><th style="width:96px;text-align:center">Datos</th></tr>';
+    acs.forEach(function(a,ix){
+      var _res=acompResumenDatos(a);
+      var _fal=acompFaltantes(a).length;
+      body+='<tr><td style="white-space:nowrap">'+fmtFecha(a.fecha)+'</td><td>'+esc(a.nombre||'—')+(_res?('<div style="font-size:11px;color:#8893a5;margin-top:1px">'+esc(_res)+'</div>'):'')+'</td><td>'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'—')+'</td><td style="text-align:center">'+esc(a.hab?String(a.hab):'—')+'</td><td style="text-align:center"><button class="'+(_fal?'btn-green':'btn-ghost')+'" style="padding:5px 9px;font-size:12px" onclick="editarAcompModal(\''+id+'\','+ix+')">'+(_fal?'✏️ Completar':'✏️ Editar')+'</button></td></tr>';
+    });
     body+='</table>';
   }
   body+='<div class="divider"></div><div class="actions"><button class="btn-primary" onclick="imprimirFichaHuesped(\''+id+'\')">Imprimir ficha</button><button class="btn-ghost" onclick="editClienteModal(\''+id+'\')">Editar datos</button><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(body);
+}
+/* [ACOMP-DATOS] Solo se EDITAN los datos del acompanante ya registrado:
+   no se agregan ni se quitan acompanantes desde aqui (eso lo hace el check-in). */
+function editarAcompModal(clienteId, ix){
+  const c=clienteById(clienteId); if(!c) return;
+  const acs=Array.isArray(c.acompanantes)?c.acompanantes:[]; const a=acs[ix]; if(!a) return;
+  let body='<button class="close" onclick="verClienteModal(\''+clienteId+'\')">×</button><h2>Datos del acompañante</h2>';
+  body+='<div style="background:#eef6ff;border-radius:10px;padding:11px 13px;margin:4px 0 14px;font-size:13px"><b>'+esc(a.nombre||'(sin nombre)')+'</b><div style="color:#55637a;font-size:12px;margin-top:2px">'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'Sin documento')+(a.hab?(' · Hab. '+esc(String(a.hab))):'')+'</div></div>';
+  body+='<div class="field"><label>Edad</label><input id="ad-edad" type="number" min="0" max="120" value="'+escA(acompEdadDe(a))+'" placeholder="ej: 35"></div>';
+  body+='<div class="field"><label>Estado civil</label><select id="ad-ec">'+estadoCivilOptions(acompEcDe(a))+'</select></div>';
+  body+='<div class="field"><label>Profesión u oficio</label><input id="ad-prof" value="'+escA(acompProfDe(a))+'" placeholder="ej: Comerciante"></div>';
+  body+='<div style="font-size:12px;color:#8893a5;margin-bottom:10px;line-height:1.6">Estos datos son <b>opcionales</b>. Si los dejas en blanco, en el reporte policial salen con “—”. El nombre y el documento no se cambian aquí.</div>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="guardarAcompDatos(\''+clienteId+'\','+ix+')">Guardar datos</button><button class="btn-ghost" onclick="verClienteModal(\''+clienteId+'\')">Cancelar</button></div>';
+  showModal(body);
+}
+function guardarAcompDatos(clienteId, ix){
+  const list=clientes(); const c=list.find(function(x){ return x.id===clienteId; }); if(!c) return;
+  const acs=Array.isArray(c.acompanantes)?c.acompanantes:[]; const a=acs[ix]; if(!a) return;
+  const _v=function(id){ const e=document.getElementById(id); return e?String(e.value||'').trim():''; };
+  let edad=_v('ad-edad');
+  if(edad!==''){ const n=parseInt(edad,10); if(isNaN(n)||n<0||n>120){ alert('La edad debe ser un número entre 0 y 120.'); return; } edad=String(n); }
+  const ec=_v('ad-ec').toUpperCase();
+  const prof=mayusculasYa(_v('ad-prof'));
+  const _k=function(x){ return x?((String(x.docNum||'').trim().toUpperCase())||String(x.nombre||'').trim().toUpperCase()):''; };
+  const kk=_k(a);
+  /* Se actualizan todos los registros de la MISMA persona (mismo documento o mismo
+     nombre) para que el historial y el reporte policial muestren los mismos datos. */
+  acs.forEach(function(x){
+    if(!x) return;
+    if(kk && _k(x)!==kk) return;
+    x.edad=edad; x.estadoCivil=ec; x.ocupacion=prof;
+  });
+  saveClientes(list);
+  verClienteModal(clienteId);
+  alert('Datos del acompañante guardados.');
 }
 function imprimirFichaHuesped(id){
   const c=clienteById(id); if(!c){ alert('No se encontró el huésped.'); return; }
