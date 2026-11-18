@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.47 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.48 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.47 · 18/11/2026';
+const APP_VERSION = 'v1.48 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -11032,6 +11032,20 @@ function cxcCuentaDeHabCobro(r){
   try{
     var c=clienteDeHab(r); if(c){ var p=cxcPendientesDeCliente(c); if(p && p.length) return p[0]; }
   }catch(err){}
+  /* Si la habitacion dice estar en CXC pero el id quedo viejo (por ejemplo al unir
+     cuentas), se busca la cuenta abierta que tenga esta habitacion anotada. */
+  try{
+    if(r && r.creditoCxc){
+      var _n=String(r.num||'');
+      var _ab=cxc().filter(function(x){ return x && !x.anulada && !cxcPagada(x) && Array.isArray(x.habsRef) && x.habsRef.map(String).indexOf(_n)>=0; });
+      if(_ab.length){
+        /* si hay varias, la que tenga el control que trae la habitacion */
+        var _cc=parseInt(r.creditoCxcControl||0)||0;
+        for(var _j=0;_j<_ab.length;_j++){ if(parseInt(_ab[_j].control||0)===_cc) return _ab[_j]; }
+        return _ab[0];
+      }
+    }
+  }catch(err){}
   return null;
 }
 /* Tarifa de la noche nueva: la de la habitacion ahora; si es mitad de precio, la mitad. */
@@ -11062,7 +11076,14 @@ function cxcSumarHab(num, op){
   var r=findRoom(num)||findRoomAny(num);
   var monto=Math.round(Number(op.montoUsd||0)*100)/100;
   if(!(monto>0.009)) return null;
-  var e=cxcCuentaDeHabCobro(r);
+  var ref=cxcCuentaDeHabCobro(r);
+  if(!ref) return null;
+  /* OJO: cxc() devuelve una COPIA nueva cada vez. Si se modifica esa copia y luego
+     se guarda otra copia, el cambio se pierde (la deuda no subia). Hay que buscar el
+     renglon DENTRO de la lista que se va a guardar. */
+  var lista=cxc(); if(!Array.isArray(lista)) lista=[];
+  var e=null;
+  for(var _i=0;_i<lista.length;_i++){ if(lista[_i] && lista[_i].id===ref.id){ e=lista[_i]; break; } }
   if(!e) return null;
   if(e.anulada) return null;
   var s=null; try{ s=session(); }catch(err){}
@@ -11085,6 +11106,7 @@ function cxcSumarHab(num, op){
   if(Array.isArray(op.cargosIds) && op.cargosIds.length) renglon.cargosIds=op.cargosIds.slice();
   if(op.nochesExtra) renglon.nochesExtra=parseInt(op.nochesExtra,10)||0;
   if(op.tarifaNoche!=null) renglon.tarifaNoche=Number(op.tarifaNoche)||0;
+  if(!Array.isArray(e.cargos)) e.cargos=[];
   _cxcSubirMonto(e, monto);
   e.cargos.push(renglon);
   /* rastro por habitacion: asi la ficha y el recibo saben que se sumo despues */
@@ -11093,7 +11115,7 @@ function cxcSumarHab(num, op){
   if(!Array.isArray(e.habsRef)) e.habsRef=[];
   var hs=String(op.hab||num||'');
   if(hs && e.habsRef.map(String).indexOf(hs)<0) e.habsRef.push(hs);
-  try{ saveCxc(cxc()); }catch(err){}
+  try{ saveCxc(lista); }catch(err){}
   try{
     logKardex('credito',{hab:Number(op.hab||num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
       detalle:(nuevo?'Agregado DESPUES del check-out':'Sumado durante la estadia')+' a la cuenta CXC N° '+fmtControl(e.control||0)+' · '+renglon.concepto+' · +'+fmtUSD(monto)+' · deuda ahora '+fmtUSD(cxcSaldo(e)),
@@ -14796,13 +14818,22 @@ function _cxcDeHab(r){
 /* Mueve la deuda CXC de un cuarto a la cuenta CXC de la principal, sin duplicar. */
 function _cxcMoverA(desdeR, haciaR, por){
   try{
-    var ed=_cxcDeHab(desdeR), eh=_cxcDeHab(haciaR);
+    var _rd=_cxcDeHab(desdeR), _rh=_cxcDeHab(haciaR);
+    if(!_rd) return '';
+    /* Se trabaja sobre la lista que se guarda (cxc() devuelve copias nuevas). */
+    var lista=cxc(); if(!Array.isArray(lista)) lista=[];
+    var ed=null, eh=null;
+    for(var _k=0;_k<lista.length;_k++){
+      var _x=lista[_k]; if(!_x) continue;
+      if(_x.id===_rd.id) ed=_x;
+      if(_rh && _x.id===_rh.id) eh=_x;
+    }
     if(!ed) return '';
     if(!eh){
       /* no hay CXC en la principal: se re-etiqueta la deuda y queda como la del grupo */
       ed.unidaCon=(ed.unidaCon||[]).concat([String(desdeR.num)]);
       ed.notas=String(ed.notas||'')+(ed.notas?' · ':'')+'Se unio a la cuenta de la Hab. '+haciaR.num+' al unir cuentas';
-      saveCxc(cxc());
+      saveCxc(lista);
       return 'La deuda de CXC (Control '+fmtControl(ed.control)+') queda con la Hab. '+haciaR.num+'.';
     }
     if(ed.id===eh.id) return '';
@@ -14819,7 +14850,7 @@ function _cxcMoverA(desdeR, haciaR, por){
     ed.unidaAId=eh.id; ed.unidaFecha=new Date().toISOString(); ed.unidaPor=(por||'');
     ed.historialUnida=(ed.historialUnida||[]).concat([{fecha:ed.unidaFecha, hacia:eh.id, haciaNombre:eh.nombre, montoUsd:saldo, usuario:(por||'')}]);
     ed.montoUsd=0;
-    saveCxc(cxc());
+    saveCxc(lista);
     updateRoom(desdeR.num,{creditoCxc:true, creditoCxcId:eh.id, creditoCxcControl:(eh.control||0)});
     return 'La deuda de CXC de la Hab. '+desdeR.num+' ('+fmtUSD(saldo)+') se junto en la cuenta de '+eh.nombre+'.';
   }catch(e){ return ''; }
