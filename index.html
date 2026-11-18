@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.60 · 19/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.61 · 19/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.60 · 19/11/2026';
+const APP_VERSION = 'v1.61 · 19/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -4588,6 +4588,8 @@ function checkin(num){
       _e.montoUsd=Number(_e.montoUsd||0)+_hospUsd;
       saveCxc(_ll); confirmarControl(_ctrlC);
       updateRoom(num,{creditoCxc:true, creditoCxcId:_e.id, creditoCxcControl:_ctrlC});
+      cxcHospedajeEnCuenta(num, _hospUsd, _ctrlC, 'Hospedaje a crédito en CXC');
+      cxcComidaSincronizar(num);
       try{ logKardex('credito',{hab:num, huesped:h, clienteId:clienteId||'', control:_ctrlC, detalle:'Hospedaje Hab. '+num+' a crédito → CXC de '+(_e.nombre||'')+' · Control N° '+fmtControl(_ctrlC)+' · '+noches+' noche(s) · '+fmtUSD(_hospUsd), credUsd:_hospUsd, credBs:precioBs(_hospUsd), montoUsd:0, montoBs:0, metodo:'Crédito (CXC)'}); }catch(err){}
     }
   }
@@ -11395,6 +11397,9 @@ function cxcCargarHospedajeEmpresa(emp, num, tarifaEf, noches, huesped, clienteI
   }
   saveCxc(l); confirmarControl(ctrl);
   updateRoom(num,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:ctrl});
+  /* [COMIDAS-CXC] el cuarto deja anotado que el hospedaje ya esta en la cuenta y las comidas del plan tambien van */
+  cxcHospedajeEnCuenta(num, hospUsd, ctrl, 'Hospedaje a crédito en CXC de empresa');
+  cxcComidaSincronizar(num);
   try{ logKardex('credito',{hab:num, huesped:huesped, clienteId:clienteIdPersona||'', control:ctrl, detalle:'Hospedaje Hab. '+num+' a crédito → CXC de EMPRESA '+(emp.nombre||'')+' · Control N° '+fmtControl(ctrl)+' · '+(noches||1)+' noche(s) · '+fmtUSD(hospUsd), credUsd:hospUsd, credBs:precioBs(hospUsd), montoUsd:0, montoBs:0, metodo:'Crédito empresa (CXC)'}); }catch(err){}
   return e;
 }
@@ -11634,6 +11639,121 @@ function cxcRestarHab(num, monto, motivo){
       montoUsd:0, montoBs:0, metodo:''});
   }catch(err){}
   return resta;
+}
+/* ====== [COMIDAS-CXC] EL PLAN DE COMIDAS TAMBIEN VA A LA CUENTA CXC ======
+   Cuando la habitacion esta a credito en CXC (el hospedaje se mando a la cuenta de
+   la empresa o del cliente), las comidas incluidas son parte de ESA cuenta: la
+   empresa paga todo (hospedaje + comidas) y el cuarto no vuelve a pedir esa plata.
+   - Si el plan cambia (noches nuevas, otra pension o se quita), la cuenta CXC se
+     ajusta por la diferencia: nunca se suma dos veces.
+   - Los cargos del plan quedan marcados como cobrados por la cuenta CXC. */
+function cxcComidaDeCuenta(e, num){
+  var out=0; if(!e) return 0;
+  var hs=String(num==null?'':num);
+  (Array.isArray(e.agregadoDespues)?e.agregadoDespues:[]).forEach(function(a){
+    if(!a || a.tipo2!=='comidaplan') return;
+    if(hs!=='' && String(a.hab||'')!==hs) return;
+    out+=Number(a.montoUsd||0);
+  });
+  return Math.round(out*100)/100;
+}
+function cxcComidaPlanTotal(r){
+  if(!r) return 0;
+  var t=cargosDe(r).filter(function(c){ return c.origen==='comidaPlan'; }).reduce(function(s,c){ return s+Number(c.montoUsd||0); },0);
+  return Math.round(t*100)/100;
+}
+/* Baja de la cuenta CXC lo que sobra del plan (cuando se cambia o se quita).
+   Nunca deja la cuenta por debajo de lo que el cliente ya abono. */
+function cxcComidaQuitar(num, monto, motivo){
+  var m=Math.round(Number(monto||0)*100)/100; if(!(m>0.009)) return 0;
+  var lista=cxc(); if(!Array.isArray(lista)) return 0;
+  var r=findRoom(num)||findRoomAny(num);
+  var ref=null; try{ ref=cxcCuentaDeHabCobro(r); }catch(e){ ref=null; }
+  var e=null;
+  if(ref){ for(var i=0;i<lista.length;i++){ if(lista[i] && lista[i].id===ref.id){ e=lista[i]; break; } } }
+  if(!e || e.anulada) return 0;
+  var hs=String(num||'');
+  var total=Math.round(Number(e.montoUsd||0)*100)/100;
+  var libre=Math.round((total-cxcAbon(e))*100)/100;
+  var resta=Math.min(m, Math.max(0,libre));
+  if(!(resta>0.009)) return 0;
+  var s=null; try{ s=session(); }catch(err){}
+  var ctrl=parseInt(e.control||0)||0; if(!ctrl){ ctrl=siguienteControl(); }
+  var pend=resta;
+  if(Array.isArray(e.cargos)){
+    for(var j=e.cargos.length-1; j>=0 && pend>0.009; j--){
+      var c=e.cargos[j]; if(!c) continue;
+      if(c.tipo2!=='comidaplan' || String(c.hab||'')!==hs) continue;
+      var cm=Math.round(Number(c.montoUsd||0)*100)/100;
+      if(!(cm>0.009) || cm>pend+0.009) continue;
+      e.cargos.splice(j,1); pend=Math.round((pend-cm)*100)/100;
+    }
+  }
+  var pend2=resta;
+  if(Array.isArray(e.agregadoDespues)){
+    for(var k=e.agregadoDespues.length-1; k>=0 && pend2>0.009; k--){
+      var a=e.agregadoDespues[k]; if(!a) continue;
+      if(a.tipo2!=='comidaplan' || String(a.hab||'')!==hs) continue;
+      var am=Math.round(Number(a.montoUsd||0)*100)/100;
+      if(!(am>0.009) || am>pend2+0.009) continue;
+      e.agregadoDespues.splice(k,1); pend2=Math.round((pend2-am)*100)/100;
+    }
+  }
+  if(!Array.isArray(e.cargos)) e.cargos=[];
+  if(pend>0.009){ e.cargos.push({ts:new Date().toISOString(), concepto:'Ajuste · plan de comidas ('+(motivo||'cambio de plan')+')', montoUsd:-Math.round(pend*100)/100, montoBs:-precioBs(pend), control:ctrl, hab:hs, usuario:(s?s.nombre:''), motivo:'descuento-comida', tipo2:'descuento'}); }
+  if(pend2>0.009){ if(!Array.isArray(e.agregadoDespues)) e.agregadoDespues=[]; e.agregadoDespues.push({ts:new Date().toISOString(), hab:hs, concepto:'Ajuste · plan de comidas ('+(motivo||'cambio de plan')+')', montoUsd:-Math.round(pend2*100)/100, control:ctrl, usuario:(s?s.nombre:''), tipo2:'comidaplan'}); }
+  e.montoUsd=Math.round((total-resta)*100)/100;
+  if(!Array.isArray(e.quitas)) e.quitas=[];
+  e.quitas.push({ts:new Date().toISOString(), hab:hs, montoUsd:resta, control:ctrl, usuario:(s?s.nombre:''), motivo:('Plan de comidas: '+(motivo||'cambio de plan')), deudaDespues:Math.round((total-resta)*100)/100});
+  try{ saveCxc(lista); }catch(err){}
+  try{ logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl, detalle:'AJUSTE en la cuenta CXC N° '+fmtControl(e.control||0)+' · plan de comidas de la Hab. '+num+' · -'+fmtUSD(resta)+' · '+(motivo||'cambio de plan')+' · deuda ahora '+fmtUSD(cxcSaldo(e)), montoUsd:0, montoBs:0, metodo:''}); }catch(err){}
+  return resta;
+}
+/* Pone la cuenta CXC igual al plan de comidas que tiene la habitacion AHORA.
+   Devuelve la diferencia que se movio (0 = ya estaba bien). */
+function cxcComidaSincronizar(num, motivo){
+  try{
+    var r=findRoom(num)||findRoomAny(num); if(!r) return 0;
+    if(!r.creditoCxc) return 0;                 /* el cuarto no esta a credito: no se toca nada */
+    var e=null; try{ e=cxcCuentaDeHabCobro(r); }catch(err){ e=null; }
+    if(!e || e.anulada) return 0;
+    var tot=cxcComidaPlanTotal(r);
+    var ya=cxcComidaDeCuenta(e, num);
+    var delta=Math.round((tot-ya)*100)/100;
+    if(delta>0.009){
+      var hechas=[]; cargosDe(r).forEach(function(c){ if(c.origen==='comidaPlan') hechas.push(c.comida); });
+      var det=[];
+      ['desayuno','almuerzo','cena'].forEach(function(m){ if(hechas.indexOf(m)>=0) det.push(mealLabel(m)); });
+      cxcSumarHab(num,{concepto:'Comidas incluidas'+(det.length?(' · '+det.join(' + ')):'')+(motivo?(' · '+motivo):''), montoUsd:delta, tipo2:'comidaplan', hab:num, detalle:'Plan de comidas de la Hab. '+num+' · lo paga la cuenta CXC'});
+    } else if(delta<-0.009){
+      cxcComidaQuitar(num, -delta, motivo||'cambio o quita del plan de comidas');
+    }
+    /* el cuarto no vuelve a pedir esas comidas: quedan cobradas por la cuenta CXC */
+    if(tot>0.009){
+      var ctrl=parseInt(e.control||0)||0;
+      var c2=cargosDe(r).map(function(c){
+        if(c.origen!=='comidaPlan') return c;
+        if(c.pagado && c.control) return c;
+        return Object.assign({},c,{pagado:true, control:(c.control||ctrl), cxc:true});
+      });
+      updateRoom(num,{cargos:c2});
+    }
+    return delta;
+  }catch(err){ return 0; }
+}
+/* Cuando el hospedaje se manda a CXC en el check-in, el cuarto deja anotado que
+   ese hospedaje ya esta en la cuenta (asi no lo vuelve a pedir ni se cobra dos veces). */
+function cxcHospedajeEnCuenta(num, monto, ctrl, txt){
+  try{
+    var m=Math.round(Number(monto||0)*100)/100; if(!(m>0.009)) return 0;
+    var r=findRoom(num)||findRoomAny(num); if(!r) return 0;
+    var ab=Array.isArray(r.abonos)?r.abonos.slice():[];
+    var yaHay=ab.filter(function(a){ return a && a.cxc && Math.abs(Number(a.montoUsd||0)-m)<0.01 && String(a.hab||'')===String(num); });
+    if(yaHay.length) return 0;
+    ab.push({id:'abcxch'+Date.now()+num, concepto:(txt||'Hospedaje a crédito en CXC')+(ctrl?(' (Control N° '+fmtControl(ctrl)+')'):''), montoUsd:m, fecha:new Date().toISOString(), control:(Number(r.control)||ctrl||0), cxc:true, hab:Number(num)});
+    updateRoom(num,{abonos:ab});
+    return m;
+  }catch(err){ return 0; }
 }
 /* Lo que ESTA cuenta ya tiene sumado por los consumos de una habitacion
    (para no repetir el mismo consumo cuando se vuelve a enviar la cuenta). */
@@ -13217,7 +13337,7 @@ function aplicarCargoComida(num, plan, noches){
   /* [COMIDAS-POR-NOCHE] El plan se lleva por noche, en renglones chiquitos: "☕ Desayuno · 1 noche".
      Asi se puede quitar o corregir UNA comida sin tocar las demas, y cuando se extiende la
      estadia se agregan SOLO las noches nuevas (no se duplica lo de antes). */
-  var _plActual=cargos.filter(function(c){ return c.origen==='comidaPlan' && !c.pagado && !c.control; });
+  var _plActual=cargos.filter(function(c){ return c.origen==='comidaPlan' && (c.cxc || (!c.pagado && !c.control)); });
   var _ok=true;
   meals.forEach(function(m){
     var cnt=0, tot=0;
@@ -13229,6 +13349,7 @@ function aplicarCargoComida(num, plan, noches){
     /* ya estaba bien sumado: solo se actualiza la etiqueta, no se toca la plata */
     cargos=cargos.map(function(c){ return (c.origen==='comidaPlan')?Object.assign({},c,{desc:planLabel(plan)+' · '+(Number(c.nochesCubiertas)||nn)+' noche(s)'}):c; });
     updateRoom(num,{plan:plan, cargos:cargos, comidaincTotal:monto});
+    try{ cxcComidaSincronizar(num, 'plan de comidas actualizado'); }catch(e){}
     return;
   }
   /* Lo que ya se cobro NO se borra nunca: se marca como reemplazado para que el corte y el historial sigan mostrando lo que de verdad se cobro. */
@@ -13245,6 +13366,8 @@ function aplicarCargoComida(num, plan, noches){
   }
   updateRoom(num,{plan:plan, cargos:cargos, comidaincTotal:monto, ocultarCobrar:false});
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:'cp-plan', control:null, detalle:(esSolo?'Plan de comidas quitado (solo alojamiento)':('Plan de comidas · '+planLabel(plan)+' · '+nn+' noche(s) · '+fmtUSD(monto)+' (mismo precio que se paga al restaurante)')), cargoTipo:'Comida', cargoUsd:monto, cargoBs:precioBs(monto), comidasPlan:plan, noches:nn, montoUsd:0, montoBs:0, metodo:''});
+  /* [COMIDAS-CXC] si el cuarto esta a credito, la cuenta CXC se pone al dia con el plan */
+  try{ cxcComidaSincronizar(num, 'plan de comidas'); }catch(e){}
 }
 
 /* [COMIDAS] Vuelve a calcular y sumar el plan de comidas en una habitacion ocupada (sirve para cuartos hechos antes o cuando cambia el numero de noches o los precios) */
@@ -13284,6 +13407,7 @@ function extenderComidasNoches(num, add){
     });
     var tot=cargos.filter(function(c){ return c.origen==='comidaPlan'; }).reduce(function(s,c){ return s+Number(c.montoUsd||0); },0);
     updateRoom(num,{cargos:cargos, comidaincTotal:Math.round(tot*100)/100});
+    try{ cxcComidaSincronizar(num, 'noches nuevas'); }catch(e){}
     logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Comidas de las '+add+' noche(s) nuevas · '+planLabel(plan)+' · '+fmtUSD(planCostoNoche(plan)*add), cargoTipo:'Comida', cargoUsd:planCostoNoche(plan)*add, montoUsd:0, montoBs:0, metodo:''});
   }
 }
@@ -13319,6 +13443,7 @@ function extenderGuardarComidasNuevas(num, add){
   });
   var tot=cargos.filter(function(c){ return c.origen==='comidaPlan'; }).reduce(function(s,c){ return s+Number(c.montoUsd||0); },0);
   updateRoom(num,{plan:plan, planRest:rests, cargos:cargos, comidaincTotal:Math.round(tot*100)/100});
+  try{ cxcComidaSincronizar(num, 'noches nuevas'); }catch(e){}
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Comidas de las '+add+' noche(s) nuevas · '+planLabel(plan)+' · '+fmtUSD(planCostoNoche(plan)*add), cargoTipo:'Comida', cargoUsd:planCostoNoche(plan)*add, montoUsd:0, montoBs:0, metodo:''});
   cerrarModal(); render();
   alert('Listo. Estadía extendida y comidas de las noches nuevas sumadas: '+fmtUSD(planCostoNoche(plan)*add)+'.');
@@ -15472,6 +15597,11 @@ function pasarGrupoACxc(numsStr, motivo){
   var filasG=[]; var saldo=0;
   filas.forEach(function(f){ if(f&&f.r&&enHabs[String(f.r.num)]){ filasG.push(f); saldo+=Number(f.neto||0); } });
   saldo=Math.max(0,Math.round(saldo*100)/100);
+  /* [CXC-YA-SUMADO] lo que ya se sumo a la cuenta CXC de este cuarto (consumos y
+     comidas cargados durante la estadia) NO se cobra otra vez aqui. */
+  var _yaCxc=0;
+  try{ habs.forEach(function(q){ var _ex=cxcCuentaDeHabCobro(q); if(_ex) _yaCxc=Math.round((_yaCxc+cxcSumaHabConsumos(_ex,q.num)+cxcComidaDeCuenta(_ex,q.num))*100)/100; }); }catch(e){ _yaCxc=0; }
+  if(_yaCxc>0.009) saldo=Math.max(0,Math.round((saldo-_yaCxc)*100)/100);
   if(!(saldo>0.009)) return null;
   var ctrl=0; try{ ctrl=controlDeGrupoCuenta(habs)||0; }catch(e){ ctrl=0; }
   if(!ctrl) ctrl=asegurarControlHab(manda);
