@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.61 · 19/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.62 · 19/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.61 · 19/11/2026';
+const APP_VERSION = 'v1.62 · 19/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -9913,8 +9913,10 @@ function cobrarCuentaConfirm(numsStr, btn){
   try{
     var _numsC=g.nums.map(function(x){ return String(x); });
     var _rep=(DB.get('pagos',[])||[]).find(function(pg){
-      if(!pg || !pg.fechaStr) return false;
-      var t0=Date.parse(pg.fechaStr); if(isNaN(t0)) return false;
+      if(!pg) return false;
+      /* [TIEMPO] Se guarda la hora en numero (ts). La fecha escrita 'es-VE' no siempre se puede
+         leer de vuelta, y por eso esta guarda antes casi nunca saltaba. */
+      var t0=Number(pg.ts)||Date.parse(pg.fechaStr||''); if(!t0 || isNaN(t0)) return false;
       if(Date.now()-t0>180000) return false;
       var hn=String(pg.hab||'').split(',').map(function(x){ return String(parseInt(x,10)); });
       return hn.filter(function(x){ return _numsC.indexOf(x)>=0; }).length===_numsC.length;
@@ -9930,18 +9932,12 @@ function cobrarCuentaConfirm(numsStr, btn){
   const _resta=Math.round((g.saldo-_montoAhora)*100)/100;
   if(PM_STATE['grp']) PM_STATE['grp'].total=_montoAhora;
   const pm=pmLeer('grp'); if(!pm.ok){ procesoListo(btn); alert(pm.msg); return; }
-  const metodo=pm.metodoStr; const ctrl=controlDeGrupoCuenta(g.list)||siguienteControl(); const multi=g.list.length>1; const pagos=DB.get('pagos',[]);
-  const _habsCtrl=habsDeControlGroup(g.list); const _habsCtrlTxt=habsControlTexto(_habsCtrl); const _conTramos=_habsCtrl.length>g.list.length;
-  pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
-    hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), habsTramo:(_conTramos?_habsCtrl:null), huesped:_hNom, tipo:multi?'Varias habitaciones':(r0.tipo||''), noches:g.nochesTot, metodo:metodo, metodos:pm.metodos,
-    concepto:(multi?('Cobro combinado ('+g.nums.length+' habitaciones)'):'Cobro de hospedaje')+(_conTramos?(' · Hab. '+_habsCtrlTxt):''), clienteId:_hCid, clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
-    montoUsd:_montoAhora, montoBs:precioBs(_montoAhora), tasa:tasa(), usuario:session().nombre,
-    /* [PAGO-PARCIAL] queda anotado que fue un abono y cuanto sigue debiendo */
-    abonoParcial:(_resta>0.009?true:undefined), saldoDespues:Math.round(_resta*100)/100, saldoAntes:Math.round(g.saldo*100)/100 });
-  DB.save('pagos', pagos); confirmarControl(ctrl);
-  logKardex('pago',{hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), huesped:_hNom, clienteId:_hCid, detalle:(multi?('Cobro combinado · '+g.nums.length+' habitaciones'):((_resta>0.009?'Abono de hospedaje':'Cobro de hospedaje')))+' (sin salida)'+(_resta>0.009?(' · resta '+fmtUSD(_resta)):'')+(_conTramos?(' · incluye tramos de Hab. '+_habsCtrlTxt+' · Control N° '+fmtControl(ctrl)):''), montoUsd:_montoAhora, montoBs:precioBs(_montoAhora), metodo:metodo});
+  const metodo=pm.metodoStr; const multi=g.list.length>1;
+  /* [NO-GUARDAR-AUN] El control se mira pero NO se reserva todavia: si el cajero cancela
+     el aviso de abono parcial, no debe gastarse un numero de control ni quedar nada anotado. */
+  const _ctrlPrev=controlDeGrupoCuenta(g.list)||peekControl();
   /* [AVISO-NOCHES] Si hay noches que todavia no estan pagadas, se avisa claro
-     ANTES de registrar: el abono entra igual (es dinero que entro), pero nadie
+     ANTES de anotar el cobro en Caja: el abono entra igual (es dinero que entro), pero nadie
      debe creer que la cuenta quedo saldada. */
   try{
     if(_resta>0.009){
@@ -9953,10 +9949,21 @@ function cobrarCuentaConfirm(numsStr, btn){
       if(_nochesImp>0 && _sinPagar>_nochesImp) _sinPagar=_nochesImp;
       var _msgN='⚠️ OJO: NO ES TODA LA CUENTA\n\nEntrega '+fmtUSD(_montoAhora)+' y la cuenta es de '+fmtUSD(g.saldo)+'.\nQuedan sin pagar '+fmtUSD(_resta);
       if(_porNoche>0.009 && _nochesImp>0){ _msgN+=' · mas o menos '+_sinPagar+' de las '+_nochesImp+' noche(s) ('+fmtUSD(_porNoche)+' por noche)'; }
-      _msgN+='.\n\nEl abono se registra igual en el mismo Control N° '+fmtControl(ctrl)+'.\nLa habitación sigue ocupada y en el check-out se pide lo que falta.\n\n¿Continuar?';
+      _msgN+='.\n\nSi sigues, el abono se registra en el mismo Control N° '+fmtControl(_ctrlPrev)+'.\nSi tocas Cancelar, no se cobra nada y no se gasta el número.\nLa habitación sigue ocupada y en el check-out se pide lo que falta.\n\n¿Continuar?';
       if(!confirm(_msgN)){ procesoListo(btn); return; }
     }
   }catch(e){}
+  /* [GUARDAR] Recien aqui, ya confirmado, se reserva el control y se anota el dinero. */
+  const ctrl=controlDeGrupoCuenta(g.list)||siguienteControl(); const pagos=DB.get('pagos',[]);
+  const _habsCtrl=habsDeControlGroup(g.list); const _habsCtrlTxt=habsControlTexto(_habsCtrl); const _conTramos=_habsCtrl.length>g.list.length;
+  pagos.unshift({ id:Date.now(), ts:now.getTime(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+    hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), habsTramo:(_conTramos?_habsCtrl:null), huesped:_hNom, tipo:multi?'Varias habitaciones':(r0.tipo||''), noches:g.nochesTot, metodo:metodo, metodos:pm.metodos,
+    concepto:(multi?('Cobro combinado ('+g.nums.length+' habitaciones)'):'Cobro de hospedaje')+(_conTramos?(' · Hab. '+_habsCtrlTxt):''), clienteId:_hCid, clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
+    montoUsd:_montoAhora, montoBs:precioBs(_montoAhora), tasa:tasa(), usuario:session().nombre,
+    /* [PAGO-PARCIAL] queda anotado que fue un abono y cuanto sigue debiendo */
+    abonoParcial:(_resta>0.009?true:undefined), saldoDespues:Math.round(_resta*100)/100, saldoAntes:Math.round(g.saldo*100)/100 });
+  DB.save('pagos', pagos); confirmarControl(ctrl);
+  logKardex('pago',{hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), huesped:_hNom, clienteId:_hCid, detalle:(multi?('Cobro combinado · '+g.nums.length+' habitaciones'):((_resta>0.009?'Abono de hospedaje':'Cobro de hospedaje')))+' (sin salida)'+(_resta>0.009?(' · resta '+fmtUSD(_resta)):'')+(_conTramos?(' · incluye tramos de Hab. '+_habsCtrlTxt+' · Control N° '+fmtControl(ctrl)):''), montoUsd:_montoAhora, montoBs:precioBs(_montoAhora), metodo:metodo});
   /* [PAGO-UNO] El dinero se reparte una sola vez, sobre el total de la cuenta. */
   _aplicarPagoCuenta(g, _montoAhora, ctrl, metodo, now);
   const _habTxt = multi?(g.nums.length+' habitaciones ('+g.nums.join(', ')+')'):('Habitación '+g.nums[0]);
