@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.56 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.57 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.56 · 18/11/2026';
+const APP_VERSION = 'v1.57 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -9433,7 +9433,20 @@ function ucRefrescarBotones(){
     }
   }
 }
+/* Consumos (comidas, minibar, etc.) que tiene pendientes una habitacion. */
+function sumaConsumo(num){
+  try{
+    var r=findRoom(num); if(!r) return 0;
+    return cargosPropios(r).filter(function(c){ return c && !c.pagado; })
+      .reduce(function(x,c){ return x+Number(c.montoUsd||0); },0);
+  }catch(e){ return 0; }
+}
+/* [UNIR-SEGURO] Si algo falla al unir, que avise en pantalla y no se quede en silencio. */
 function unirVariasConfirm(){
+  try{ return _unirVariasConfirmar(); }
+  catch(e){ alert('No se pudieron unir las cuentas.\n\n'+((e&&e.message)||'Error inesperado')+'\n\nVuelve a intentarlo. Si sigue igual, avisa a soporte.'); }
+}
+function _unirVariasConfirmar(){
   var pe=document.getElementById('uc-principal');
   var me=document.getElementById('uc-modo');
   var pri=pe?parseInt(pe.value)||0:0;
@@ -12225,14 +12238,15 @@ function verClienteModal(id){
     body+='<table class="users-table"><tr><th>Fecha</th><th>Acompañante</th><th>Documento</th><th>Hab.</th></tr>';
     acs.forEach(a=>{ body+='<tr><td>'+fmtFecha(a.fecha)+'</td><td>'+esc(a.nombre||'—')+'</td><td>'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'—')+'</td><td>'+esc(a.hab?String(a.hab):'—')+'</td></tr>'; });
     body+='</table>';
-    /* [MENOR-EDAD] Niños que vinieron con este huésped, con su edad. */
-    var _menFicha=menoresClienteHistorial(c);
-    if(_menFicha.length){
-      body+='<div class="section-title" style="font-size:14px;margin-top:14px">Niños que han venido con este huésped ('+_menFicha.length+')</div>';
-      body+='<table class="users-table"><tr><th>Entrada</th><th>Niño</th><th>Edad</th><th>Hab.</th></tr>';
-      _menFicha.forEach(function(m){ body+='<tr><td>'+esc(m.fecha||'—')+'</td><td>'+esc(m.nombre||'—')+'</td><td>'+esc(m.edad||'—')+'</td><td>'+esc(m.hab==null?'—':String(m.hab))+'</td></tr>'; });
-      body+='</table>';
-    }
+  }
+  /* [MENOR-EDAD] Niños que vinieron con este huésped, con su edad.
+     Sale siempre (aunque no tenga acompañantes anotados). */
+  var _menFicha=menoresClienteHistorial(c);
+  if(_menFicha.length){
+    body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Niños que han venido con este huésped ('+_menFicha.length+')</div>';
+    body+='<table class="users-table"><tr><th>Entrada</th><th>Niño</th><th>Edad</th><th>Hab.</th></tr>';
+    _menFicha.forEach(function(m){ body+='<tr><td>'+esc(m.fecha||'—')+'</td><td>'+esc(m.nombre||'—')+'</td><td>'+esc(m.edad||'—')+'</td><td>'+esc(m.hab==null?'—':String(m.hab))+'</td></tr>'; });
+    body+='</table>';
   }
   body+='<div class="divider"></div><div class="actions"><button class="btn-primary" onclick="imprimirFichaHuesped(\''+id+'\')">Imprimir ficha</button><button class="btn-ghost" onclick="editClienteModal(\''+id+'\')">Editar datos</button><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(body);
@@ -12257,7 +12271,7 @@ function menoresClienteHistorial(c){
           if(rr && String(rr.control||'')===String(ctrl||'')) lst=menoresDe(rr);
         }
         lst.forEach(function(m){
-          var nm=String(m.nombre||'').trim();
+          var nm=(String(m.nombre||'').trim()+' '+String(m.apellido||'').trim()).trim();
           if(!nm) return;
           var clave=nm.toUpperCase()+'|'+String(hab)+'|'+String(e.entrada||'');
           if(vistos[clave]) return; vistos[clave]=1;
@@ -15300,6 +15314,9 @@ function puedeCxcCredito(){
 /* Busca (o crea) una sola cuenta CXC para este cliente/empresa.
    'clave' agrupa: si ya hay una cuenta pendiente con esa clave, se usa ESA y no se
    abre otra. Asi en CXC el cliente queda con una sola cuenta y no con cinco. */
+/* [CXC-LISTA] Lista de cuentas de CXC. Faltaba: por eso "Unir cuentas de CXC",
+   "Ver cuentas a unir" y el pase de una habitacion a credito no hacian nada. */
+function _cxcLista(){ try{ return cxc()||[]; }catch(e){ return []; } }
 function cxcCuentaPara(op){
   op=op||{};
   var l=_cxcLista(); var now=new Date(); var s=null; try{ s=session(); }catch(e){}
@@ -15343,7 +15360,7 @@ function cxcCuentaPara(op){
   if(!Array.isArray(e.habitaciones)) e.habitaciones=[];
   if(op.detHab) e.habitaciones.push(op.detHab);
   if(Array.isArray(op.cargosDetalle) && op.cargosDetalle.length){ if(!Array.isArray(e.cargosDetalle)) e.cargosDetalle=[]; op.cargosDetalle.forEach(function(c){ e.cargosDetalle.push(c); }); }
-  _cxcGuardar(l);
+  saveCxc(l);
   try{ confirmarControl(ctrl); }catch(err){}
   return e;
 }
