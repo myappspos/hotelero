@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.62 · 19/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.63 · 19/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.62 · 19/11/2026';
+const APP_VERSION = 'v1.63 · 19/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -4923,37 +4923,52 @@ function cobrarYCheckout(num, btn){
   const abonoUsd = abonos.reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
   const saldoUsd = Math.max(0, totUsd - abonoUsd);
   const c = clienteDeHab(r); const cr = c?clienteResumen(c):null;
-  if(abonos.length){
-    /* [KARDEX-COBRO] Los adelantos se concretan al hacer el check-out: pasan a la
-       lista de pagos (arqueo y turno) y se quitan del cuarto, para que un segundo
-       check-out no los cuente dos veces. */
+  const now = new Date();
+  /* [ADELANTOS-AL-FINAL] Los adelantos del cuarto pasan a la lista de pagos (arqueo y
+     turno) y se quitan del cuarto, para que un segundo check-out no los cuente dos veces.
+     OJO (v1.63): antes esto se hacia ANTES de pedir la forma de pago, y ademas fallaba
+     en silencio: se borraban los adelantos del cuarto pero NUNCA llegaban a Caja.
+     Ahora solo se hace cuando el cajero ya confirmo el cobro (o el check-out sin cobro). */
+  const _pasarAdelantos=function(){
+    if(!abonos.length) return;
     try{
       const _pg=DB.get('pagos',[]);
+      /* [NO-DOBLE] Un adelanto que ya se anoto en Caja (o que es credito de CXC) no se
+         vuelve a pasar: si no, el arqueo cobraria dos veces el mismo dinero. */
+      const _yaEnCaja=function(a){
+        if(a.enCaja===true) return true;
+        if(a.cxc) return true;
+        const _u=abonoCuentaUsd(a,r), _ct=parseInt(a.control)||0;
+        if(!_ct) return false;
+        return _pg.some(function(p){ return parseInt(p.control)===_ct && Math.abs(Number(p.montoUsd||0)-_u)<=0.01; });
+      };
       abonos.forEach(function(a){
+        if(_yaEnCaja(a)) return;
         const _u=abonoCuentaUsd(a,r), _ct=parseInt(a.control)||siguienteControl();
-        _pg.unshift({ id:Date.now()+Math.floor(Math.random()*900), control:_ct, dia:diaKey(now), fechaStr:(a.fechaStr||now.toLocaleString('es-VE')),
+        _pg.unshift({ id:Date.now()+Math.floor(Math.random()*900), ts:Date.now(), control:_ct, dia:diaKey(now), fechaStr:(a.fechaStr||now.toLocaleString('es-VE')),
           hab:num, huesped:r.huesped||'', tipo:r.tipo||'', noches:noches, metodo:(a.metodo||'Abono'), metodos:(a.metodos||null),
           clienteId:r.clienteId||'', clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
           montoUsd:_u, montoBs:(Number(a.montoBs)||precioBs(_u)), tasa:tasa(), usuario:session().nombre, nota:'Adelanto aplicado en el check-out' });
         try{ confirmarControl(_ct); }catch(_ec){}
       });
       DB.save('pagos',_pg);
+      r.abonos=[];
+      try{ saveRooms(rooms()); }catch(_eAb2){}
     }catch(_eAb){}
-    r.abonos=[];
-    try{ saveRooms(rooms()); }catch(_eAb2){}
-  }
-  const now = new Date();
+  };
   const detAb = abonoUsd>0 ? (' (ya adelantó '+fmtUSD(abonoUsd)+')') : '';
   if(saldoUsd<=0.009){
     // Ya estaba todo pagado por adelantado: no se cobra nada más
     var _cort=habCortesia(r);
-    if(!confirm((_cort?'Habitación autorizada como CORTESÍA: el hospedaje no se cobra.':(enCxc?'El hospedaje de esta habitación ya está en CXC a crédito.':'Esta cuenta ya quedó cubierta con los adelantos ('+fmtUSD(abonoUsd)+').'))+' No hay saldo por cobrar aquí.\n\n¿Hacer el check-out?')) return;
+    if(!confirm((_cort?'Habitación autorizada como CORTESÍA: el hospedaje no se cobra.':(enCxc?'El hospedaje de esta habitación ya está en CXC a crédito.':'Esta cuenta ya quedó cubierta con los adelantos ('+fmtUSD(abonoUsd)+').'))+' No hay saldo por cobrar aquí.\n\n¿Hacer el check-out?')){ procesoListo(btn); return; }
+    _pasarAdelantos();
     const det0 = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+(_cort?' · cortesía autorizada (no se cobra hospedaje)':(enCxc?' · hospedaje a crédito en CXC (Control '+fmtControl(r.creditoCxcControl)+')':' · pagado por adelantado'))+detAb;
     logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:det0, montoUsd:0, montoBs:0, metodo:(_cort?'Cortesia autorizada':(enCxc?'Hospedaje en CXC':'Pagado por adelantado'))});
     cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:0, metodo:(_cort?'Cortesia autorizada':(enCxc?'Hospedaje en CXC':'Pagado por adelantado'))});
     confirmCheckout(num); return;
   }
   const pm=pmLeer('co'); if(!pm.ok){ procesoListo(btn); alert(pm.msg); return; }
+  _pasarAdelantos();
   const metodo = pm.metodoStr;
   const ctrl = (parseInt(r.control)||0) || siguienteControl();
   const pagos = DB.get('pagos',[]);
@@ -9763,12 +9778,42 @@ function ctaParcialMonto(saldo){
   if(m>s2) m=s2;
   return Math.round(m*100)/100;
 }
+/* [CIERRE-DETALLE] Cuando una cuenta ya aparece pagada, dice CON QUE se cerro:
+   cobros anotados en Caja, adelantos del cuarto, crédito en CXC o cortesía.
+   Asi no hay que adivinar por que el sistema la da por pagada. */
+function detalleCierreCuenta(g){
+  var out=[];
+  try{
+    var _nums=((g&&g.nums)||[]).map(String);
+    var _pg=(DB.get('pagos',[])||[]).filter(function(p){
+      if(!p) return false;
+      var hn=String(p.hab||'').split(',').map(function(x){ return String(parseInt(x,10)); });
+      return hn.some(function(x){ return _nums.indexOf(x)>=0; });
+    });
+    _pg.slice(0,4).forEach(function(p){
+      out.push('• Cobro N° '+fmtControl(p.control)+' · '+fmtUSD(p.montoUsd)+' · '+(p.metodo||'')+' · '+String(p.fechaStr||''));
+    });
+    var _ab=[];
+    ((g&&g.list)||[]).forEach(function(r){
+      if(!r) return;
+      (Array.isArray(r.abonos)?r.abonos:[]).forEach(function(a){ _ab.push('• Adelanto Hab. '+r.num+' · '+fmtUSD(a.montoUsd)+' · '+esc(a.concepto||'')); });
+      if(r.creditoCxc) out.push('• Hospedaje a crédito en CXC · Control N° '+fmtControl(r.creditoCxcControl));
+      if(r.autorizadaModo==='gratis') out.push('• Hab. '+r.num+' · cortesía autorizada (no se cobra)');
+    });
+    _ab.slice(0,3).forEach(function(t){ out.push(t); });
+  }catch(e){}
+  return out;
+}
 function cobrarCuentaModal(numsStr){
   if(guardTurno()) return;
   let g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
   let _uni=false;
   if(g.list.length===1){ try{ g=datosCobroCuentaHab(g.list[0]); _uni=true; }catch(e){ _uni=false; } }
-  if(g.saldo<=0.009){ alert('Esta cuenta ya está totalmente pagada. No hay saldo por cobrar.\n\nSi en la caja no se cobró, entra a la habitación y usa “Reabrir la cuenta”.'); return; }
+  if(g.saldo<=0.009){
+    var _dc=detalleCierreCuenta(g);
+    alert('Esta cuenta ya está totalmente pagada. No hay saldo por cobrar.'+(_dc.length?('\n\nSe cerró con:\n'+_dc.join('\n')):'')+'\n\nSi en la caja no se cobró, entra a la habitación y usa “Reabrir la cuenta”.');
+    return;
+  }
   /* [CXC-DOBLE] Si la cuenta ya esta a credito en CXC (pagada alla), no se vuelve a
      cobrar aqui: el dinero entraria dos veces. */
   try{
@@ -9889,7 +9934,7 @@ function _aplicarPagoCuenta(g, monto, ctrl, metodo, now){
       var _conc='Pago de la cuenta';
       if(_uni && _manda && Number(q.num)!==Number(_manda.num)) _conc+=' (junto con Hab. '+_manda.num+')';
       if(!saldada) _conc+=' (abono)';
-      ab.push({id:'ab'+Date.now()+q.num, concepto:_conc, montoUsd:pp.parte, fecha:now.toISOString(), metodo:metodo, control:ctrl, hab:Number(q.num)});
+      ab.push({id:'ab'+Date.now()+q.num, concepto:_conc, montoUsd:pp.parte, fecha:now.toISOString(), metodo:metodo, control:ctrl, hab:Number(q.num), enCaja:true});
     }
     var patch={abonos:ab, control:ctrl};
     if(saldada){
@@ -9906,7 +9951,12 @@ function cobrarCuentaConfirm(numsStr, btn){
   if(procesoDoble(btn)) return;
   let g=cobroGrupoDatos(numsStr); if(!g.list.length){ procesoListo(btn); alert('No hay habitaciones para cobrar.'); return; }
   if(g.list.length===1){ try{ const _gu=datosCobroCuentaHab(g.list[0]); if(_gu && _gu.list.length>1) g=_gu; }catch(e){} }
-  if(g.saldo<=0.009){ procesoListo(btn); alert('Esta cuenta ya está totalmente pagada.'); return; }
+  if(g.saldo<=0.009){
+    procesoListo(btn);
+    var _dc2=detalleCierreCuenta(g);
+    alert('Esta cuenta ya está totalmente pagada.'+(_dc2.length?('\n\nSe cerró con:\n'+_dc2.join('\n')):'')+'\n\nSi en la caja no se cobró, entra a la habitación y usa “Reabrir la cuenta”.');
+    return;
+  }
   const r0=g.list[0]; const c=g.titu||clienteDeHab(r0); const cr=c?clienteResumen(c):null; const now=new Date();
   /* [DOBLE-COBRO] Si hace menos de 3 minutos se registró un cobro de estas mismas habitaciones,
      se pregunta antes de volver a cobrar (evita el doble toque y el cobro repetido). */
