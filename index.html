@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.45 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.47 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.45 · 18/11/2026';
+const APP_VERSION = 'v1.47 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -3826,6 +3826,7 @@ function abrirHab(num){
     if(!r.autorizada) body += '<div class="field" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-tramos-act" style="width:auto;margin:0" '+(r.tramosCobro!==false?'checked':'')+' onchange="toggleTramosCobro('+num+')"> Cobrar por tramos (cada tramo con su tarifa)</label></div>';
     body += desgloseBox(tarifaEfectiva(r), nochesHab(r), 'ocup', promoPct(r));
     if(r.autorizada){ body += cuentaHabBoxAutorizada(r); } else { try{ body += cuentaHabBox(r); }catch(e){} }
+    try{ body += cxcDesgloseHabHTML(r); }catch(e){}
     if(r.limpiezaPendiente){ body += '<div style="background:#fff3e0;border:1px solid #f3961c;color:#b5651d;border-radius:8px;padding:8px 10px;font-size:13px;margin:10px 0">🧹 Limpieza solicitada · pendiente de Ama de Llaves</div>'; }
     /* [COMIDAS] plan contratado y boton para volver a sumarlo a la cuenta */
     if(r.autorizada){ body += bloqueoAutorizadaHTML(r,'plan'); }
@@ -5318,8 +5319,12 @@ function guardarCargo(num){
   function _ligaCargosCtrl(_ids,_c){ if(!_ids||!_ids.length||!_c) return; const _l=cargosDe(findRoom(num)).map(function(x){ return _ids.indexOf(x.id)>=0?Object.assign({},x,{control:(x.control||_c),controlPago:_c}):x; }); updateRoom(num,{cargos:_l}); }
   cargos.push({id:_cgId, tipo:tipo, desc:(_acNom?('['+_acNom+'] '+(desc||'')):desc), montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false, control:_cgCtrl, acompId:_acompId, hab:num, habOriginal:num});
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
+  /* [CXC-SUMAR] si el hospedaje ya esta a credito en CXC, el consumo va a esa MISMA cuenta */
+  var _sumCxc=null;
+  try{ _sumCxc=cxcSumarHab(num,{concepto:'Consumo · '+tipo+(rest?(' · '+rest):'')+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]}); }catch(e){}
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, control:_cgCtrl, detalle:tipo+(rest?(' · '+rest):'')+(desc?' · '+desc:'')+' · '+fmtUSD(monto)+' · N° control '+fmtControl(_cgCtrl), restaurante:rest, cargoTipo:tipo, cargoUsd:monto, cargoBs:precioBs(monto), montoUsd:0, montoBs:0, metodo:''});
   abrirHab(num);
+  if(_sumCxc){ setTimeout(function(){ alert('Sumado a la cuenta CXC N° '+fmtControl(_sumCxc.control||0)+' de '+cxcNombreDe(_sumCxc)+'.\nAhora debe '+fmtUSD(cxcSaldo(_sumCxc))+(cxcViveEnHab(_sumCxc)?'':'.\n\nEl huesped ya hizo check-out: este consumo lleva su propio N° de control dentro de la misma cuenta.')); },80); }
 }
 function ligarCargosControl(ids, ctrl){
   if(!ids||!ids.length||!ctrl) return;
@@ -7300,6 +7305,7 @@ function renderAdmin(){
   } else if(adminTab==='comidas'){
     html += renderComidasAdmin();
   } else {
+    html += panelEstadoSistema();
     html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
     html += '<div class="section-title" style="font-size:15px;margin-top:0">Respaldo de la base de datos</div>';
     html += '<p style="margin:0 0 12px;color:#55637a;line-height:1.6;font-size:13.5px">Guarda <b>todos los datos</b> (habitaciones, clientes, pagos, usuarios, configuración...) en un archivo en tu computadora. Lo puedes volver a cargar cuando quieras para restaurarlos.</p>';
@@ -7311,10 +7317,12 @@ function renderAdmin(){
     html += '<input type="file" id="resp-file" accept="application/json,.json" onchange="importarRespaldo(event)" style="display:none">';
     html += '<button class="btn-green" onclick="document.getElementById(\'resp-file\').click()">⬆️ Subir respaldo y restaurar</button>';
     html += '</div>';
-    html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
-    html += '<p style="margin-bottom:14px;color:#55637a;line-height:1.6">Reiniciar devuelve las habitaciones a <b>Libre</b> y borra los reportes, pero <b>conserva</b> clientes, empresas, pagos y configuración.</p>';
-    html += '<button class="btn-red" onclick="resetData()">Reiniciar habitaciones y reportes</button></div>';
     if(session() && esMaster(session().rol)){
+      html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
+      html += '<div class="section-title" style="font-size:15px;margin-top:0">Reiniciar habitaciones y reportes</div>';
+      html += '<p style="margin:0 0 10px;color:#55637a;line-height:1.6;font-size:13.5px">Devuelve todas las habitaciones a <b>Libre</b> y borra los reportes de habitación. <b>No toca</b> usuarios, clientes, pagos, caja, turnos, kardex, reservas ni configuración.</p>';
+      html += '<p style="margin:0 0 14px;background:#fff4e5;border:1px solid #ffd59a;color:#8a5200;border-radius:8px;padding:9px 12px;font-size:12.5px;line-height:1.5">🔒 Solo el <b>Master</b> puede hacerlo y te pedirá tu <b>contraseña</b>. Antes podrás elegir si conservas tus tipos y precios de habitación.</p>';
+      html += '<button class="btn-red" onclick="resetData()">Reiniciar habitaciones y reportes</button></div>';
       html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-top:18px;border:1px solid #f1c3c3">';
       html += '<div class="section-title" style="font-size:15px;margin-top:0;color:#c0392b">⚠️ Borrar TODO y empezar de cero</div>';
       html += '<p style="margin:0 0 14px;color:#55637a;line-height:1.6;font-size:13.5px">Borra <b>absolutamente todo</b> (habitaciones, clientes, empresas, pagos, caja, reportes, turnos, kardex, usuarios y configuración), en este equipo y en la nube, para dejar la app <b>limpia desde cero</b> y volver a configurarla. Al tocar el botón te pedirá tu <b>contraseña de Master</b>. <b>Esta acción no se puede deshacer</b> — te recomendamos descargar un respaldo antes.</p>';
@@ -7425,9 +7433,139 @@ function deleteUser(user){
   if(!confirm('¿Eliminar al usuario "'+user+'"? Esta acción no se puede deshacer.')) return;
   DB.save('users', users.filter(x=>x.user!==user)); render();
 }
+/* ====== REVISIÓN DEL SISTEMA (solo lectura) ====== */
+function _estadoFila(titulo, valor){
+  return '<div style="padding:9px 0;border-bottom:1px solid #eef2f7;font-size:13px;line-height:1.55"><div style="font-weight:700;color:#44526a;font-size:12.5px;margin-bottom:3px">'+titulo+'</div><div style="color:#1c2430">'+valor+'</div></div>';
+}
+function _estadoDatos(){
+  var us=(DB.get('users',[])||[]);
+  var usHtml=us.map(function(x){ return esc(x.user)+' <span style="color:#8893a5;font-size:12px">('+(ROLES[x.rol]||x.rol)+')</span>'; }).join(' &nbsp;·&nbsp; ');
+  var usTxt=us.map(function(x){ return x.user+' ('+(ROLES[x.rol]||x.rol)+')'; }).join(' · ');
+  var rs=rooms();
+  var cnt={}; rs.forEach(function(r){ cnt[r.estado]=(cnt[r.estado]||0)+1; });
+  var estH=[], estT=[];
+  Object.keys(ESTADOS).forEach(function(k){ estH.push(ESTADOS[k].t+': <b>'+(cnt[k]||0)+'</b>'); estT.push(ESTADOS[k].t+': '+(cnt[k]||0)); });
+  var porTipo={}; rs.forEach(function(r){ var t=r.tipo||'—'; porTipo[t]=(porTipo[t]||0)+1; });
+  var chips=Object.keys(porTipo).map(function(t){ return '<span style="display:inline-block;background:#eef6ff;color:#0d3b66;border-radius:20px;padding:2px 9px;margin:5px 6px 0 0;font-size:11.5px">'+esc(t)+': <b>'+porTipo[t]+'</b></span>'; }).join('');
+  var tiposTxt=Object.keys(porTipo).map(function(t){ return t+': '+porTipo[t]; }).join(' · ');
+  var reps=(DB.get('reportes',[])||[]);
+  var pend=reps.filter(function(x){ return x.estado!=='resuelto'; }).length;
+  var hh=hotel();
+  var met=getMetodos();
+  var tp=getTipos();
+  var tpTH=tp.map(function(t){ var p=precioBaseTipo(t); return esc(t)+(p?(' <span style="color:#8893a5;font-size:11.5px">'+fmtUSD(p)+'</span>'):' <span style="color:#b45309;font-size:11.5px">(sin precio)</span>'); }).join(' · ');
+  var tpTT=tp.map(function(t){ var p=precioBaseTipo(t); return t+(p?(' '+fmtUSD(p)):' (sin precio)'); }).join(' · ');
+  var ta=null; try{ ta=turnoActivo(); }catch(e){}
+  var cajaTxt = ta ? ((ta.nombre||ta.usuario||'Turno')+' · abierto desde '+(ta.inicio?new Date(ta.inicio).toLocaleString('es-VE'):'—')) : '';
+  var movTxt = 'Clientes: '+((DB.get('clientes',[])||[]).length)+' · Pagos: '+((DB.get('pagos',[])||[]).length)+' · Reservas: '+((DB.get('reservas',[])||[]).length);
+  return [
+    { t:'👤 Usuarios ('+us.length+')', h:(usHtml||'No hay usuarios'), x:(usTxt||'No hay usuarios') },
+    { t:'🛏️ Habitaciones ('+rs.length+')', h:estH.join(' &nbsp; ')+(chips?('<div>'+chips+'</div>'):''), x:('Total: '+rs.length+' — '+estT.join(' · ')+(tiposTxt?(' | Por tipo: '+tiposTxt):'')) },
+    { t:'📝 Reportes de habitación ('+reps.length+')', h:(reps.length ? (pend+' sin resolver · '+(reps.length-pend)+' resueltos') : 'Ninguno'), x:(reps.length ? (pend+' sin resolver · '+(reps.length-pend)+' resueltos') : 'Ninguno') },
+    { t:'🏨 Hotel', h:((hh.nombre?esc(hh.nombre):'<span style="color:#b45309">Sin nombre configurado</span>')+(hh.rif?(' · RIF '+esc(hh.rif)):'')), x:((hh.nombre||'Sin nombre configurado')+(hh.rif?(' · RIF '+hh.rif):'')) },
+    { t:'💱 Tasa', h:('Bs. '+numFmt(tasa())+' por 1 $'), x:('Bs. '+numFmt(tasa())+' por 1 $') },
+    { t:'💳 Métodos de pago ('+met.length+')', h:(met.map(function(m){ return esc(m); }).join(' · ')||'Ninguno'), x:(met.join(' · ')||'Ninguno') },
+    { t:'🏷️ Tipos de habitación ('+tp.length+')', h:(tpTH||'Ninguno'), x:(tpTT||'Ninguno') },
+    { t:'🔢 N° de control', h:(fmtControl(DB.get('pagoControl',0))+' <span style="color:#8893a5;font-size:12px">(último usado)</span>'), x:(fmtControl(DB.get('pagoControl',0))+' (último usado)') },
+    { t:'💰 Caja', h:(cajaTxt ? esc(cajaTxt) : '<span style="color:#8893a5">Ningún turno de caja abierto</span>'), x:(cajaTxt||'Ningún turno de caja abierto') },
+    { t:'📚 Movimiento', h:('Clientes: <b>'+((DB.get('clientes',[])||[]).length)+'</b> · Pagos: <b>'+((DB.get('pagos',[])||[]).length)+'</b> · Reservas: <b>'+((DB.get('reservas',[])||[]).length)+'</b>'), x:movTxt }
+  ];
+}
+function panelEstadoSistema(){
+  var filas=_estadoDatos();
+  var o='<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
+  o+='<div class="section-title" style="font-size:15px;margin-top:0">🔎 Estado actual · revisión rápida</div>';
+  o+='<p style="margin:0 0 4px;color:#55637a;line-height:1.6;font-size:13px">Lo que hay ahora mismo en la app. <b>Es solo lectura:</b> mirar aquí no cambia nada.</p>';
+  filas.forEach(function(f){ o+=_estadoFila(f.t, f.h); });
+  o+='<div style="margin-top:14px"><button class="btn-ghost" onclick="imprimirEstadoSistema()">🖨️ Imprimir esta revisión</button></div>';
+  o+='</div>';
+  return o;
+}
+function imprimirEstadoSistema(){
+  var filas=_estadoDatos();
+  var hh=hotel();
+  var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Estado actual del sistema</title>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:28px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0 0 2px}.sub{color:#667;font-size:12.5px;margin:0 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{border:1px solid #ccd;padding:7px 9px;text-align:left;vertical-align:top}th{background:#eef3fa;color:#44526a;width:34%}.pie{margin-top:14px;font-size:11px;color:#8893a5}@media print{body{padding:0}}</style></head><body>';
+  html+=(hh.nombre?('<div style="font-size:13px;color:#0d3b66;font-weight:700">'+esc(hh.nombre)+'</div>'):'');
+  html+='<h1>Estado actual del sistema</h1><div class="sub">Revisión del '+new Date().toLocaleString('es-VE')+' · solo lectura, no se cambió nada</div>';
+  html+='<table>';
+  filas.forEach(function(f){ html+='<tr><th>'+f.t+'</th><td>'+esc(f.x)+'</td></tr>'; });
+  html+='</table><div class="pie">Generado desde el panel Master · Datos</div></body></html>';
+  return imprimirHTML(html);
+}
+
+/* ====== REINICIO DE HABITACIONES (solo Master, con contraseña) ======
+   Deja las habitaciones en Libre y borra los reportes de habitación.
+   NO toca usuarios, clientes, pagos, caja, turnos, kardex, reservas ni configuración.
+   Opción: conservar los tipos y precios de las habitaciones. */
+var _resetConservarTipos = true;
+var _pmAccion = null;
+
 function resetData(){
-  if(!confirm('¿Seguro? Se borrarán ocupaciones y reportes.')) return;
-  localStorage.removeItem('hotel_rooms'); localStorage.removeItem('hotel_reportes'); seed(); render();
+  var me=session();
+  if(!me || !esMaster(me.rol)){ alert('Solo el Master / Dueño puede reiniciar las habitaciones.'); return; }
+  var rs=rooms();
+  var ocupadas=rs.filter(function(r){ return r.estado==='ocupada'; }).length;
+  var body='<button class="close" onclick="cerrarModal()">×</button>';
+  body+='<h2>Reiniciar habitaciones y reportes</h2>';
+  body+='<p style="margin:0 0 10px;color:#55637a;line-height:1.6;font-size:13.5px;text-align:left">Deja <b>todas las habitaciones en Libre</b> (sin huésped) y borra los <b>reportes de habitación</b>.'+(ocupadas?(' <b style="color:#c0392b">Ojo: ahora mismo hay '+ocupadas+' habitación(es) ocupada(s) y también quedarán libres.</b>'):'')+'</p>';
+  body+='<div style="background:#eaf7ee;border:1px solid #bfe6cb;color:#1f6b35;border-radius:8px;padding:9px 12px;font-size:12.5px;line-height:1.55;margin-bottom:12px;text-align:left"><b>No se borra nada de esto:</b> usuarios y contraseñas, clientes, empresas, pagos, caja, N° de control, turnos, kardex, reservas, comidas, restaurantes ni la configuración.</div>';
+  body+='<label style="display:flex;gap:9px;align-items:flex-start;background:#f7f9fc;border:1px solid #dfe6f0;border-radius:10px;padding:11px 12px;cursor:pointer;text-align:left"><input type="checkbox" id="rd-tipos" '+(_resetConservarTipos?'checked':'')+' style="margin-top:2px;width:18px;height:18px;flex:0 0 auto"><span style="font-size:13px;line-height:1.5;color:#1c2430"><b>Conservar los tipos y precios de las habitaciones</b><br><span style="color:#55637a;font-size:12.5px">Mantiene tus habitaciones tal como están (número, tipo y el precio que tienen hoy) y solo las deja libres. Si lo desmarcas, se reconstruyen las 65 de fábrica (101–113, 201–213, 301–313, 401–413, 501–513), tipo Individual y precio en 0.</span></span></label>';
+  body+='<div class="actions"><button class="btn-red" onclick="pedirPassParaReset()">Reiniciar ahora</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(body);
+}
+function pedirPassParaReset(){
+  var chk=document.getElementById('rd-tipos');
+  _resetConservarTipos = !!(chk && chk.checked);
+  var det=_resetConservarTipos ? 'Se conservan tus tipos y precios; solo se dejan las habitaciones en Libre.' : 'Las habitaciones se van a reconstruir como vienen de fábrica (tipo Individual y precio en 0).';
+  pedirPassMaster('Confirma con tu contraseña de Master','Escribe tu contraseña para reiniciar. '+det,aplicarResetHab);
+}
+function pedirPassMaster(titulo, texto, accion){
+  _pmAccion = accion || null;
+  var body='<button class="close" onclick="cerrarModal()">×</button>';
+  body+='<h2>'+esc(titulo)+'</h2>';
+  body+='<p style="margin:0 0 12px;color:#55637a;line-height:1.6;font-size:13.5px;text-align:left">'+texto+'</p>';
+  body+='<div class="field"><label>Contraseña de Master</label><input id="pm-pass" type="password" autocomplete="current-password" onkeydown="if(event.key===\'Enter\'){event.preventDefault();confirmarPassMaster();}"></div>';
+  body+='<div id="pm-err" style="display:none;background:#fdecea;color:#c0392b;border:1px solid #f5c6c2;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:10px;text-align:left"></div>';
+  body+='<div class="actions"><button class="btn-red" onclick="confirmarPassMaster()">Continuar</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(body);
+  setTimeout(function(){ var i=document.getElementById('pm-pass'); if(i){ try{ i.focus(); }catch(e){} } },80);
+}
+function _pmError(msg){
+  var e=document.getElementById('pm-err'); if(!e) return;
+  e.innerHTML=esc(msg); e.style.display='block';
+}
+function confirmarPassMaster(){
+  var me=session();
+  if(!me || !esMaster(me.rol)){ alert('Solo el Master / Dueño puede hacer esto.'); return; }
+  var esperada=((DB.get('users',[]).find(function(u){ return u.user===me.user; })||{}).pass) || me.pass || '';
+  var inp=document.getElementById('pm-pass');
+  var v=inp?inp.value:'';
+  if(!String(v).length){ _pmError('Escribe tu contraseña.'); if(inp){ try{ inp.focus(); }catch(e){} } return; }
+  if(String(v)!==String(esperada)){ _pmError('Contraseña incorrecta. No se cambió nada.'); if(inp){ inp.value=''; try{ inp.focus(); }catch(e){} } return; }
+  var acc=_pmAccion; _pmAccion=null; cerrarModal();
+  if(typeof acc==='function'){ setTimeout(function(){ acc(); },60); }
+}
+function aplicarResetHab(){
+  var me=session();
+  if(!me || !esMaster(me.rol)){ alert('Solo el Master / Dueño puede reiniciar las habitaciones.'); return; }
+  var antes=rooms();
+  if(_resetConservarTipos){
+    var limpias=antes.map(function(r){
+      /* queda solo lo estructural: número, piso, tipo y precio */
+      return { num:r.num, piso:r.piso, tipo:r.tipo||'Individual', tarifa:Number(r.tarifa)||0, estado:'libre', huesped:'', personas:0, checkin:'', salida:'', nota:'' };
+    });
+    saveRooms(limpias);
+  } else {
+    try{ localStorage.removeItem('hotel_rooms'); }catch(e){}
+  }
+  try{ localStorage.removeItem('hotel_reportes'); }catch(e){}
+  try{ if(typeof selHabs!=='undefined' && selHabs.clear) selHabs.clear(); }catch(e){}
+  seed();
+  try{ if(typeof render==='function') render(); }catch(e){}
+  var quedan=rooms().length;
+  var extra=_resetConservarTipos ? ('Se conservaron tus '+quedan+' habitaciones con su tipo y precio.') : ('Se reconstruyeron las '+quedan+' habitaciones de fábrica.');
+  setTimeout(function(){ alert('Listo. Todas las habitaciones quedaron en Libre y se borraron los reportes de habitación.\n\n'+extra+'\n\nNo se tocó nada de dinero: pagos, caja y N° de control siguen igual.'); },120);
 }
 async function borrarTodoDesdeCero(){
   const me = session();
@@ -8857,6 +8995,7 @@ function guardarCargoExtra(num){
   const _cgId='cg'+Date.now();
   cargos.push({id:_cgId, tipo:tipo, desc:desc, montoUsd:monto, fecha:new Date().toISOString(), pagado:false});
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
+  try{ cxcSumarHab(num,{concepto:tipo+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]}); }catch(e){}
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, detalle:tipo+(desc?' · '+desc:'')+' · '+fmtUSD(monto), montoUsd:0, montoBs:0, metodo:''});
   cerrarModal(); render();
 }
@@ -9635,7 +9774,17 @@ function enviarACxCConfirm(numsStr){
     if(_e){
       if(!Array.isArray(_e.cargos)) _e.cargos=[];
       _e.cargos.push({ts:now.toISOString(), concepto:conceptoFinal, montoUsd:g.saldo, montoBs:precioBs(g.saldo), control:ctrl, hab:g.nums.join(', '), usuario:(s?s.nombre:'')});
-      _e.montoUsd=Number(_e.montoUsd||0)+g.saldo;
+      _e.montoUsd=Math.round((Number(_e.montoUsd||0)+g.saldo)*100)/100;
+      /* [CXC-DETALLE] se guarda el detalle por habitacion y por consumo tambien cuando
+         la deuda se suma a una cuenta que ya existia (antes se perdia). */
+      if(!Array.isArray(_e.habitaciones)) _e.habitaciones=[];
+      habitaciones.forEach(function(x){ _e.habitaciones.push(x); });
+      if(!Array.isArray(_e.cargosDetalle)) _e.cargosDetalle=[];
+      cargosDet.forEach(function(c){ _e.cargosDetalle.push(c); });
+      if(!Array.isArray(_e.habsRef)) _e.habsRef=[];
+      g.nums.forEach(function(nn){ if(_e.habsRef.map(String).indexOf(String(nn))<0) _e.habsRef.push(String(nn)); });
+      if(!Array.isArray(_e.tramosDetalle)) _e.tramosDetalle=[];
+      g.porHab.forEach(function(x){ try{ tramosActivos(x.r).forEach(function(t){ _e.tramosDetalle.push({hab:Number(x.r.num), tramoHab:t.hab, tarifa:Number(t.tarifa||0), noches:Number(t.noches||0)}); }); }catch(e){} });
       _consolidado=true;
     }
   }
@@ -9644,7 +9793,8 @@ function enviarACxCConfirm(numsStr){
       clienteId:cxCliId, codigoEmpresa:cxCodEmp, huespedNombre:(tipo==='empresa'?nombre:''),
       concepto:conceptoFinal, hab:(habsControlTexto(habsDeControlGroup(g.list))||g.nums.join(', ')), montoUsd:g.saldo, fecha:hoyISO(), vencimiento:vencFinal, notas:nota,
       abonos:[], cargos:[{ts:now.toISOString(), concepto:conceptoFinal, montoUsd:g.saldo, montoBs:precioBs(g.saldo), control:ctrl, hab:g.nums.join(', '), usuario:(s?s.nombre:'')}],
-      creadoPor:(s?s.nombre:''), origen:'cobrar', habitaciones:habitaciones, cargosDetalle:cargosDet });
+      creadoPor:(s?s.nombre:''), origen:'cobrar', habitaciones:habitaciones, cargosDetalle:cargosDet,
+      tramosDetalle:(function(){ var _t=[]; g.porHab.forEach(function(x){ try{ tramosActivos(x.r).forEach(function(z){ _t.push({hab:Number(x.r.num), tramoHab:z.hab, tarifa:Number(z.tarifa||0), noches:Number(z.noches||0)}); }); }catch(e){} }); return _t; })() });
   }
   saveCxc(l);
   logKardex('credito', {hab:(habsControlTexto(habsDeControlGroup(g.list))||g.nums.join(', ')), huesped:nombre, clienteId:(g.tituId||r0.clienteId||''), control:ctrl,
@@ -9793,7 +9943,16 @@ function extenderEstadiaConfirm(num, btn){
   }catch(e){}
   if(habCortesia(r)){ _extCampos.tarifa=0; _extCampos.tramosCobro=false; }
   updateRoom(num,_extCampos);
+  /* [CXC-SUMAR] las noches nuevas de una habitacion que ya esta a credito van a la misma cuenta CXC */
+  var _extCxc=null;
+  try{
+    if(!habCortesia(r) && !r.autorizada && habHospEnCxc(r)){
+      var _mExt=cxcMontoNochesExtras(r, add);
+      if(_mExt>0.009){ _extCxc=cxcSumarHab(num,{concepto:'Noche(s) extra · +'+add+' noche(s) × '+fmtUSD(cxcTarifaNoche(r)), montoUsd:_mExt, tipo2:'extension', hab:num, nochesExtra:add, tarifaNoche:cxcTarifaNoche(r)}); }
+    }
+  }catch(e){}
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Extensión de estadía: +'+add+' noche(s) · total '+nuevas+' · nueva salida '+fechaDDMMYYYY(nuevaSalida)+' · '+fmtUSD((habCortesia(r)?0:Number(r.tarifa||0))*add)+(habCortesia(r)?' (cortesía: no se cobra)':'')+' agregados', montoUsd:0, montoBs:0, metodo:''});
+  if(_extCxc){ try{ extenderPreguntarComidas(num, add); return; }catch(e){} cerrarModal(); render(); alert('Estadía extendida. Ahora son '+nuevas+' noche(s).\n\nSumado a la cuenta CXC N° '+fmtControl(_extCxc.control||0)+': la deuda ahora es '+fmtUSD(cxcSaldo(_extCxc))+'.\nLo que ya estaba enviado no se tocó.'); return; }
   /* [COMIDAS-NOCHES-NUEVAS] se pregunta por las comidas de las noches nuevas (sin nombres fijos) */
   try{ extenderPreguntarComidas(num, add); return; }catch(e){}
   cerrarModal(); render();
@@ -10837,6 +10996,142 @@ function cxcCargarHospedajeEmpresa(emp, num, tarifaEf, noches, huesped, clienteI
 }
 function cxcVencida(e){ if(cxcPagada(e)) return false; if(!e.vencimiento) return false; return String(e.vencimiento)<hoyISO(); }
 function cxcNormDoc(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+/* ====== [CXC-SUMAR] SUMAR A LA CUENTA CXC QUE YA EXISTE ======
+   Regla de oro (aprobada por el dueno):
+   1) Lo que se agregue mientras el huesped ESTA en la habitacion (consumos, noches
+      extra, cargos) entra a LA MISMA cuenta CXC y al MISMO N° de control: queda
+      como un renglon mas en los cargos de la cuenta.
+   2) Lo ya enviado NUNCA se reescribe: cada renglon viejo se queda igual.
+   3) Si el huesped YA hizo check-out, el renglon nuevo lleva SU PROPIO N° de control
+      (nuevo) dentro de la misma cuenta, para que en caja se vea que se agrego despues.
+   4) Cortesia: no suma nada. Mitad de precio: solo la parte que paga el invitado.
+   5) El monto se sube al centavo (nada de centavos perdidos). */
+function cxcNombreDe(e){ return (e && (e.nombre||e.huespedNombre))||'el cliente'; }
+function cxcViveEnHab(e){
+  try{
+    if(!e) return false;
+    var refs=Array.isArray(e.habsRef)?e.habsRef.map(String):[];
+    if(!refs.length) return false;
+    for(var i=0;i<refs.length;i++){
+      var r=findRoomAny(parseInt(refs[i],10)); if(!r) continue;
+      if(r.estado==='ocupada') return true;
+    }
+  }catch(err){}
+  return false;
+}
+/* La cuenta CXC que le toca a esta habitacion (la del hospedaje a credito, o la del
+   cliente si quedo con deuda). Devuelve null si la habitacion no esta en CXC. */
+function cxcCuentaDeHabCobro(r){
+  if(!r) return null;
+  try{
+    if(r.creditoCxc && r.creditoCxcId){
+      var e=cxc().find(function(x){ return x && x.id===r.creditoCxcId && !x.anulada; });
+      if(e) return e;
+    }
+  }catch(err){}
+  try{
+    var c=clienteDeHab(r); if(c){ var p=cxcPendientesDeCliente(c); if(p && p.length) return p[0]; }
+  }catch(err){}
+  return null;
+}
+/* Tarifa de la noche nueva: la de la habitacion ahora; si es mitad de precio, la mitad. */
+function cxcTarifaNoche(r){ return Math.max(0,Number((r&&r.tarifa)||0)); }
+function cxcMontoNochesExtras(r, add){
+  var n=parseInt(add,10)||0; if(n<=0) return 0;
+  if(!r) return 0;
+  if(habCortesia(r)) return 0;
+  var t=cxcTarifaNoche(r);
+  var mitad=0; try{ if(habMitadACxc(r)) mitad=1; }catch(e){}
+  var m=t*n;
+  /* mitad de precio: el hotel regala la mitad y solo se cobra la parte del invitado */
+  if(mitad) m=m/2;
+  return Math.round(m*100)/100;
+}
+/* Sube la deuda de una cuenta CXC al centavo y deja el renglon anotado. */
+function _cxcSubirMonto(e, monto){
+  if(!e) return 0;
+  var m=Math.round(Number(monto||0)*100)/100; if(!(m>0)) return 0;
+  e.montoUsd=Math.round((Number(e.montoUsd||0)+m)*100)/100;
+  if(!Array.isArray(e.cargos)) e.cargos=[];
+  return m;
+}
+/* ====== LA FUNCION QUE HACE TODO ======
+   Devuelve la cuenta CXC si sumo algo (para avisar), o null si no habia cuenta. */
+function cxcSumarHab(num, op){
+  op=op||{};
+  var r=findRoom(num)||findRoomAny(num);
+  var monto=Math.round(Number(op.montoUsd||0)*100)/100;
+  if(!(monto>0.009)) return null;
+  var e=cxcCuentaDeHabCobro(r);
+  if(!e) return null;
+  if(e.anulada) return null;
+  var s=null; try{ s=session(); }catch(err){}
+  var now=new Date();
+  var enHab=cxcViveEnHab(e);
+  var ctrl=parseInt(e.control||0)||0;
+  var nuevo=false;
+  if(!enHab){
+    /* el huesped ya se fue: el renglon nuevo lleva su propio N° de control */
+    ctrl=siguienteControl();
+    nuevo=true;
+  }
+  if(!ctrl){ ctrl=siguienteControl(); nuevo=true; }
+  var antes=Math.round(Number(e.montoUsd||0)*100)/100;
+  var tipo2=op.tipo2||'consumo';
+  var renglon={ ts:now.toISOString(), concepto:(op.concepto||'Consumo'), montoUsd:monto, montoBs:precioBs(monto),
+    control:ctrl, hab:String(op.hab||num||''), usuario:(s?s.nombre:''),
+    motivo:(nuevo?'agregado-despues-checkout':'durante-estadia'), tipo2:tipo2,
+    detalle:op.detalle||'' };
+  if(Array.isArray(op.cargosIds) && op.cargosIds.length) renglon.cargosIds=op.cargosIds.slice();
+  if(op.nochesExtra) renglon.nochesExtra=parseInt(op.nochesExtra,10)||0;
+  if(op.tarifaNoche!=null) renglon.tarifaNoche=Number(op.tarifaNoche)||0;
+  _cxcSubirMonto(e, monto);
+  e.cargos.push(renglon);
+  /* rastro por habitacion: asi la ficha y el recibo saben que se sumo despues */
+  if(!Array.isArray(e.agregadoDespues)) e.agregadoDespues=[];
+  e.agregadoDespues.push({ts:now.toISOString(), hab:String(op.hab||num||''), concepto:renglon.concepto, montoUsd:monto, control:ctrl, usuario:(s?s.nombre:''), tipo2:tipo2});
+  if(!Array.isArray(e.habsRef)) e.habsRef=[];
+  var hs=String(op.hab||num||'');
+  if(hs && e.habsRef.map(String).indexOf(hs)<0) e.habsRef.push(hs);
+  try{ saveCxc(cxc()); }catch(err){}
+  try{
+    logKardex('credito',{hab:Number(op.hab||num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
+      detalle:(nuevo?'Agregado DESPUES del check-out':'Sumado durante la estadia')+' a la cuenta CXC N° '+fmtControl(e.control||0)+' · '+renglon.concepto+' · +'+fmtUSD(monto)+' · deuda ahora '+fmtUSD(cxcSaldo(e)),
+      montoUsd:0, montoBs:0, metodo:''});
+  }catch(err){}
+  /* la habitacion queda enterada de que su hospedaje sigue en CXC */
+  try{ if(r && r.estado==='ocupada' && !r.creditoCxc){ updateRoom(r.num,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:Number(e.control||ctrl)}); } }catch(err){}
+  return e;
+}
+/* Cuanto se sumo despues del enviado (para el desglose de la ficha) */
+function cxcAgregadoDeCuenta(e, num){
+  var out=0;
+  if(!e) return 0;
+  var arr=Array.isArray(e.agregadoDespues)?e.agregadoDespues:[];
+  arr.forEach(function(x){ if(!x) return; if(num==null || String(x.hab)===String(num)) out+=Number(x.montoUsd||0); });
+  return Math.round(out*100)/100;
+}
+/* Desglose corto que se muestra en la ficha de la habitacion */
+function cxcDesgloseHabHTML(r){
+  if(!r) return '';
+  var e=null; try{ e=cxcCuentaDeHabCobro(r); }catch(err){ e=null; }
+  if(!e) return '';
+  var sumado=cxcAgregadoDeCuenta(e, null);
+  var enviado=Math.max(0, Math.round((Number(e.montoUsd||0)-sumado)*100)/100);
+  var abon=0; try{ abon=cxcAbon(e); }catch(err){}
+  var h='<div style="background:#f6f9ff;border:1px solid #d7e3f7;border-radius:10px;padding:11px 13px;margin:8px 0;font-size:12.6px;color:#2a4a73">';
+  h+='<div style="font-weight:800;color:#0d3b66;margin-bottom:5px">💳 Cuenta CXC N° '+fmtControl(e.control||0)+' · '+esc(cxcNombreDe(e))+'</div>';
+  h+='<div style="display:flex;justify-content:space-between"><span>Enviado a CXC (lo ya facturado)</span><span><b>'+fmtUSD(enviado)+'</b></span></div>';
+  if(sumado>0.009) h+='<div style="display:flex;justify-content:space-between;color:#8a5200"><span>Agregado después (consumos / noches extra)</span><span><b>+'+fmtUSD(sumado)+'</b></span></div>';
+  h+='<div style="display:flex;justify-content:space-between;border-top:1px dashed #c9d8ee;margin-top:5px;padding-top:5px"><span>Deuda total de la cuenta</span><span><b>'+fmtUSD(Number(e.montoUsd||0))+'</b></span></div>';
+  if(abon>0.009) h+='<div style="display:flex;justify-content:space-between;color:#1d6b38"><span>Abonado</span><span><b>− '+fmtUSD(abon)+'</b></span></div>';
+  h+='<div style="display:flex;justify-content:space-between;font-weight:800;color:'+(cxcSaldo(e)>0.009?'#a23b3b':'#1d6b38')+'"><span>Falta cobrar</span><span>'+fmtUSD(cxcSaldo(e))+'</span></div>';
+  h+='<div style="margin-top:8px"><button class="btn-ghost" style="padding:6px 11px" onclick="cxcVerCargos(\''+e.id+'\')">🧾 Ver lo enviado a CXC</button></div>';
+  h+='</div>';
+  return h;
+}
+/* ====== FIN [CXC-SUMAR] ====== */
+
 function cxcPendientesDeCliente(cli, docNum2){
   if(typeof cli==='string'){ var _id=cli; var _c=_id?(clientes().find(function(x){return x.id===_id;})):null; cli=_c||{id:_id, docNum:docNum2}; }
   if(!cli) return [];
@@ -10969,6 +11264,7 @@ function renderCxcListaHTML(){
     else h+='<button class="btn-gray" style="padding:6px 12px" onclick="cxcReabrir(\''+e.id+'\')">Reabrir</button>';
     if((Array.isArray(e.abonos)?e.abonos.length:0)>0) h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcVerAbonos(\''+e.id+'\')">📄 Ver abonos</button>';
     if((Array.isArray(e.cargos)?e.cargos.length:0)>0) h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcVerCargos(\''+e.id+'\')">📋 Ver cargos</button>';
+    h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcImprimirDetalle(\''+e.id+'\')">🖨️ Imprimir detalle</button>';
     h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcNuevaModal(\''+e.id+'\')">✏️ Editar</button>';
     h+='<button class="btn-ghost" style="padding:6px 12px" title="Anular" onclick="cxcEliminar(\''+e.id+'\')">🚫</button>';
     h+='</div></div>';
@@ -11154,6 +11450,54 @@ function cxcVerCargos(id){
   }
   b+='<div class="divider"></div><div class="actions"><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(b);
+}
+/* [CXC-DETALLE] Hoja imprimible con TODO lo que tiene la cuenta: de donde salio la
+   deuda (hospedaje, consumos, noches extra) y que se agrego despues del check-out. */
+function cxcImprimirDetalle(id){
+  var e=cxc().find(function(x){ return x.id===id; }); if(!e){ alert('No se encontro la cuenta.'); return; }
+  var habs=Array.isArray(e.habitaciones)?e.habitaciones:[];
+  var cdet=Array.isArray(e.cargosDetalle)?e.cargosDetalle:[];
+  var tram=Array.isArray(e.tramosDetalle)?e.tramosDetalle:[];
+  var reng=Array.isArray(e.cargos)?e.cargos:[];
+  var abon=Array.isArray(e.abonos)?e.abonos:[];
+  var h='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Cuenta CXC '+fmtControl(e.control||0)+'</title>';
+  h+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:26px;color:#1c2430;max-width:720px}h1{font-size:19px;color:#0d3b66;margin:0}h2{font-size:13.5px;color:#0d3b66;margin:18px 0 7px;text-transform:uppercase;letter-spacing:.4px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px}td,th{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#f3f6fb;color:#44526a}.r{text-align:right}.tot td{font-weight:800;background:#f3f6fb;font-size:14px}.sub{color:#667;font-size:12.5px;margin-top:3px}@media print{body{padding:0}}</style></head><body>';
+  h+='<h1>'+esc(hotelNombre())+' · Cuenta por cobrar</h1>';
+  h+='<div class="sub">N° de control <b>'+fmtControl(e.control||0)+'</b> · Emitido: '+new Date().toLocaleString('es-VE')+'</div>';
+  h+='<h2>Cliente</h2><table><tr><td style="width:45%">Nombre</td><td><b>'+esc(cxcNombreDe(e))+'</b></td></tr>'+(e.docRef?('<tr><td>Documento</td><td>'+esc(e.docRef)+'</td></tr>'):'')+(e.telefono?('<tr><td>Telefono</td><td>'+esc(e.telefono)+'</td></tr>'):'')+'<tr><td>Concepto</td><td>'+esc(e.concepto||'')+'</td></tr>'+((e.hab)?('<tr><td>Habitacion(es)</td><td>'+esc(String(e.hab))+'</td></tr>'):'')+'</table>';
+  if(habs.length){
+    h+='<h2>Hospedaje y consumos por habitacion</h2><table><tr><th>Hab.</th><th>Tipo</th><th class="r">Noches</th><th class="r">Hospedaje</th><th class="r">Descuento</th><th class="r">Consumos</th><th class="r">Neto</th></tr>';
+    habs.forEach(function(x){ h+='<tr><td>'+esc(String(x.num||'-'))+'</td><td>'+esc(x.tipo||'')+'</td><td class="r">'+(Number(x.noches)||0)+'</td><td class="r">'+fmtUSD(x.hosp||0)+'</td><td class="r">'+(Number(x.desc)>0.009?('-'+fmtUSD(x.desc)):'—')+'</td><td class="r">'+fmtUSD(x.cons||0)+'</td><td class="r"><b>'+fmtUSD(x.neto||0)+'</b></td></tr>'; });
+    h+='<tr class="tot"><td colspan="6">Total hospedaje + consumos</td><td class="r">'+fmtUSD(habs.reduce(function(a,x){ return a+Number(x.neto||0); },0))+'</td></tr></table>';
+  }
+  if(tram.length){
+    h+='<h2>Tarifas por tramo (cada noche con su precio)</h2><table><tr><th>Hab.</th><th>Tarifa</th><th class="r">Noches</th><th class="r">Subtotal</th></tr>';
+    tram.forEach(function(t){ h+='<tr><td>'+esc(String(t.hab))+'</td><td>'+fmtUSD(t.tarifa||0)+'</td><td class="r">'+(Number(t.noches)||0)+'</td><td class="r">'+fmtUSD((Number(t.tarifa||0)*Number(t.noches||0)))+'</td></tr>'; });
+    h+='</table>';
+  }
+  if(cdet.length){
+    h+='<h2>Consumos enviados</h2><table><tr><th>Hab.</th><th>Tipo</th><th>Detalle</th><th class="r">Monto</th></tr>';
+    cdet.forEach(function(c){ h+='<tr><td>'+esc(String(c.hab||'-'))+'</td><td>'+esc(c.tipo||'')+'</td><td>'+esc(c.desc||'')+'</td><td class="r">'+fmtUSD(c.montoUsd||0)+'</td></tr>'; });
+    h+='<tr class="tot"><td colspan="3">Total consumos</td><td class="r">'+fmtUSD(cdet.reduce(function(a,c){ return a+Number(c.montoUsd||0); },0))+'</td></tr></table>';
+  }
+  if(reng.length){
+    h+='<h2>Movimientos de la cuenta</h2><table><tr><th>Control</th><th>Hab.</th><th>Concepto</th><th class="r">Monto</th></tr>';
+    reng.forEach(function(c){ h+='<tr><td>'+esc(fmtControl(c.control||0))+'</td><td>'+esc(String(c.hab||'-'))+'</td><td>'+esc(c.concepto||'')+'</td><td class="r">+'+fmtUSD(c.montoUsd||0)+'</td></tr>'; });
+    h+='</table>';
+  }
+  if(abon.length){
+    h+='<h2>Abonos / pagos recibidos</h2><table><tr><th>Fecha</th><th>Concepto</th><th class="r">Monto</th></tr>';
+    abon.forEach(function(a){ h+='<tr><td>'+esc(fmtFechaCorta(a.fecha)||'')+'</td><td>'+esc(a.concepto||'')+'</td><td class="r">−'+fmtUSD(a.montoUsd||0)+'</td></tr>'; });
+    h+='</table>';
+  }
+  h+='<h2>Resumen</h2><table>';
+  h+='<tr><td>Total de la cuenta</td><td class="r"><b>'+fmtUSD(e.montoUsd||0)+'</b></td></tr>';
+  h+='<tr><td>Abonado</td><td class="r">−'+fmtUSD(cxcAbon(e))+'</td></tr>';
+  h+='<tr class="tot"><td>Saldo pendiente</td><td class="r">'+fmtUSD(cxcSaldo(e))+' · '+fmtBs(precioBs(cxcSaldo(e)))+'</td></tr>';
+  h+='</table>';
+  h+='<div class="sub">Tasa aplicada: '+fmtBs(tasa())+' / $1</div>';
+  h+='</body></html>';
+  return imprimirHTML(h);
 }
 function cxcVerAbonos(id){
   const e=cxc().find(x=>x.id===id); if(!e) return;
@@ -13820,7 +14164,9 @@ function guiaMaster(){
   H('Datos: respaldo, restaurar y reiniciar');
   P('Descargar respaldo: guarda todo (habitaciones, clientes, pagos, usuarios, configuración) en un archivo en tu computadora. Hazlo seguido; la app te avisa cuando toca.');
   P('Subir respaldo y restaurar: devuelve el sistema a como estaba en ese archivo. Reemplaza los datos actuales, así que hazlo con cuidado.');
-  P('Reiniciar habitaciones y reportes: deja las habitaciones en Libre y borra los reportes, pero conserva clientes, empresas, pagos y configuración.');
+  P('Estado actual: una revisión rápida, solo para mirar, de los usuarios, las habitaciones, los reportes, la tasa, los métodos de pago, los tipos de habitación y la caja.');
+  P('Reiniciar habitaciones y reportes: deja las habitaciones en Libre y borra los reportes de habitación, pero conserva usuarios, clientes, empresas, pagos, caja, turnos, kardex, reservas y configuración. Solo lo puede hacer el Master y pide su contraseña.');
+  P('Al reiniciar puedes marcar “Conservar los tipos y precios de las habitaciones”: así tus habitaciones quedan igual (número, tipo y precio de hoy) y solo se vacían. Si lo desmarcas, se reconstruyen las 65 de fábrica, tipo Individual y precio en 0.');
   P('Borrar todo y empezar de cero: borra absolutamente todo, aquí y en la nube. Pide tu contraseña de Master y no se puede deshacer. Descarga un respaldo antes.');
   FIN();
   H('Estas guías: cómo editarlas');
