@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.44 · 17/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.45 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.44 · 17/11/2026';
+const APP_VERSION = 'v1.45 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -9348,6 +9348,89 @@ function cobrarCuentaModal(numsStr){
   try{ PM_STATE['grp'].total=Math.round((Number(g.saldo)||0)*100)/100; }catch(e){}
   try{ pmRecalc('grp'); ctaParcialCalc(); }catch(e){}
 }
+/* ====== [PAGO-UNO] UN SOLO REPARTO DEL DINERO ======
+   Por que existe: el abono se repartia con una formula en la cuenta unida y con otra
+   distinta en la cuenta normal, y las dos miraban SOLO el hospedaje. Con consumos en
+   la cuenta, el mismo pago dejaba tres saldos diferentes (caja, ficha unida, ficha
+   normal) y los consumos quedaban dados por pagados sin serlo.
+   Aqui se reparte UNA vez, sobre el total real de la cuenta:
+   - cada cuarto abona en proporcion a lo que debe ESE cuarto,
+   - la suma de las partes es EXACTAMENTE el dinero que entro (al centavo),
+   - los consumos siguen pendientes hasta que la cuenta quede saldada. */
+function _filasCuentaParaPago(g){
+  var out=[];
+  try{
+    if(g && (g.uni || (g.cuentas && g.cuentas.length)) && g.list && g.list.length===1){
+      var D=detalleCuentaHab(g.list[0]);
+      if(D && D.filas && D.filas.length){
+        D.filas.forEach(function(f){ if(f && f.r) out.push({r:f.r, neto:Math.max(0,Math.round((Number(f.neto)||0)*100)/100)}); });
+        if(out.length) return out;
+      }
+    }
+  }catch(e){}
+  ((g&&g.porHab)||[]).forEach(function(x){
+    if(!x || !x.r) return;
+    out.push({r:x.r, neto:Math.max(0,Math.round((Number(x.neto)||0)*100)/100)});
+  });
+  return out;
+}
+/* Reparte un monto entre varios cuartos. La suma de las partes es igual al monto. */
+function _repartirPago(filas, monto){
+  filas=filas||[]; monto=Math.round((Number(monto)||0)*100)/100;
+  var tot=0; filas.forEach(function(f){ tot+=Math.max(0,Number(f.neto)||0); });
+  tot=Math.round(tot*100)/100;
+  if(!(tot>0.009) || !(monto>0.009)){
+    return filas.map(function(f){ return {r:f.r, parte:0, neto:Math.max(0,Math.round((Number(f.neto)||0)*100)/100)}; });
+  }
+  var res=[], acc=0;
+  filas.forEach(function(f,i){
+    var neto=Math.max(0,Math.round((Number(f.neto)||0)*100)/100);
+    var p;
+    if(i===filas.length-1) p=Math.round((monto-acc)*100)/100;
+    else p=Math.round(monto*(neto/tot)*100)/100;
+    if(!(p>0)) p=0;
+    if(p>neto) p=neto;
+    acc=Math.round((acc+p)*100)/100;
+    res.push({r:f.r, parte:p, neto:neto});
+  });
+  /* el centavo que se pierda en los redondeos se corrige aqui */
+  var suma=0; res.forEach(function(x){ suma+=x.parte; });
+  var dif=Math.round((monto-suma)*100)/100;
+  if(Math.abs(dif)>=0.01){
+    for(var k=res.length-1;k>=0 && Math.abs(dif)>=0.009;k--){
+      var libre=Math.round((res[k].neto-res[k].parte)*100)/100;
+      if(dif>0.009 && libre>0.009){ var m1=Math.min(libre,dif); res[k].parte=Math.round((res[k].parte+m1)*100)/100; dif=Math.round((dif-m1)*100)/100; }
+      else if(dif<-0.009 && res[k].parte>0.009){ var m2=Math.min(res[k].parte,-dif); res[k].parte=Math.round((res[k].parte-m2)*100)/100; dif=Math.round((dif+m2)*100)/100; }
+    }
+  }
+  return res;
+}
+/* Anota el pago en cada cuarto de la cuenta. Solo marca los consumos como pagados
+   cuando la cuenta queda SALDADA; en un abono parcial todo sigue pendiente. */
+function _aplicarPagoCuenta(g, monto, ctrl, metodo, now){
+  var saldada=(Math.round(((Number(g&&g.saldo)||0)-(Number(monto)||0))*100)/100)<=0.009;
+  var partes=_repartirPago(_filasCuentaParaPago(g), monto);
+  var _manda=(g&&g.list&&g.list.length)?g.list[0]:null;
+  var _uni=!!(g && (g.uni || (g.cuentas && g.cuentas.length)));
+  partes.forEach(function(pp){
+    var q=null; try{ q=findRoom(pp.r.num); }catch(e){ q=null; } if(!q) return;
+    var ab=(Array.isArray(q.abonos)?q.abonos.slice():[]);
+    if(pp.parte>0.009){
+      var _conc='Pago de la cuenta';
+      if(_uni && _manda && Number(q.num)!==Number(_manda.num)) _conc+=' (junto con Hab. '+_manda.num+')';
+      if(!saldada) _conc+=' (abono)';
+      ab.push({id:'ab'+Date.now()+q.num, concepto:_conc, montoUsd:pp.parte, fecha:now.toISOString(), metodo:metodo, control:ctrl, hab:Number(q.num)});
+    }
+    var patch={abonos:ab, control:ctrl};
+    if(saldada){
+      var pend=[]; try{ pend=cargosDe(q).filter(function(cg){ return cg && !cg.pagado; }).map(function(cg){ return cg.id; }); }catch(e){ pend=[]; }
+      try{ ligarCargosControl(pend, ctrl); }catch(e){}
+      var cargos=[]; try{ cargos=cargosDe(q).map(function(cg){ return cg.pagado?cg:Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}); }); }catch(e){ cargos=cargosDe(q); }
+      patch.cargos=cargos;
+    }
+    updateRoom(q.num, patch);
+  });
+}
 function cobrarCuentaConfirm(numsStr, btn){
   if(guardTurno()) return;
   if(procesoDoble(btn)) return;
@@ -9387,7 +9470,6 @@ function cobrarCuentaConfirm(numsStr, btn){
     abonoParcial:(_resta>0.009?true:undefined), saldoDespues:Math.round(_resta*100)/100, saldoAntes:Math.round(g.saldo*100)/100 });
   DB.save('pagos', pagos); confirmarControl(ctrl);
   logKardex('pago',{hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), huesped:_hNom, clienteId:_hCid, detalle:(multi?('Cobro combinado · '+g.nums.length+' habitaciones'):((_resta>0.009?'Abono de hospedaje':'Cobro de hospedaje')))+' (sin salida)'+(_resta>0.009?(' · resta '+fmtUSD(_resta)):'')+(_conTramos?(' · incluye tramos de Hab. '+_habsCtrlTxt+' · Control N° '+fmtControl(ctrl)):''), montoUsd:_montoAhora, montoBs:precioBs(_montoAhora), metodo:metodo});
-  if(g.saldo<=0.009){ procesoListo(btn); alert('Esta cuenta ya está totalmente pagada.'); return; }
   /* [AVISO-NOCHES] Si hay noches que todavia no estan pagadas, se avisa claro
      ANTES de registrar: el abono entra igual (es dinero que entro), pero nadie
      debe creer que la cuenta quedo saldada. */
@@ -9405,49 +9487,8 @@ function cobrarCuentaConfirm(numsStr, btn){
       if(!confirm(_msgN)){ procesoListo(btn); return; }
     }
   }catch(e){}
-  const _sella=(num, ids, _ctrl)=>{
-    if(!ids || !ids.length) return;
-    const rr=findRoom(num); if(!rr) return;
-    const cargos=cargosDe(rr).map(cg=> ids.indexOf(cg.id)>=0?Object.assign({},cg,{pagado:true,control:(cg.control||_ctrl),controlPago:_ctrl}):cg);
-    updateRoom(num,{cargos:cargos});
-  };
-  if(g.cuentas && g.cuentas.length){
-    /* Cuenta unida: se cobra TODO desde el cuarto dueño de la cuenta y se apunta
-       en cada cuarto solo lo que de verdad es suyo. */
-    g.porHab.forEach(x=>{
-      const r=x.r; const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r);
-      const abPrev=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
-      const faltaHosp=Math.max(0,(hosp-d)-abPrev);
-      const ab=(Array.isArray(r.abonos)?r.abonos.slice():[]);
-      /* [ABONO-REAL] Se anota lo que el huesped entrego DE VERDAD. Antes se anotaba
-         toda la falta del hospedaje: con un adelanto de $46 de una cuenta de $80 la
-         ficha decia "pagado $80" y quedaba saldada. Ahora $46 abona y $34 siguen debiendo. */
-      const faltaTotG=Math.max(0,g.saldo||0)+abPrev;
-      const poneG=(_resta>0.009 && faltaTotG>0.009)?Math.round(faltaHosp*(_montoAhora/faltaTotG)*100)/100:faltaHosp;
-      if(poneG>0.009) ab.push({id:'ab'+Date.now()+r.num, concepto:'Pago de hospedaje'+(r.num!==r0.num?(' (cuenta unida con Hab. '+r0.num+')'):'')+(_resta>0.009?' (abono)':''), montoUsd:((_resta>0.009&&r.num!==r0.num)?poneG:Math.min(poneG,faltaHosp)), fecha:now.toISOString(), metodo:metodo, control:ctrl, hab:Number(r.num)});
-      const ids=cargosDe(r).filter(cg=>!cg.pagado && (Number(cg.hab||r.num)===Number(r.num))).map(cg=>cg.id);
-      ligarCargosControl(ids, ctrl);
-      const cargos=cargosDe(r).map(cg=> ids.indexOf(cg.id)>=0?Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}):cg);
-      updateRoom(r.num,{abonos:ab, cargos:cargos, control:ctrl});
-    });
-    const comp=g.compartidos||[];
-    if(comp.length) _sella(r0.num, comp.map(c=>c.id), ctrl);
-    comp.forEach(c=>{ const org=findRoom(c.habOriginal); if(org && Number(org.num)!==Number(r0.num)) _sella(org.num, [String(c.id).split('_')[0]], ctrl); });
-  } else {
-  g.porHab.forEach(x=>{ const r=x.r; const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r);
-    const abPrev=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
-    const pendIds=cargosDe(r).filter(cg=>!cg.pagado).map(cg=>cg.id);
-    ligarCargosControl(pendIds, ctrl);
-    const cargos=cargosDe(r).map(cg=> cg.pagado?cg:Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}));
-    const faltaHosp=Math.max(0,(hosp-d)-abPrev);
-    const ab=(Array.isArray(r.abonos)?r.abonos.slice():[]);
-    /* [ABONO-REAL] Se anota el dinero que entro, no toda la deuda. Si el huesped
-       adelanta $46 de $80, la ficha debe seguir mostrando $34 pendientes. */
-    const pone=(_resta>0.009 && (abPrev+faltaHosp)>0.009)?Math.round(faltaHosp*(_montoAhora/((abPrev+faltaHosp)))*100)/100:faltaHosp;
-    if(pone>0.009) ab.push({id:'ab'+Date.now()+r.num, concepto:'Pago de hospedaje'+(_resta>0.009?' (abono)':''), montoUsd:Math.min(pone,faltaHosp), fecha:now.toISOString(), metodo:metodo, control:ctrl, hab:Number(r.num)});
-    updateRoom(r.num,{cargos:cargos, abonos:ab, control:ctrl});
-  });
-  }
+  /* [PAGO-UNO] El dinero se reparte una sola vez, sobre el total de la cuenta. */
+  _aplicarPagoCuenta(g, _montoAhora, ctrl, metodo, now);
   const _habTxt = multi?(g.nums.length+' habitaciones ('+g.nums.join(', ')+')'):('Habitación '+g.nums[0]);
   window._ultimoCobro = { pagoId:(pagos[0]&&pagos[0].id), ctrl:ctrl, habs:habsDeControlGroup(g.list), huesped:_hNom, clienteId:_hCid, montoUsd:_montoAhora, montoBs:precioBs(_montoAhora), metodo:metodo,
     lineas:[{txt:_habTxt},{txt:'Huésped: '+(_hNom||'—')},{txt:'Control N° '+fmtControl(ctrl)},{txt:'Forma de pago: '+metodo},{txt:'Cobrado: '+fmtUSD(_montoAhora)+' · '+fmtBs(precioBs(_montoAhora)), strong:true}]
@@ -9473,7 +9514,8 @@ function checkoutCuenta(numsStr){
   if(g.saldo>0.009){
     /* [CTRL-AMAR-CXC] Si debe, se AVISA y se pregunta si se pasa a CXC.
        Ya no se sale "sin cobrar" a ciegas: o se cobra, o la deuda queda en CXC. */
-    checkoutConDeuda(numsStr);
+    /* [CXC-GRUPO] Sale el grupo completo: la deuda se pasa a CXC UNA vez, con todos los cuartos. */
+    checkoutConDeuda((g.nums&&g.nums.length)?g.nums.join(','):numsStr);
     return;
   } else {
     if(!confirm('¿Hacer el check-out de '+(multi?('las '+g.list.length+' habitaciones'):('la habitación '+g.list[0].num))+'? La cuenta ya está pagada.')) return;
@@ -11030,18 +11072,45 @@ function cxcAbonarModal(id){
   showModal(b);
 }
 function cxcAbonarConfirm(id){
+  /* [CXC-CAJA] Cobrar una cuenta por cobrar es dinero que ENTRA a la caja del turno:
+     por eso pide turno abierto igual que cualquier otro cobro. */
+  try{ if(typeof guardTurno==='function' && guardTurno()) return; }catch(err){}
   const l=cxc(); const e=l.find(x=>x.id===id); if(!e) return;
-  const monto=Number(document.getElementById('cxc-ab-monto').value||0);
-  if(!(monto>0)){ alert('Escribe el monto del abono.'); return; }
-  const metodo=document.getElementById('cxc-ab-metodo').value||'';
-  const nota=(document.getElementById('cxc-ab-nota').value||'').trim();
-  const s=session();
+  const saldo0=Math.max(0,Math.round(cxcSaldo(e)*100)/100);
+  const _inp=document.getElementById('cxc-ab-monto');
+  const monto=Math.round(Number((_inp&&_inp.value)||0)*100)/100;
+  if(!(monto>0.009)){ alert('Escribe el monto del abono.'); return; }
+  if(monto>saldo0+0.009){ alert('El abono no puede ser mayor que el saldo.\n\nSaldo de la cuenta: '+fmtUSD(saldo0)); return; }
+  const _sel=document.getElementById('cxc-ab-metodo');
+  const metodo=(_sel&&_sel.value)||'';
+  if(!metodo){ alert('Elige la forma de pago.'); return; }
+  const _nt=document.getElementById('cxc-ab-nota');
+  const nota=((_nt&&_nt.value)||'').trim();
+  const s=session(); const now=new Date();
+  const ctrl=parseInt(e.control||0)||siguienteControl();
+  if(!e.control) e.control=ctrl;
   if(!Array.isArray(e.abonos)) e.abonos=[];
-  e.abonos.push({ts:new Date().toISOString(), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo, nota:nota, usuario:(s?s.nombre:'')});
+  const resta=Math.round((saldo0-monto)*100)/100;
+  e.abonos.push({ts:now.toISOString(), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo, nota:nota, usuario:(s?s.nombre:''), control:ctrl});
   saveCxc(l);
-  // Queda registrado también en el Kardex del turno como cobro
-  try{ logKardex('pago',{huesped:e.nombre||'', detalle:'Abono a CXC'+(e.concepto?(' · '+e.concepto):'')+(nota?(' · '+nota):''), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo}); }catch(err){}
+  try{ confirmarControl(ctrl); }catch(err){}
+  /* [CXC-CAJA] Se anota el cobro como pago del dia: asi sale en Caja, en el corte
+     del turno y en el arqueo, con su N° de control. */
+  try{
+    const pagos=DB.get('pagos',[]);
+    pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+      hab:0, habsTramo:null, huesped:(e.nombre||''), tipo:'Credito (CXC)', noches:0,
+      metodo:metodo, metodos:null,
+      concepto:'Cobro de cuenta por cobrar (CXC)'+(nota?(' · '+nota):''),
+      clienteId:(e.clienteId||''), clienteDoc:'', clienteCiudad:'',
+      montoUsd:monto, montoBs:precioBs(monto), tasa:tasa(), usuario:(s?s.nombre:''),
+      cxcId:e.id, abonoParcial:(resta>0.009?true:undefined), saldoAntes:saldo0, saldoDespues:resta });
+    DB.save('pagos', pagos);
+  }catch(err){}
+  try{ logKardex('pago',{huesped:e.nombre||'', control:ctrl, detalle:'Abono a CXC'+(e.concepto?(' · '+e.concepto):'')+(nota?(' · '+nota):'')+' · Control N° '+fmtControl(ctrl), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo}); }catch(err){}
   cerrarModal(); render();
+  var _msg='Abono registrado y sumado a la caja.\n\n'+fmtUSD(monto)+' · '+metodo+'\nControl N° '+fmtControl(ctrl)+(resta>0.009?('\nQueda debiendo '+fmtUSD(resta)):'\nLa cuenta quedo saldada.');
+  alert(_msg);
 }
 function cxcAgregarCargoModal(id){
   const e=cxc().find(x=>x.id===id); if(!e) return;
@@ -14145,6 +14214,74 @@ function cxcCuentaPara(op){
   return e;
 }
 /* Pasa a CXC lo pendiente de UNA habitacion (se usa desde el check-out con deuda). */
+/* Saldo pendiente SOLO de las habitaciones que se estan atendiendo (una cuenta unida
+   se cobra UNA vez, no una vez por cuarto). */
+function _saldoCuentaDeHabs(r, grupo){
+  var nums={}; (grupo&&grupo.length?grupo:[r]).forEach(function(q){ if(q) nums[String(q.num)]=1; });
+  try{
+    var D=detalleCuentaHab(r);
+    if(D && D.filas && D.filas.length){
+      var tot=0; D.filas.forEach(function(f){ if(f&&f.r&&nums[String(f.r.num)]) tot+=Number(f.neto||0); });
+      return Math.max(0,Math.round(tot*100)/100);
+    }
+  }catch(e){}
+  try{ return Math.max(0,Number(detalleCuentaHab(r).saldo||0)); }catch(e){ return 0; }
+}
+/* [CXC-GRUPO] Pasa a CXC la deuda de UNA cuenta completa, una sola vez.
+   Antes se hacia cuarto por cuarto y, como cada cuarto de una cuenta unida veia el
+   saldo del grupo entero, la misma deuda entraba DOS veces a CXC. Ahora se reparte
+   el total entre los cuartos (la suma es exacta) y se crea UNA sola cuenta por cobrar. */
+function pasarGrupoACxc(numsStr, motivo){
+  var nums=String(numsStr||'').split(',').map(function(n){ return parseInt(n,10); }).filter(function(n){ return !isNaN(n); });
+  var habs=nums.map(findRoom).filter(function(r){ return r && r.estado==='ocupada'; });
+  if(!habs.length) return null;
+  var manda=habs[0];
+  var D=null; try{ D=detalleCuentaHab(manda); }catch(e){ D=null; }
+  var filas=(D&&D.filas)||[];
+  var enHabs={}; habs.forEach(function(r){ enHabs[String(r.num)]=1; });
+  var filasG=[]; var saldo=0;
+  filas.forEach(function(f){ if(f&&f.r&&enHabs[String(f.r.num)]){ filasG.push(f); saldo+=Number(f.neto||0); } });
+  saldo=Math.max(0,Math.round(saldo*100)/100);
+  if(!(saldo>0.009)) return null;
+  var ctrl=0; try{ ctrl=controlDeGrupoCuenta(habs)||0; }catch(e){ ctrl=0; }
+  if(!ctrl) ctrl=asegurarControlHab(manda);
+  var noches=1; try{ noches=nochesHab(manda); }catch(e){}
+  var c=null; try{ c=clienteDeHab(manda); }catch(e){}
+  var nom=(c&&typeof clienteNombre==='function'?clienteNombre(c):'')||manda.huesped||'Huesped';
+  var doc=(c&&c.docNum)?(((typeof docLabel==='function'?docLabel(c.docTipo):'Documento')||'Documento')+' '+c.docNum).trim():'';
+  var clave=String((c&&c.id)||c&&c.docNum||nom).trim().toLowerCase();
+  var esEmp=!!(manda.empresaRef || (c&&c.tipo==='empresa'));
+  var habsTxt=habs.map(function(q){ return q.num; }).join(', ');
+  var cargosDet=[];
+  try{ cargosDe(manda).filter(function(x){ return !x.pagado; }).forEach(function(x){ cargosDet.push({hab:manda.num, tipo:x.tipo, desc:x.desc||'', montoUsd:Number(x.montoUsd||0)}); }); }catch(e){}
+  var e=cxcCuentaPara({
+    clave:clave, control:ctrl, montoUsd:saldo, tipo:(esEmp?'empresa':'huesped'), empresaRef:manda.empresaRef||'',
+    nombre:nom, doc:doc, tel:(c&&c.telefono)||'', clienteId:(c&&c.id)||manda.clienteId||'', huespedNombre:nom,
+    habNum:manda.num, habTxt:String(habsTxt),
+    concepto:'Hospedaje a credito · Hab. '+habsTxt+' ('+noches+' noche(s))'+(esEmp?(' · Huesped: '+nom):'')+(motivo?(' · '+motivo):''),
+    motivo:'checkout-sin-pagar', origen:'checkout',
+    detHab:{num:manda.num, tipo:manda.tipo||'', noches:noches, hosp:(D?D.hosp:0), cons:(D?D.cons:0), neto:saldo, huesped:manda.huesped||''},
+    cargosDetalle:cargosDet
+  });
+  if(!e) return null;
+  var now=new Date(); var acc=0;
+  var ord=filasG.slice().sort(function(a,b){ return Number(a.r.num)-Number(b.r.num); });
+  ord.forEach(function(f, i){
+    var q=findRoom(f.r.num); if(!q) return;
+    var parte=(i===ord.length-1)?Math.round((saldo-acc)*100)/100:Math.round(Number(f.neto||0)*100)/100;
+    if(!(parte>0)) parte=0;
+    acc=Math.round((acc+parte)*100)/100;
+    var ids=[]; try{ ids=cargosDe(q).filter(function(x){ return !x.pagado; }).map(function(x){ return x.id; }); }catch(e2){}
+    try{ ligarCargosControl(ids, ctrl); }catch(e2){}
+    var cargos=[]; try{ cargos=cargosDe(q).map(function(x){ return x.pagado?x:Object.assign({},x,{pagado:true,control:(x.control||ctrl),controlPago:ctrl}); }); }catch(e2){ cargos=cargosDe(q); }
+    var ab=(Array.isArray(q.abonos)?q.abonos.slice():[]);
+    if(parte>0.009) ab.push({id:'abcxc'+Date.now()+q.num, concepto:'Enviado a CXC al check-out (Control N° '+fmtControl(ctrl)+')', montoUsd:parte, fecha:now.toISOString(), control:ctrl, cxc:true, hab:Number(q.num)});
+    updateRoom(q.num,{cargos:cargos, abonos:ab, ocultarCobrar:false, control:ctrl, creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:ctrl});
+  });
+  try{ logKardex('credito',{hab:manda.num, huesped:manda.huesped||'', clienteId:(c&&c.id)||manda.clienteId||'', control:ctrl,
+    detalle:'Check-out con saldo: la deuda paso a CXC · Hab. '+habsTxt+' · Control N° '+fmtControl(ctrl)+' · '+fmtUSD(saldo)+(esEmp?' · a nombre de EMPRESA '+e.nombre:''), credUsd:saldo, credBs:(typeof precioBs==='function'?precioBs(saldo):0), montoUsd:0, montoBs:0, metodo:'Credito (CXC)'}); }catch(e3){}
+  return e;
+}
 function pasarHabACxc(r, motivo){
   if(!r) return null;
   var D=null; try{ D=detalleCuentaHab(r); }catch(e){ D=null; }
@@ -14203,14 +14340,24 @@ function checkoutConDeuda(numsStr, modo){
     alert('Para pasar una deuda a CXC se necesita Recepcion con permiso, Supervisor o Master.\n\nAvisa al supervisor para que lo haga el.');
     return;
   }
-  var prev=habs.map(function(r){
-    var s=0; try{ s=detalleCuentaHab(r).saldo; }catch(e){}
-    return {r:r, saldo:Math.max(0, Number(s)||0), ctrl:controlDeHab(r)};
+  /* [CXC-GRUPO] Una cuenta unida se muestra UNA sola vez (no una vez por cuarto). */
+  var _enHabs={}; habs.forEach(function(h){ _enHabs[String(h.num)]=1; });
+  var _usados={}; var prev=[];
+  habs.forEach(function(r){
+    if(_usados[String(r.num)]) return;
+    var grupo=[r]; try{ var gg=cuartosQuePaganA(r); if(gg&&gg.length) grupo=gg; }catch(e){}
+    grupo=grupo.filter(function(q){ return q && _enHabs[String(q.num)]; });
+    if(!grupo.length) grupo=[r];
+    grupo.forEach(function(q){ _usados[String(q.num)]=1; });
+    prev.push({grupo:grupo, saldo:_saldoCuentaDeHabs(grupo[0], grupo), ctrl:(controlDeGrupoCuenta(grupo)||controlDeHab(grupo[0]))});
   });
-  var conDeuda=prev.filter(function(x){ return x.saldo>0.009; });
+  prev=prev.filter(function(x){ return x.saldo>0.009; });
+  var conDeuda=prev;
   var tot=conDeuda.reduce(function(a,x){ return a+x.saldo; },0);
   var pronto=conDeuda.map(function(x){
-    return '<div style="background:#f3f6fb;border-radius:9px;padding:9px 11px;margin-bottom:8px;font-size:13px"><b>Hab. '+esc(String(x.r.num))+'</b> · '+esc(x.r.huesped||'—')+'<br>Control N° <b>'+fmtControl(x.ctrl||(peekControl&&peekControl()))+'</b> · debe <b style="color:#a23b3b">'+fmtUSD(x.saldo)+'</b></div>';
+    var _nom=esc((x.grupo[0]&&x.grupo[0].huesped)||'—');
+    var _htxt=x.grupo.map(function(q){ return '<b>Hab. '+esc(String(q.num))+'</b>'; }).join(' + ');
+    return '<div style="background:#f3f6fb;border-radius:9px;padding:9px 11px;margin-bottom:8px;font-size:13px">'+_htxt+' · '+_nom+'<br>Control N° <b>'+fmtControl(x.ctrl||(peekControl&&peekControl()))+'</b> · debe <b style="color:#a23b3b">'+fmtUSD(x.saldo)+'</b></div>';
   }).join('');
   var body='<button class="close" onclick="cerrarModal()">×</button>';
   body+='<h2>🚪 Check-out con deuda</h2>';
@@ -14231,13 +14378,18 @@ function checkoutCxcConfirm(numsStr, btn){
   var nums=String(numsStr||'').split(',').map(function(n){ return parseInt(n,10); }).filter(function(n){ return !isNaN(n); });
   var habs=nums.map(findRoom).filter(function(r){ return r && r.estado==='ocupada'; });
   if(!habs.length){ procesoListo(btn); cerrarModal(); alert('Esas habitaciones ya no estan ocupadas.'); return; }
-  var hechos=[];
+  /* [CXC-GRUPO] Se pasa UNA vez por cuenta (no por cuarto). */
+  var hechos=[]; var _enH={}; habs.forEach(function(h){ _enH[String(h.num)]=1; }); var _usd={};
   habs.forEach(function(r){
-    var saldo=0; try{ saldo=detalleCuentaHab(r).saldo; }catch(e){}
-    if(saldo>0.009){
-      var e=pasarHabACxc(r,'checkout');
-      if(e) hechos.push({r:r, saldo:Math.max(0,saldo), ctrl:(controlDeHab(r)||e.control), cxc:e});
-    }
+    if(_usd[String(r.num)]) return;
+    var grupo=[r]; try{ var gg=cuartosQuePaganA(r); if(gg&&gg.length) grupo=gg; }catch(e){}
+    grupo=grupo.filter(function(q){ return q && _enH[String(q.num)]; });
+    if(!grupo.length) grupo=[r];
+    grupo.forEach(function(q){ _usd[String(q.num)]=1; });
+    var saldo=_saldoCuentaDeHabs(grupo[0], grupo);
+    if(!(saldo>0.009)) return;
+    var e=pasarGrupoACxc(grupo.map(function(q){ return q.num; }).join(','), 'checkout');
+    if(e) hechos.push({grupo:grupo, saldo:saldo, ctrl:(controlDeGrupoCuenta(grupo)||e.control), cxc:e});
   });
   /* Ahora si se liberan las habitaciones (esto usa el mismo camino de siempre) */
   var desp=[]; var now=new Date();
@@ -14252,7 +14404,7 @@ function checkoutCxcConfirm(numsStr, btn){
     try{ cerrarControlDeHab(r); }catch(e){}
   });
   procesoListo(btn); cerrarModal(); render();
-  var txt=hechos.length?('Check-out hecho. Se paso a CXC:\n\n'+hechos.map(function(h){ return 'Hab. '+h.r.num+' · Control N° '+fmtControl(h.ctrl)+' · '+fmtUSD(h.saldo); }).join('\n')+((hechos.length>1)?('\n\nTotal: '+fmtUSD(hechos.reduce(function(a,b){ return a+b.saldo; },0))):'')+'\n\nLo ves en la pestaña CXC y sale en el corte del turno.'):'Check-out hecho. La cuenta no tenia deuda.';
+  var txt=hechos.length?('Check-out hecho. Se paso a CXC:\n\n'+hechos.map(function(h){ return 'Hab. '+h.grupo.map(function(q){ return q.num; }).join(' + ')+' · Control N° '+fmtControl(h.ctrl)+' · '+fmtUSD(h.saldo); }).join('\n')+((hechos.length>1)?('\n\nTotal: '+fmtUSD(hechos.reduce(function(a,b){ return a+b.saldo; },0))):'')+'\n\nLo ves en la pestaña CXC y sale en el corte del turno.'):'Check-out hecho. La cuenta no tenia deuda.';
   alert(txt);
   if(desp.length) checkoutMensajesGrupo(desp);
 }
