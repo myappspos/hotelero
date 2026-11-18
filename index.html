@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.55 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.56 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.55 · 18/11/2026';
+const APP_VERSION = 'v1.56 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -3522,7 +3522,7 @@ function confirmarCheckinReserva(loc){
     var _abPrev=Array.isArray(a.hab.abonos)?a.hab.abonos.slice():[];
     var _abIni=_abPrev.concat(_repartoAnt[k]||[]);
     updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:(1+acsI.length), ninos:_mensI.length, acompanantes:acsI, menores:_mensI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:new Date().toLocaleDateString('es-VE'), salida:r.fechaSalida||'', control:_resCtrl, abonos:_abIni});
-    logKardex('checkin', {hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:(r.fechaSalida||''), personas:(1+acsI.length), acompanantes:acsI.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum}; }), detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
+    logKardex('checkin', {hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:(r.fechaSalida||''), personas:(1+acsI.length), acompanantes:acsI.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum, edad:(x.edad||''), estadoCivil:(x.estadoCivil||''), ocupacion:(x.ocupacion||'')}; }), menores:(_mensI||[]), ninos:(_mensI||[]).length, detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
     abrirEstadia(a.clienteId, a.num, noches, a.tarifa);
     if(k===0 && _rPlan!=='solo'){
       updateRoom(a.num,{plan:_rPlan, planRest:_rPlanRest});
@@ -4138,13 +4138,17 @@ function acompFormHTML(prefix, i, a){
   h+='<div style="font-size:12px;font-weight:700;color:#55637a;margin-bottom:6px">Acompañante '+(i+1)+'</div>';
   h+='<div style="display:flex;gap:8px"><input id="'+prefix+'-acomp-nombre-'+i+'" class="inp" style="flex:1" value="'+escA(_nm)+'" placeholder="Nombre"><input id="'+prefix+'-acomp-apellido-'+i+'" class="inp" style="flex:1" value="'+escA(_ap)+'" placeholder="Apellido"></div>';
   h+='<div style="display:flex;gap:8px;margin-top:6px"><select id="'+prefix+'-acomp-doctipo-'+i+'" class="inp" style="flex:0 0 150px">'+docTipoOptions(a.docTipo||'V')+'</select>';
-  h+='<input id="'+prefix+'-acomp-docnum-'+i+'" class="inp" style="flex:1" value="'+escA(a.docNum||'')+'" placeholder="Número de documento"></div>';
+  h+='<input id="'+prefix+'-acomp-docnum-'+i+'" class="inp" style="flex:1" value="'+escA(a.docNum||'')+'" placeholder="Número de documento" oninput="acompAutoDatos(\''+prefix+'\','+i+')"></div>';
+  h+='<div style="font-size:11.5px;color:#8893a5;margin:8px 0 4px">Estos tres datos son <b>opcionales</b> (se pueden completar después desde Clientes)</div>';
+  h+='<div style="display:flex;gap:8px"><input id="'+prefix+'-acomp-edad-'+i+'" class="inp" type="number" min="0" max="120" style="flex:0 0 110px" value="'+escA(acompEdadDe(a))+'" placeholder="Edad">';
+  h+='<select id="'+prefix+'-acomp-ec-'+i+'" class="inp" style="flex:0 0 165px">'+estadoCivilOptions(acompEcDe(a))+'</select>';
+  h+='<input id="'+prefix+'-acomp-prof-'+i+'" class="inp" style="flex:1" value="'+escA(acompProfDe(a))+'" placeholder="Profesión u oficio"></div>';
   h+='</div>';
   return h;
 }
 function leerAcompDOM(prefix, max){
   const arr=[];
-  for(let i=0;i<max+40;i++){ const nm=document.getElementById(prefix+'-acomp-nombre-'+i); if(!nm){ if(i>max+2) break; continue; } const ap=document.getElementById(prefix+'-acomp-apellido-'+i); const full=((nm.value||'').trim()+' '+(ap?(ap.value||'').trim():'')).trim(); arr.push({nombre:full, docTipo:document.getElementById(prefix+'-acomp-doctipo-'+i).value, docNum:document.getElementById(prefix+'-acomp-docnum-'+i).value}); }
+  for(let i=0;i<max+40;i++){ const nm=document.getElementById(prefix+'-acomp-nombre-'+i); if(!nm){ if(i>max+2) break; continue; } const ap=document.getElementById(prefix+'-acomp-apellido-'+i); const full=((nm.value||'').trim()+' '+(ap?(ap.value||'').trim():'')).trim(); var _ex=acompLeerExtra(prefix,i); arr.push({nombre:full, docTipo:document.getElementById(prefix+'-acomp-doctipo-'+i).value, docNum:document.getElementById(prefix+'-acomp-docnum-'+i).value, edad:_ex.edad, estadoCivil:_ex.estadoCivil, ocupacion:_ex.ocupacion}); }
   return arr;
 }
 function pintarAcomp(prefix, boxId, adultsId, initial){
@@ -4161,7 +4165,7 @@ function pintarAcomp(prefix, boxId, adultsId, initial){
 }
 function colectarAcomp(prefix, adultos){
   const out=[];
-  for(let i=0;i<Math.max(0,adultos-1);i++){ const nm=document.getElementById(prefix+'-acomp-nombre-'+i); if(!nm) continue; const ap=document.getElementById(prefix+'-acomp-apellido-'+i); const nombre=mayusculasYa((nm.value||'').trim()+' '+(ap?(ap.value||'').trim():'')).trim(); const docNum=document.getElementById(prefix+'-acomp-docnum-'+i).value.trim(); const docTipo=document.getElementById(prefix+'-acomp-doctipo-'+i).value; if(nombre||docNum) out.push({nombre:nombre,docTipo:docTipo,docNum:docNum}); }
+  for(let i=0;i<Math.max(0,adultos-1);i++){ const nm=document.getElementById(prefix+'-acomp-nombre-'+i); if(!nm) continue; const ap=document.getElementById(prefix+'-acomp-apellido-'+i); const nombre=mayusculasYa((nm.value||'').trim()+' '+(ap?(ap.value||'').trim():'')).trim(); const docNum=document.getElementById(prefix+'-acomp-docnum-'+i).value.trim(); const docTipo=document.getElementById(prefix+'-acomp-doctipo-'+i).value; const _ex=acompLeerExtra(prefix,i); if(nombre||docNum) out.push({nombre:nombre,docTipo:docTipo,docNum:docNum, edad:_ex.edad, estadoCivil:_ex.estadoCivil, ocupacion:_ex.ocupacion}); }
   return out;
 }
 function acompResumenTxt(acs){
@@ -4174,13 +4178,61 @@ function acompDe(o){
   return [];
 }
 function renderAcompCheckin(){ pintarAcomp('m','m-acomp-box','m-personas'); }
+/* [ACOMP-DATOS] Edad, estado civil y profesion del acompanante.
+   Son OPCIONALES: si no se escriben, el reporte policial los saca en blanco.
+   Solo se rellenan la primera vez; despues se corrigen desde la ficha del cliente. */
+function acompEdadDe(a){ if(!a) return ''; var v=(a.edad!=null?a.edad:a.edadAA); return String(v==null?'':v).trim(); }
+function acompEcDe(a){ if(!a) return ''; return String((a.estadoCivil!=null?a.estadoCivil:(a.ec!=null?a.ec:'')).toString()).trim(); }
+function acompProfDe(a){ if(!a) return ''; return String((a.ocupacion!=null?a.ocupacion:(a.prof!=null?a.prof:'')).toString()).trim(); }
+/* Busca a la persona ya registrada antes (como huesped o como acompanante) por su documento
+   y devuelve sus datos para no volver a preguntarlos. */
+function acompDatosConocidos(docNum, nombre){
+  var salida={edad:'', estadoCivil:'', ocupacion:''};
+  var dn=String(docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+  var nm=String(nombre||'').trim().toUpperCase();
+  function lleno(o){ return !!(acompEdadDe(o)||acompEcDe(o)||acompProfDe(o)); }
+  try{
+    var c=null;
+    if(dn){ c=clientes().find(function(x){ return x && x.tipo!=='empresa' && String(x.docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase()===dn && lleno({edad:x.edad,estadoCivil:x.estadoCivil,ocupacion:x.ocupacion}); }) || null; }
+    if(!c && nm){ c=clientes().find(function(x){ return x && x.tipo!=='empresa' && ((String(x.nombre||'')+' '+String(x.apellido||'')).trim().toUpperCase()===nm) && lleno({edad:x.edad,estadoCivil:x.estadoCivil,ocupacion:x.ocupacion}); }) || null; }
+    if(c){ salida.edad=String(c.edad||''); salida.estadoCivil=String(c.estadoCivil||''); salida.ocupacion=String(c.ocupacion||''); return salida; }
+    if(dn){
+      var hit=null;
+      clientes().forEach(function(x){ if(hit) return; var arr=Array.isArray(x.acompanantes)?x.acompanantes:[]; for(var i=0;i<arr.length;i++){ var a=arr[i]; if(!a) continue; if(String(a.docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase()!==dn) continue; if(!lleno(a)) continue; hit=a; return; } });
+      if(hit){ salida.edad=acompEdadDe(hit); salida.estadoCivil=acompEcDe(hit); salida.ocupacion=acompProfDe(hit); }
+    }
+  }catch(e){}
+  return salida;
+}
+/* Cuando Recepcion escribe el documento del acompanante, se completan solos los campos que ya se saben. */
+function acompAutoDatos(prefix, i){
+  try{
+    var nEl=document.getElementById(prefix+'-acomp-nombre-'+i), aEl=document.getElementById(prefix+'-acomp-apellido-'+i), dEl=document.getElementById(prefix+'-acomp-docnum-'+i);
+    if(!dEl) return;
+    var dd=String(dEl.value||'').trim(); if(!dd) return;
+    var full=((nEl&&nEl.value?nEl.value:'')+' '+(aEl&&aEl.value?aEl.value:'')).trim();
+    var k=acompDatosConocidos(dd, full);
+    var eEl=document.getElementById(prefix+'-acomp-edad-'+i); if(eEl && !String(eEl.value||'').trim() && k.edad) eEl.value=k.edad;
+    var cEl=document.getElementById(prefix+'-acomp-ec-'+i); if(cEl && !String(cEl.value||'').trim() && k.estadoCivil) cEl.value=k.estadoCivil;
+    var pEl=document.getElementById(prefix+'-acomp-prof-'+i); if(pEl && !String(pEl.value||'').trim() && k.ocupacion) pEl.value=k.ocupacion;
+  }catch(e){}
+}
+/* Lee del formulario la edad, estado civil y profesion de un acompanante (solo si el campo existe). */
+function acompLeerExtra(prefix, i){
+  var _v=function(id){ try{ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }catch(e){ return ''; } };
+  var ed=_v(prefix+'-acomp-edad-'+i); var ec=_v(prefix+'-acomp-ec-'+i); var pr=_v(prefix+'-acomp-prof-'+i);
+  var edNum=parseInt(ed); if(isNaN(edNum)||edNum<0||edNum>120) ed=''; else ed=String(edNum);
+  return { edad:ed, estadoCivil:ec, ocupacion:mayusculasYa(pr) };
+}
 function agregarAcompPost(num){
   var r=findRoom(num); if(!r || r.estado!=='ocupada'){ alert('Esta habitación no está ocupada.'); return; }
   var h='<button class="close" onclick="cerrarModal()">×</button>';
   h+='<h2>➕ Agregar acompañante · Hab. '+num+'</h2>';
   h+='<p style="font-size:12.5px;color:#55637a;margin:2px 0 12px">Para cuando un acompañante llega después del check-in. Se suma a la habitación y al registro del huésped.</p>';
   h+='<div style="display:flex;gap:8px"><input id="ap-nombre" class="inp" style="flex:1" placeholder="Nombre"><input id="ap-apellido" class="inp" style="flex:1" placeholder="Apellido"></div>';
-  h+='<div style="display:flex;gap:8px;margin-top:8px"><select id="ap-doctipo" class="puedeMinus inp" style="flex:0 0 150px">'+docTipoOptions('V')+'</select><input id="ap-docnum" class="puedeMinus inp" style="flex:1" placeholder="Número de documento"></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:8px"><select id="ap-doctipo" class="puedeMinus inp" style="flex:0 0 150px">'+docTipoOptions('V')+'</select><input id="ap-docnum" class="puedeMinus inp" style="flex:1" placeholder="Número de documento" oninput="acompAutoDatosPost()"></div>';
+  h+='<div style="font-size:11.5px;color:#8893a5;margin:8px 0 4px">Opcional: edad, estado civil y profesión (después se pueden completar desde Clientes)</div>';
+  h+='<div style="display:flex;gap:8px"><input id="ap-edad" class="inp" type="number" min="0" max="120" style="flex:0 0 110px" placeholder="Edad"><select id="ap-ec" class="inp" style="flex:0 0 165px">'+estadoCivilOptions('')+'</select><input id="ap-prof" class="inp" style="flex:1" placeholder="Profesión u oficio"></div>';
   h+='<div class="field" style="margin-top:10px"><label>¿Sus consumos a quién se le cargan?</label><select id="ap-paga">';
   h+='<option value="'+num+'">A la cuenta de Hab. '+num+' (la suya)</option>';
   try{ rooms().filter(function(x){ return x.estado==='ocupada'; }).forEach(function(x){ if(Number(x.num)!==Number(num)) h+='<option value="'+x.num+'">A la cuenta de Hab. '+x.num+' · '+esc(x.huesped||'')+'</option>'; }); }catch(e){}
@@ -4188,6 +4240,23 @@ function agregarAcompPost(num){
   h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn-gray" style="flex:1" onclick="cerrarModal()">Cancelar</button><button class="btn-green" style="flex:2" onclick="guardarAcompPost('+num+')">Agregar acompañante</button></div>';
   showModal(h);
   try{ var f=document.getElementById('ap-nombre'); if(f) f.focus(); }catch(e){}
+}
+function acompLeerExtraPost(){
+  var _v=function(id){ try{ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }catch(e){ return ''; } };
+  var ed=_v('ap-edad'); var edNum=parseInt(ed); if(isNaN(edNum)||edNum<0||edNum>120) ed=''; else ed=String(edNum);
+  return { edad:ed, estadoCivil:_v('ap-ec'), ocupacion:mayusculasYa(_v('ap-prof')) };
+}
+function acompAutoDatosPost(){
+  try{
+    var dEl=document.getElementById('ap-docnum'); if(!dEl) return;
+    var dd=String(dEl.value||'').trim(); if(!dd) return;
+    var nEl=document.getElementById('ap-nombre'), aEl=document.getElementById('ap-apellido');
+    var full=((nEl&&nEl.value?nEl.value:'')+' '+(aEl&&aEl.value?aEl.value:'')).trim();
+    var k=acompDatosConocidos(dd, full);
+    var eEl=document.getElementById('ap-edad'); if(eEl && !String(eEl.value||'').trim() && k.edad) eEl.value=k.edad;
+    var cEl=document.getElementById('ap-ec'); if(cEl && !String(cEl.value||'').trim() && k.estadoCivil) cEl.value=k.estadoCivil;
+    var pEl=document.getElementById('ap-prof'); if(pEl && !String(pEl.value||'').trim() && k.ocupacion) pEl.value=k.ocupacion;
+  }catch(e){}
 }
 function guardarAcompPost(num){
   var r=findRoom(num); if(!r || r.estado!=='ocupada'){ alert('Esta habitación no está ocupada.'); return; }
@@ -4199,21 +4268,25 @@ function guardarAcompPost(num){
   if(!ape){ alert('Escribe el apellido del acompañante (obligatorio para el registro policial).'); return; }
   if(!dn){ alert('Escribe el número de documento del acompañante (obligatorio para el registro).'); return; }
   var nombreCompleto=(nom+' '+ape).trim();
+  var _exP=acompLeerExtraPost();
   var acs=Array.isArray(r.acompanantes)?r.acompanantes.slice():[];
   var _paga=0; try{ var _pe=document.getElementById('ap-paga'); if(_pe && _pe.value) _paga=parseInt(_pe.value)||0; }catch(e){}
   var _acId='ac'+Date.now();
-  acs.push({id:_acId, nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num, pagaHab:(_paga&&_paga!==Number(num))?_paga:0});
+  acs.push({id:_acId, nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num, pagaHab:(_paga&&_paga!==Number(num))?_paga:0, edad:_exP.edad, estadoCivil:_exP.estadoCivil, ocupacion:_exP.ocupacion});
   updateRoom(num,{acompanantes:acs, personas:(parseInt(r.personas)||1)+1});
   if(_paga && _paga!==Number(num)){
     try{ logKardex('cuenta',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Acompañante '+nombreCompleto+' cargará sus consumos a la Hab. '+_paga, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   }
-  if(r.clienteId) registrarAcompanante(r.clienteId, {nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num});
+  if(r.clienteId) registrarAcompanante(r.clienteId, {nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num, edad:_exP.edad, estadoCivil:_exP.estadoCivil, ocupacion:_exP.ocupacion});
   try{ logKardex('acompanante', {hab:num, num:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Acompañante agregado después del check-in: '+nombreCompleto+' · '+docLabel(dt)+' '+dn, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
-  try{ polAcompKardexAdd(num, {nombre:nombreCompleto, docTipo:dt, docNum:dn}); }catch(e){}
+  try{ polAcompKardexAdd(num, {nombre:nombreCompleto, docTipo:dt, docNum:dn, edad:_exP.edad, estadoCivil:_exP.estadoCivil, ocupacion:_exP.ocupacion}); }catch(e){}
   cerrarModal(); render(); abrirHab(num);
   try{ alert('Acompañante agregado: '+nombreCompleto); }catch(e){}
 }
 /* ====== MENORES DE EDAD: agregar o corregir despues del check-in ====== */
+/* [MENOR-EDAD] La edad del nino es opcional: solo se guarda para la ficha. */
+function edadMenorDe(m){ if(!m) return ''; var v=(m.edad!=null?m.edad:''); return String(v==null?'':v).trim(); }
+function edadMenorLeer(id){ var e=document.getElementById(id); var v=e?String(e.value||'').trim():''; var k=parseInt(v); return (isNaN(k)||k<0||k>120)?'':String(k); }
 function agregarMenorPost(num){
   var r=findRoom(num); if(!r || r.estado!=='ocupada'){ alert('Esta habitación no está ocupada.'); return; }
   var h='<button class="close" onclick="cerrarModal()">×</button>';
@@ -4221,6 +4294,7 @@ function agregarMenorPost(num){
   h+='<p style="font-size:12.5px;color:#55637a;margin:2px 0 12px">Para cuando un niño llega después del check-in o faltó anotarlo. Queda en el registro de la habitación y en el reporte policial.</p>';
   h+='<div style="display:flex;gap:8px"><input id="mn-nombre" class="inp" style="flex:1" placeholder="Nombre"><input id="mn-apellido" class="inp" style="flex:1" placeholder="Apellido"></div>';
   h+='<input id="mn-folio" class="inp" style="margin-top:8px" placeholder="Número de folio (obligatorio)">';
+  h+='<div style="display:flex;gap:8px;margin-top:8px;align-items:center"><input id="mn-edad" class="inp" type="number" min="0" max="120" style="flex:0 0 120px" placeholder="Edad"><span style="font-size:11.5px;color:#8893a5">Edad del niño (opcional)</span></div>';
   h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn-gray" style="flex:1" onclick="cerrarModal()">Cancelar</button><button class="btn-green" style="flex:2" onclick="guardarMenorPost('+num+')">Agregar niño</button></div>';
   showModal(h);
   try{ var f=document.getElementById('mn-nombre'); if(f) f.focus(); }catch(e){}
@@ -4235,7 +4309,7 @@ function guardarMenorPost(num){
   if(!fol){ alert('Escribe el número de folio del niño. El folio es obligatorio para los menores de edad.'); return; }
   var mens=Array.isArray(r.menores)?r.menores.slice():[];
   var nombreCompleto=(nom+' '+ape).trim();
-  mens.push({nombre:nom, apellido:ape, folio:fol});
+  mens.push({nombre:nom, apellido:ape, folio:fol, edad:edadMenorLeer('mn-edad')});
   updateRoom(num,{menores:mens, ninos:mens.length});
   try{ logKardex('acompanante', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Menor de edad agregado después del check-in: '+nombreCompleto+' · Folio '+fol, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   cerrarModal(); render(); abrirHab(num);
@@ -4259,12 +4333,13 @@ function menorFormHTML(prefix, i, m){
   h+='<div style="display:flex;gap:8px"><input id="'+prefix+'-menor-nombre-'+i+'" class="inp" style="flex:1" value="'+escA(m.nombre||'')+'" placeholder="Nombre">';
   h+='<input id="'+prefix+'-menor-apellido-'+i+'" class="inp" style="flex:1" value="'+escA(m.apellido||'')+'" placeholder="Apellido"></div>';
   h+='<input id="'+prefix+'-menor-folio-'+i+'" class="inp" style="margin-top:6px" value="'+escA(m.folio||'')+'" placeholder="Número de folio (obligatorio)">';
+  h+='<input id="'+prefix+'-menor-edad-'+i+'" class="inp" type="number" min="0" max="120" style="margin-top:6px" value="'+escA(edadMenorDe(m))+'" placeholder="Edad del niño (opcional)">';
   h+='</div>';
   return h;
 }
 function leerMenoresDOM(prefix, max){
   const arr=[];
-  for(let i=0;i<max+40;i++){ const nm=document.getElementById(prefix+'-menor-nombre-'+i); if(!nm){ if(i>max+2) break; continue; } arr.push({nombre:nm.value, apellido:document.getElementById(prefix+'-menor-apellido-'+i).value, folio:document.getElementById(prefix+'-menor-folio-'+i).value}); }
+  for(let i=0;i<max+40;i++){ const nm=document.getElementById(prefix+'-menor-nombre-'+i); if(!nm){ if(i>max+2) break; continue; } arr.push({nombre:nm.value, apellido:document.getElementById(prefix+'-menor-apellido-'+i).value, folio:document.getElementById(prefix+'-menor-folio-'+i).value, edad:edadMenorLeer(prefix+'-menor-edad-'+i)}); }
   return arr;
 }
 function pintarMenores(prefix, boxId, ninosId, initial){
@@ -4280,12 +4355,12 @@ function pintarMenores(prefix, boxId, ninosId, initial){
 }
 function colectarMenores(prefix, ninos){
   const out=[];
-  for(let i=0;i<Math.max(0,ninos);i++){ const nm=document.getElementById(prefix+'-menor-nombre-'+i); if(!nm) continue; out.push({nombre:mayusculasYa(nm.value.trim()), apellido:mayusculasYa(document.getElementById(prefix+'-menor-apellido-'+i).value.trim()), folio:document.getElementById(prefix+'-menor-folio-'+i).value.trim()}); }
+  for(let i=0;i<Math.max(0,ninos);i++){ const nm=document.getElementById(prefix+'-menor-nombre-'+i); if(!nm) continue; out.push({nombre:mayusculasYa(nm.value.trim()), apellido:mayusculasYa(document.getElementById(prefix+'-menor-apellido-'+i).value.trim()), folio:document.getElementById(prefix+'-menor-folio-'+i).value.trim(), edad:edadMenorLeer(prefix+'-menor-edad-'+i)}); }
   return out;
 }
 function menoresResumenTxt(ms){
   if(!ms || !ms.length) return '';
-  return ' · Menores: '+ms.map(function(m){return ((m.nombre||'')+' '+(m.apellido||'')).trim()+(m.folio?(' (folio '+m.folio+')'):'');}).join('; ');
+  return ' · Menores: '+ms.map(function(m){return ((m.nombre||'')+' '+(m.apellido||'')).trim()+(m.folio?(' (folio '+m.folio+')'):'')+(edadMenorDe(m)?(' · '+edadMenorDe(m)+' años'):'');}).join('; ');
 }
 function menoresDe(o){
   if(o && Array.isArray(o.menores)) return o.menores;
@@ -4423,7 +4498,7 @@ function checkin(num){
     autorizada:(_auth?true:false), autorizadaModo:(_auth?_auth.modo:''), autorizadaInvitado:(_auth?_auth.invitado:''), autorizadaMotivo:(_auth?_auth.motivo:''), autorizadaPor:(_auth?autNombreLog():''), autorizadaTarifaNormal:(_auth?tarifa:0),
     checkin:fechaISODeHoy(), salida:document.getElementById('m-salida').value||fechaSalidaAuto(noches)});
   /* [POL-SALIDA] La salida REAL se sella al hacer el check-out (no la prevista) */
-  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), personas:adultos, acompanantes:acompanantes.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum}; }), detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
+  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), personas:adultos, acompanantes:acompanantes.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum, edad:(x.edad||''), estadoCivil:(x.estadoCivil||''), ocupacion:(x.ocupacion||'')}; }), menores:(menores||[]), ninos:(menores||[]).length, detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
   if(_auth){
     const _modoTxt=autorizaModoTxt(_auth.modo);
     const _autCtrl=siguienteControl();
@@ -4440,7 +4515,7 @@ function checkin(num){
       aplicarCargoComida(num, _plan, noches);
     }
   })();
-  acompanantes.forEach(a=>registrarAcompanante(clienteId||'', {nombre:a.nombre, docTipo:a.docTipo, docNum:a.docNum, hab:num}));
+  acompanantes.forEach(a=>registrarAcompanante(clienteId||'', {nombre:a.nombre, docTipo:a.docTipo, docNum:a.docNum, hab:num, edad:a.edad||'', estadoCivil:a.estadoCivil||'', ocupacion:a.ocupacion||''}));
   // Varias habitaciones de la misma venta: cada una con su propio huésped, recibo al titular
   if(_multiExtras.length){
     updateRoom(num,{tituId:clienteId||''});
@@ -7915,12 +7990,32 @@ function polAcompKardexAdd(num, ac){
       if(ctrl && parseInt(m.ctrlEntrada||0) && parseInt(m.ctrlEntrada||0)!==ctrl) continue;
       if(!Array.isArray(m.acompanantes)) m.acompanantes=[];
       var ya=m.acompanantes.some(function(x){ return x && ((String(x.docNum||'').trim() && String(x.docNum||'').trim()===String(ac.docNum||'').trim()) || String(x.nombre||'').trim()===String(ac.nombre||'').trim()); });
-      if(!ya) m.acompanantes.push({nombre:ac.nombre||'', docTipo:ac.docTipo||'', docNum:ac.docNum||''});
+      if(!ya) m.acompanantes.push({nombre:ac.nombre||'', docTipo:ac.docTipo||'', docNum:ac.docNum||'', edad:(ac.edad||''), estadoCivil:(ac.estadoCivil||''), ocupacion:(ac.ocupacion||'')});
+      else m.acompanantes=m.acompanantes.map(function(x){ if(!x) return x; var _m=(String(x.docNum||'').trim() && String(x.docNum||'').trim()===String(ac.docNum||'').trim()) || String(x.nombre||'').trim()===String(ac.nombre||'').trim(); if(!_m) return x; return Object.assign({}, x, {edad:(ac.edad||x.edad||''), estadoCivil:(ac.estadoCivil||x.estadoCivil||''), ocupacion:(ac.ocupacion||x.ocupacion||'')}); });
       DB.save('kardex', k);
       return true;
     }
   }catch(e){}
   return false;
+}
+/* [MENOR-EDAD] Edades de los ninos guardadas en el registro de ENTRADA (kardex).
+   Devuelve una lista: {nombre, apellido, folio, edad}. Asi la ficha conserva la
+   edad del nino aunque el huesped ya haya hecho check-out. */
+function polMenoresDeKardex(hab, ctrlEntrada){
+  try{
+    var k=kardexAll(); var en=[];
+    for(var i=0;i<k.length;i++){
+      var m=k[i]; if(!m || m.tipo!=='checkin') continue;
+      if(String(m.hab)!==String(hab)) continue;
+      var cK=parseInt(m.ctrlEntrada||0)||0; var cD=parseInt(ctrlEntrada||0)||0;
+      if(cD && cK && cK!==cD) continue;
+      if(Array.isArray(m.menores) && m.menores.length) en.push(m.menores);
+    }
+    if(!en.length) return [];
+    var out=[];
+    en.forEach(function(lst){ lst.forEach(function(m){ if(m) out.push({nombre:String(m.nombre||''), apellido:String(m.apellido||''), folio:String(m.folio||''), edad:String(m.edad==null?'':m.edad).trim()}); }); });
+    return out;
+  }catch(e){ return []; }
 }
 function polRegistros(){
   /* [POL-SALIDA] El reporte se arma con la SALIDA REAL del huesped.
@@ -7985,27 +8080,50 @@ function polRegistros(){
       }
     }
     const clienteA = f.clienteId ? clientes().find(x=>x.id===f.clienteId) : null;
+    /* [ACOMP-DATOS] Se respalda con el historial del acompanante del cliente SOLO para
+       completar los datos que falten (edad, estado civil, profesion). Nunca se pisa lo escrito. */
+    try{
+      if(clienteA && Array.isArray(clienteA.acompanantes)){
+        acs=(acs||[]).map(function(a){
+          if(!a) return a;
+          var _dn=String(a.docNum||'').trim(), _nm=String(a.nombre||'').trim();
+          var reg=clienteA.acompanantes.find(function(x){ return x && ((_dn && String(x.docNum||'').trim()===_dn) || (_nm && String(x.nombre||'').trim()===_nm)); });
+          if(!reg) return a;
+          return Object.assign({}, reg, a, { edad:(acompEdadDe(a)||acompEdadDe(reg)), estadoCivil:(acompEcDe(a)||acompEcDe(reg)), ocupacion:(acompProfDe(a)||acompProfDe(reg)), pais:(a.pais||reg.pais||'') });
+        });
+      }
+    }catch(e){}
     (acs||[]).forEach(a=>{
       if(!a) return;
       const nm = String(a.nombre||'').trim();
       const dn = String(a.docNum||'').trim();
       if(!nm && !dn) return;
-      let paisA='', _edA='', _ecA='', _prA='';
+      let paisA='';
       try{
-        const _arrA = clienteA && Array.isArray(clienteA.acompanantes) ? clienteA.acompanantes : [];
-        const _mismo = function(x){ return x && ((dn && String(x.docNum||'').trim()===dn) || (nm && String(x.nombre||'').trim()===nm)); };
-        const _regsA = _arrA.filter(_mismo);
-        /* Si la persona tiene varios registros, se usa el que ya tenga datos completos
-           (los que se completaron despues desde la ficha del cliente en Clientes). */
-        const reg = _regsA.filter(function(x){ return acompEdadDe(x)||acompEcDe(x)||acompProfDe(x); })[0] || _regsA[0] || null;
-        if(reg){ paisA = reg.pais||''; _edA=acompEdadDe(reg); _ecA=acompEcDe(reg); _prA=acompProfDe(reg); }
+        const reg = clienteA && Array.isArray(clienteA.acompanantes) ? clienteA.acompanantes.find(x=>x && ((dn && String(x.docNum||'').trim()===dn) || (nm && String(x.nombre||'').trim()===nm))) : null;
+        if(reg) paisA = reg.pais||'';
+        if(a.pais) paisA = a.pais;
       }catch(e){}
       conAcomp.push(Object.assign({}, f, {
         ac:true, nom:nm, doc:(a.docTipo&&dn)?docCorto(a.docTipo,dn):dn,
-        edad:String(a.edad||'').trim()||_edA, ec:String(a.estadoCivil||a.ec||'').trim()||_ecA, prof:String(a.ocupacion||a.prof||'').trim()||_prA, pais:paisA,
+        edad:acompEdadDe(a), ec:acompEcDe(a), prof:acompProfDe(a), pais:paisA,
         parentesco:a.parentesco||''
       }));
     });
+    /* [MENOR-POL] Los ninos NO salen en la hoja impresa (la Policía no los pide en ese
+       reporte). Van aparte, solo en la pantalla y en el Excel, para tener su edad a mano. */
+    try{
+      var _menF = null;
+      try{ _menF = polMenoresDeKardex(f.hab, f.ctrlEntrada); }catch(e){ _menF = null; }
+      if(!(_menF && _menF.length)){
+        var _rM = findRoom(f.hab);
+        if(_rM){
+          var _cRM = parseInt(_rM.control||0)||0, _cKM = parseInt(f.ctrlEntrada||0)||0;
+          if((_cRM && _cKM && _cRM===_cKM) || f.esViejo) _menF = menoresDe(_rM);
+        }
+      }
+      f.menores = Array.isArray(_menF) ? _menF.filter(function(m){ return m && (((m.nombre||'')+' '+(m.apellido||'')).trim()); }).map(function(m){ return {nombre:((m.nombre||'')+' '+(m.apellido||'')).trim(), folio:String(m.folio||''), edad:edadMenorDe(m)}; }) : [];
+    }catch(e){ f.menores=[]; }
   });
   /* En una cuenta unida, las habitaciones hijas solo salen si ELLAS registraron su propio titular
      distinto (el caso normal es que el grupo lleve un renglon por habitacion). No se borra plata ni gente. */
@@ -8048,16 +8166,32 @@ function renderPolicial(){
 
   h += '<div class="stats"><div class="stat" style="border-left-color:#7c3aed"><div class="n">'+filas.length+'</div><div class="l">'+(polSoloAcomp?'Acompañantes en el período':(polSoloExtr?'Extranjeros en el período':(polFiltro==='salida'?'Salidas del día':'Huéspedes en el período')))+'</div></div></div>';
 
+  /* [ACOMP-DATOS] Aviso: acompanantes a los que les falta edad, estado civil o profesion. */
+  (function(){
+    var falt=[];
+    filas.forEach(function(f){ if(f.ac && faltaDatosAcomp(f)) falt.push(f); });
+    if(!falt.length) return;
+    h += '<div style="background:#fff8e6;border:1px solid #f2d28a;border-radius:11px;padding:11px 13px;margin-bottom:14px;font-size:12.5px;color:#7a5200;line-height:1.55">';
+    h += '<b>👫 '+falt.length+' acompañante(s) sin todos los datos</b> (edad, estado civil o profesión). En la hoja salen con “—”.<br>Toca el nombre para completarlos ahora, o complétalos en <b>Clientes → 👫 Acompañantes</b>.';
+    h += '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">';
+    falt.slice(0,12).forEach(function(f){
+      var _clave=claveAcompFila(f);
+      h += '<button class="btn-ghost" style="padding:4px 9px;font-size:12px" onclick="editarAcompRapido('+escA(JSON.stringify(String(_clave)))+','+escA(JSON.stringify(String(f.clienteId||'')))+','+escA(JSON.stringify(String(f.hab||'')))+')">'+esc(f.nom||'(sin nombre)')+' · Hab. '+esc(String(f.hab||'—'))+'</button>';
+    });
+    if(falt.length>12) h += '<span style="font-size:12px">…y '+(falt.length-12)+' más</span>';
+    h += '</div></div>';
+  })();
+
   if(!filas.length){
     h += '<div class="empty-guia"><span class="ico">🚔</span><div class="t">No hay '+(polFiltro==='salida'?'salidas registradas':'huéspedes registrados')+' en '+(polFiltro==='rango'?'ese rango':'ese día')+'</div><div class="s">'+(polFiltro==='salida'?'Aquí sale cada huésped cuando Recepción le hace el check-out.':'Cuando Recepción haga check-in a un huésped, aquí aparecerá su registro.')+'</div></div>';
     return h;
   }
 
   h += '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:12px;overflow:auto">';
-  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th></tr>';
+  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th><th>🧒 Niños</th></tr>';
   filas.forEach(f=>{
     const _nmTxt = (f.ac?('↳ '+esc(f.nom||'—')+' <span style="font-weight:400;color:#8893a5;font-size:11px">(Acomp.)</span>'):('<b>'+esc(f.nom||'—')+'</b>'));
-    h += '<tr'+(f.ac?' style="background:#f7f9fc"':'')+'><td style="white-space:nowrap">'+esc(f.entrada?_polDiaFmt(f.entrada):_polDiaFmt(f.dia))+'</td><td>'+_nmTxt+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida?_polDiaFmt(f.salida):'En el hotel')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td></tr>';
+    h += '<tr'+(f.ac?' style="background:#f7f9fc"':'')+'><td style="white-space:nowrap">'+esc(f.entrada?_polDiaFmt(f.entrada):_polDiaFmt(f.dia))+'</td><td>'+_nmTxt+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec?estadoCivilABR(f.ec):'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida?_polDiaFmt(f.salida):'En el hotel')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td><td style="font-size:11.5px;line-height:1.45">'+((Array.isArray(f.menores)&&f.menores.length)?f.menores.map(function(m){ return esc(m.nombre)+(m.edad?(' <b>· '+esc(String(m.edad))+' años</b>'):''); }).join('<br>'):'—')+'</td></tr>';
   });
   h += '</table></div>';
   return h;
@@ -8080,7 +8214,7 @@ function imprimirPolicial(){
     rows += '<span class="c-nom">'+(f.ac?('&nbsp;&nbsp;↳ '+esc(f.nom||'—')+' (Acomp.)'):esc(f.nom||'—'))+'</span>';
     rows += '<span class="c-doc">'+esc(f.doc||'—')+'</span>';
     rows += '<span class="c-ed">'+esc(f.edad||'—')+'</span>';
-    rows += '<span class="c-ec">'+esc(f.ec||'—')+'</span>';
+    rows += '<span class="c-ec">'+esc(f.ec?estadoCivilABR(f.ec):'—')+'</span>';
     rows += '<span class="c-prof">'+esc(f.prof||'—')+'</span>';
     rows += '<span class="c-proc">'+esc(f.proc||'—')+'</span>';
     rows += '<span class="c-dest">'+esc(f.dest||'—')+'</span>';
@@ -8105,8 +8239,8 @@ function imprimirPolicial(){
 function exportarPolicialXLS(){
   const filas = polRegistros();
   if(!filas.length){ alert('No hay huéspedes para exportar en ese período.'); return; }
-  const headers=['Fecha entrada','Apellidos y nombres','Huésped / Acompañante','Edad','E. civil','Profesión u oficio','Procedencia','Destino','Cédula','Fecha salida','Hab.'];
-  const rows=filas.map(f=>[(f.entrada?fechaDDMMYYYY(f.entrada):fechaDDMMYYYY(f.dia)), f.nom||'', (f.ac?'Acompañante':'Huésped'), f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.doc||'', (f.salida?fechaDDMMYYYY(f.salida):''), f.hab||'']);
+  const headers=['Fecha entrada','Apellidos y nombres','Huésped / Acompañante','Edad','E. civil','Profesión u oficio','Procedencia','Destino','Cédula','Fecha salida','Hab.','Niños (nombre y edad)'];
+  const rows=filas.map(f=>[(f.entrada?fechaDDMMYYYY(f.entrada):fechaDDMMYYYY(f.dia)), f.nom||'', (f.ac?'Acompañante':'Huésped'), f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.doc||'', (f.salida?fechaDDMMYYYY(f.salida):''), f.hab||'', ((Array.isArray(f.menores)&&f.menores.length)?f.menores.map(function(m){ return m.nombre+(m.edad?(' · '+m.edad+' años'):''); }).join(' / '):'')]);
   _descargarXLS((polSoloAcomp?'reporte_acompanantes_':(polSoloExtr?'reporte_extranjeros_':'reporte_policial_'))+((polFiltro==='rango')?(polDesde+'_'+polHasta):polDia)+'.xls', headers, rows);
 }
 
@@ -12027,7 +12161,7 @@ function registrarAcompanante(clienteId, ac){
   if(!(ac.nombre||'').trim() && !(ac.docNum||'').trim()) return;
   const list=clientes(); const c=list.find(x=>x.id===clienteId); if(!c) return;
   if(!Array.isArray(c.acompanantes)) c.acompanantes=[];
-  c.acompanantes.unshift({ id:'a'+Date.now(), nombre:(ac.nombre||'').trim(), docTipo:ac.docTipo||'', docNum:(ac.docNum||'').trim(), hab:ac.hab||'', fecha:new Date().toISOString() });
+  c.acompanantes.unshift({ id:'a'+Date.now(), nombre:(ac.nombre||'').trim(), docTipo:ac.docTipo||'', docNum:(ac.docNum||'').trim(), hab:ac.hab||'', fecha:new Date().toISOString(), edad:(ac.edad||''), estadoCivil:(ac.estadoCivil||''), ocupacion:(ac.ocupacion||'') });
   saveClientes(list);
 }
 function cerrarEstadia(clienteId, hab, info){
@@ -12046,27 +12180,6 @@ function guardarNotasCliente(id){
   saveClientes(list); cerrarModal(); render(); alert('Notas guardadas.');
 }
 function fichaLinea(k,v){ return '<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="color:#55637a">'+esc(k)+'</span><span>'+esc(v)+'</span></div>'; }
-/* [ACOMP-DATOS] Edad, estado civil y profesion del acompanante.
-   En el check-in son OPCIONALES (solo se pide nombre y documento); se completan
-   despues desde la ficha del cliente, en la pestana Clientes. */
-function acompEdadDe(a){ if(!a) return ''; var v=(a.edad!=null?a.edad:a.edadAA); return String(v==null?'':v).trim(); }
-function acompEcDe(a){ if(!a) return ''; return String((a.estadoCivil!=null?a.estadoCivil:(a.ec!=null?a.ec:'')).toString()).trim().toUpperCase(); }
-function acompProfDe(a){ if(!a) return ''; return String((a.ocupacion!=null?a.ocupacion:(a.prof!=null?a.prof:'')).toString()).trim(); }
-function acompFaltantes(a){
-  var f=[];
-  if(!acompEdadDe(a)) f.push('Edad');
-  if(!acompEcDe(a)) f.push('Estado civil');
-  if(!acompProfDe(a)) f.push('Profesion');
-  return f;
-}
-function acompResumenDatos(a){
-  var p=[]; var ed=acompEdadDe(a); if(ed) p.push(ed+' años');
-  var ec=acompEcDe(a); if(ec) p.push(estadoCivilTxt(ec));
-  var pr=acompProfDe(a); if(pr) p.push(pr);
-  return p.join(' · ');
-}
-/* Las tres etiquetas se muestran con acentos (el codigo va sin acentos para no romper nada). */
-function acompFaltantesTxt(a){ return acompFaltantes(a).map(function(x){ return x==='Edad'?'Edad':(x==='Estado civil'?'Estado civil':'Profesión'); }).join(', '); }
 function verClienteModal(id){
   const c=clienteById(id); if(!c) return;
   const cr=clienteResumen(c); const nom=clienteNombre(c);
@@ -12085,15 +12198,10 @@ function verClienteModal(id){
     if(c.diasCredito) body+=fichaLinea('Días de crédito', c.diasCredito);
   } else {
     if(c.edad) body+=fichaLinea('Edad', c.edad);
-    if(c.estadoCivil) body+=fichaLinea('Estado civil', estadoCivilTxt(c.estadoCivil));
     if(c.empresaRef) body+=fichaLinea('Viene por empresa', c.empresaRef);
   }
   body+=fichaLinea('Registrado', fmtFecha(c.creado));
   body+='</div>';
-  if(c.tipo!=='empresa'){
-    var _faltH=[]; if(!String(c.edad||'').trim()) _faltH.push('Edad'); if(!String(c.estadoCivil||'').trim()) _faltH.push('Estado civil'); if(!String(c.ocupacion||'').trim()) _faltH.push('Profesión');
-    if(_faltH.length) body+='<div style="background:#fff8ec;border:1px solid #f3d9ac;border-radius:10px;padding:10px 12px;margin:0 0 14px;font-size:12.5px;color:#7a4b00;line-height:1.6">Para el reporte policial falta: <b>'+_faltH.join(', ')+'</b>. <button class="btn-ghost" style="padding:5px 10px;font-size:12px;margin-left:4px" onclick="editClienteModal(\''+id+'\')">Completar datos</button></div>';
-  }
   body+='<div class="section-title" style="font-size:14px;margin-top:0">Notas del cliente</div>';
   body+='<textarea id="vc-notas" rows="3" placeholder="Preferencias, acuerdos, observaciones…">'+esc(c.notas||'')+'</textarea>';
   body+='<button class="btn-green" style="margin-top:8px" onclick="guardarNotasCliente(\''+id+'\')">Guardar notas</button>';
@@ -12111,56 +12219,54 @@ function verClienteModal(id){
     body+='</table><div style="text-align:right;margin-top:8px;font-weight:700;color:var(--azul)">Total hospedado: '+fmtUSD(tot)+' · '+completas+' estadía(s) completada(s)</div>';
   }
   const acs=Array.isArray(c.acompanantes)?c.acompanantes:[];
-  body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Acompañantes ('+acs.length+')</div>';
+  body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Historial de acompañantes ('+acs.length+')</div>';
   if(acs.length===0){ body+='<div class="empty">Aún no se ha registrado ningún acompañante.</div>'; }
   else{
-    var _faltTot=acs.filter(function(a){ return acompFaltantes(a).length>0; }).length;
-    body+='<div style="font-size:12px;color:#2a4a73;background:#eef3fb;border:1px solid #c9d8ee;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.6">Aquí puedes completar la <b>edad, el estado civil y la profesión</b> de cada acompañante: son opcionales en el check-in, pero con ellos el <b>reporte policial</b> sale completo.'+(_faltTot?(' <b>Faltan datos en '+_faltTot+' acompañante(s).</b>'):'')+'</div>';
-    body+='<table class="users-table"><tr><th>Fecha</th><th>Acompañante</th><th>Documento</th><th style="width:46px;text-align:center">Hab.</th><th style="width:96px;text-align:center">Datos</th></tr>';
-    acs.forEach(function(a,ix){
-      var _res=acompResumenDatos(a);
-      var _fal=acompFaltantes(a).length;
-      body+='<tr><td style="white-space:nowrap">'+fmtFecha(a.fecha)+'</td><td>'+esc(a.nombre||'—')+(_res?('<div style="font-size:11px;color:#8893a5;margin-top:1px">'+esc(_res)+'</div>'):'')+'</td><td>'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'—')+'</td><td style="text-align:center">'+esc(a.hab?String(a.hab):'—')+'</td><td style="text-align:center"><button class="'+(_fal?'btn-green':'btn-ghost')+'" style="padding:5px 9px;font-size:12px" onclick="editarAcompModal(\''+id+'\','+ix+')">'+(_fal?'✏️ Completar':'✏️ Editar')+'</button></td></tr>';
-    });
+    body+='<table class="users-table"><tr><th>Fecha</th><th>Acompañante</th><th>Documento</th><th>Hab.</th></tr>';
+    acs.forEach(a=>{ body+='<tr><td>'+fmtFecha(a.fecha)+'</td><td>'+esc(a.nombre||'—')+'</td><td>'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'—')+'</td><td>'+esc(a.hab?String(a.hab):'—')+'</td></tr>'; });
     body+='</table>';
+    /* [MENOR-EDAD] Niños que vinieron con este huésped, con su edad. */
+    var _menFicha=menoresClienteHistorial(c);
+    if(_menFicha.length){
+      body+='<div class="section-title" style="font-size:14px;margin-top:14px">Niños que han venido con este huésped ('+_menFicha.length+')</div>';
+      body+='<table class="users-table"><tr><th>Entrada</th><th>Niño</th><th>Edad</th><th>Hab.</th></tr>';
+      _menFicha.forEach(function(m){ body+='<tr><td>'+esc(m.fecha||'—')+'</td><td>'+esc(m.nombre||'—')+'</td><td>'+esc(m.edad||'—')+'</td><td>'+esc(m.hab==null?'—':String(m.hab))+'</td></tr>'; });
+      body+='</table>';
+    }
   }
   body+='<div class="divider"></div><div class="actions"><button class="btn-primary" onclick="imprimirFichaHuesped(\''+id+'\')">Imprimir ficha</button><button class="btn-ghost" onclick="editClienteModal(\''+id+'\')">Editar datos</button><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(body);
 }
-/* [ACOMP-DATOS] Solo se EDITAN los datos del acompanante ya registrado:
-   no se agregan ni se quitan acompanantes desde aqui (eso lo hace el check-in). */
-function editarAcompModal(clienteId, ix){
-  const c=clienteById(clienteId); if(!c) return;
-  const acs=Array.isArray(c.acompanantes)?c.acompanantes:[]; const a=acs[ix]; if(!a) return;
-  let body='<button class="close" onclick="verClienteModal(\''+clienteId+'\')">×</button><h2>Datos del acompañante</h2>';
-  body+='<div style="background:#eef6ff;border-radius:10px;padding:11px 13px;margin:4px 0 14px;font-size:13px"><b>'+esc(a.nombre||'(sin nombre)')+'</b><div style="color:#55637a;font-size:12px;margin-top:2px">'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'Sin documento')+(a.hab?(' · Hab. '+esc(String(a.hab))):'')+'</div></div>';
-  body+='<div class="field"><label>Edad</label><input id="ad-edad" type="number" min="0" max="120" value="'+escA(acompEdadDe(a))+'" placeholder="ej: 35"></div>';
-  body+='<div class="field"><label>Estado civil</label><select id="ad-ec">'+estadoCivilOptions(acompEcDe(a))+'</select></div>';
-  body+='<div class="field"><label>Profesión u oficio</label><input id="ad-prof" value="'+escA(acompProfDe(a))+'" placeholder="ej: Comerciante"></div>';
-  body+='<div style="font-size:12px;color:#8893a5;margin-bottom:10px;line-height:1.6">Estos datos son <b>opcionales</b>. Si los dejas en blanco, en el reporte policial salen con “—”. El nombre y el documento no se cambian aquí.</div>';
-  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="guardarAcompDatos(\''+clienteId+'\','+ix+')">Guardar datos</button><button class="btn-ghost" onclick="verClienteModal(\''+clienteId+'\')">Cancelar</button></div>';
-  showModal(body);
-}
-function guardarAcompDatos(clienteId, ix){
-  const list=clientes(); const c=list.find(function(x){ return x.id===clienteId; }); if(!c) return;
-  const acs=Array.isArray(c.acompanantes)?c.acompanantes:[]; const a=acs[ix]; if(!a) return;
-  const _v=function(id){ const e=document.getElementById(id); return e?String(e.value||'').trim():''; };
-  let edad=_v('ad-edad');
-  if(edad!==''){ const n=parseInt(edad,10); if(isNaN(n)||n<0||n>120){ alert('La edad debe ser un número entre 0 y 120.'); return; } edad=String(n); }
-  const ec=_v('ad-ec').toUpperCase();
-  const prof=mayusculasYa(_v('ad-prof'));
-  const _k=function(x){ return x?((String(x.docNum||'').trim().toUpperCase())||String(x.nombre||'').trim().toUpperCase()):''; };
-  const kk=_k(a);
-  /* Se actualizan todos los registros de la MISMA persona (mismo documento o mismo
-     nombre) para que el historial y el reporte policial muestren los mismos datos. */
-  acs.forEach(function(x){
-    if(!x) return;
-    if(kk && _k(x)!==kk) return;
-    x.edad=edad; x.estadoCivil=ec; x.ocupacion=prof;
-  });
-  saveClientes(list);
-  verClienteModal(clienteId);
-  alert('Datos del acompañante guardados.');
+/* [MENOR-EDAD] Niños que vinieron con este huésped, sacados de su historial de
+   estadías y del registro de entrada del hotel. Nombre, edad y habitación. */
+function menoresClienteHistorial(c){
+  var out=[]; if(!c) return out;
+  try{
+    var hist=Array.isArray(c.historial)?c.historial:[];
+    var vistos={};
+    hist.forEach(function(e){
+      if(!e) return;
+      var hs = Array.isArray(e.habEstuvo)&&e.habEstuvo.length ? e.habEstuvo : [e];
+      hs.forEach(function(x){
+        var hab=(x&&x.hab!=null?x.hab:e.hab);
+        if(hab==null || String(hab)==='') return;
+        var ctrl=(x&&x.control!=null?x.control:e.control);
+        var lst = polMenoresDeKardex(hab, ctrl);
+        if(!lst.length){
+          var rr=findRoom(Number(hab))||findRoom(hab);
+          if(rr && String(rr.control||'')===String(ctrl||'')) lst=menoresDe(rr);
+        }
+        lst.forEach(function(m){
+          var nm=String(m.nombre||'').trim();
+          if(!nm) return;
+          var clave=nm.toUpperCase()+'|'+String(hab)+'|'+String(e.entrada||'');
+          if(vistos[clave]) return; vistos[clave]=1;
+          out.push({nombre:nm, edad:edadMenorDe(m), hab:hab, fecha:(e.entrada?fmtFecha(e.entrada):'')});
+        });
+      });
+    });
+  }catch(err){}
+  return out;
 }
 function imprimirFichaHuesped(id){
   const c=clienteById(id); if(!c){ alert('No se encontró el huésped.'); return; }
@@ -12370,6 +12476,241 @@ function clienteRows(){
 }
 function filtrarClientes(){ clientBuscar = document.getElementById('cl-buscar').value; document.getElementById('cl-lista').innerHTML = clienteRows(); }
 function setClientFiltro(f){ clientFiltro=f; render(); }
+
+/* ===== [ACOMP-DATOS] Acompanantes: completar edad, estado civil y profesion =====
+   Son datos OPCIONALES. Se pueden completar o corregir despues del check-in, sin
+   tocar la habitacion, el dinero ni los consumos. Lo que se escribe aqui es lo que
+   sale en el reporte policial y en la hoja impresa. */
+function estadoCivilABR(v){
+  var t=String(v==null?'':v).trim().toUpperCase();
+  if(!t) return '';
+  if(t.length===1) return (/^(S|C|D|V|K)$/.test(t)?t:'');
+  if(t.indexOf('SOLTER')===0) return 'S';
+  if(t.indexOf('CASAD')===0) return 'C';
+  if(t.indexOf('DIVORCIAD')===0) return 'D';
+  if(t.indexOf('VIUD')===0) return 'V';
+  if(t.indexOf('CONCUBIN')===0) return 'K';
+  return t.slice(0,3);
+}
+function _acompMismo(a, docNum, nombre){
+  if(!a) return false;
+  var dn=String(docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+  var nm=String(nombre||'').trim().toUpperCase();
+  if(dn && String(a.docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase()===dn) return true;
+  if(nm && String(a.nombre||'').trim().toUpperCase()===nm) return true;
+  return false;
+}
+function faltaDatosAcomp(a){ return !acompEdadDe(a) || !acompEcDe(a) || !acompProfDe(a); }
+/* Actualiza los datos de un acompanante en la ficha de TODOS los clientes donde aparezca.
+   Asi, la proxima vez que venga, sus datos se completan solos. */
+function acompGuardarDatos(docNum, nombre, edad, ec, prof){
+  var list=clientes(); var hubo=false; var dueno='';
+  list.forEach(function(c){
+    if(!Array.isArray(c.acompanantes)) return;
+    c.acompanantes.forEach(function(a){
+      if(!a || !_acompMismo(a, docNum, nombre)) return;
+      a.edad=String(edad==null?'':edad); a.estadoCivil=ec||''; a.ocupacion=prof||''; hubo=true; dueno=c.id;
+    });
+  });
+  var dn=String(docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase();
+  if(dn) list.forEach(function(c){ if(c && c.tipo!=='empresa' && String(c.docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase()===dn){ if(String(edad||'').trim()) c.edad=String(edad); if(ec) c.estadoCivil=ec; if(prof) c.ocupacion=prof; hubo=true; dueno=c.id; } });
+  if(!hubo){ return {ok:false, clienteId:''}; }
+  saveClientes(list);
+  return {ok:true, clienteId:dueno};
+}
+/* Guarda los datos tambien en el registro de ENTRADA (kardex) de la habitacion. */
+function acompGuardarDatosKardex(hab, docNum, nombre, edad, ec, prof){
+  if(hab===null || hab===undefined || String(hab)==='') return false;
+  try{
+    var k=kardexAll(); var hubo=false;
+    for(var i=0;i<k.length;i++){
+      var m=k[i]; if(!m || m.tipo!=='checkin' || String(m.hab)!==String(hab)) continue;
+      if(!Array.isArray(m.acompanantes)) continue;
+      m.acompanantes.forEach(function(a){
+        if(!a || !_acompMismo(a, docNum, nombre)) return;
+        a.edad=String(edad==null?'':edad); a.estadoCivil=ec||''; a.ocupacion=prof||''; hubo=true;
+      });
+    }
+    if(hubo) DB.save('kardex', k);
+    return hubo;
+  }catch(e){ return false; }
+}
+/* Lista de acompanantes para la pestana Clientes: habitaciones ocupadas + historial de cada cliente. */
+function acompListaGlobal(){
+  var out=[]; var idx={};
+  function keyDe(docNum, nombre){ var dn=String(docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase(); return dn?('D:'+dn):('N:'+String(nombre||'').trim().toUpperCase()); }
+  function add(a, clienteId, clienteNombre, hab, fecha){
+    if(!a || (!String(a.nombre||'').trim() && !String(a.docNum||'').trim())) return;
+    var k=keyDe(a.docNum, a.nombre);
+    if(idx[k]!==undefined){
+      var p=out[idx[k]];
+      if(!p.edad && acompEdadDe(a)) p.edad=acompEdadDe(a);
+      if(!p.estadoCivil && acompEcDe(a)) p.estadoCivil=acompEcDe(a);
+      if(!p.ocupacion && acompProfDe(a)) p.ocupacion=acompProfDe(a);
+      if(!p.hab && hab) p.hab=String(hab);
+      if(!p.clienteId && clienteId) p.clienteId=clienteId;
+      return;
+    }
+    idx[k]=out.length;
+    out.push({key:k, nombre:String(a.nombre||'').trim(), docTipo:a.docTipo||'', docNum:String(a.docNum||'').trim(), hab:(hab?String(hab):''), clienteId:clienteId||'', clienteNombre:clienteNombre||'', fecha:fecha||'', edad:acompEdadDe(a), estadoCivil:acompEcDe(a), ocupacion:acompProfDe(a), enHotel:false});
+  }
+  try{
+    rooms().forEach(function(r){
+      if(String(r.estado)!=='ocupada') return;
+      acompDe(r).forEach(function(a){ add(a, r.clienteId||'', r.huesped||'', r.num, ''); });
+    });
+  }catch(e){}
+  try{
+    clientes().forEach(function(c){
+      (Array.isArray(c.acompanantes)?c.acompanantes:[]).forEach(function(a){ add(a, c.id, nombreCliente(c), a.hab, a.fecha); });
+    });
+  }catch(e){}
+  try{
+    rooms().forEach(function(r){
+      if(String(r.estado)!=='ocupada') return;
+      acompDe(r).forEach(function(a){ var k=keyDe(a.docNum,a.nombre); if(idx[k]!==undefined){ out[idx[k]].enHotel=true; out[idx[k]].hab=String(r.num); } });
+    });
+  }catch(e){}
+  out.sort(function(x,y){ if(x.enHotel!==y.enHotel) return x.enHotel?-1:1; return String(x.nombre||'').localeCompare(String(y.nombre||'')); });
+  return out;
+}
+/* Busca el acompanante que se va a corregir. clave = 'a|<cliente>|<id>' (historial) o 'h|<cliente>|<hab>|<nombre>' (hab./reporte) */
+function _leerAcomp(clave){
+  var p=String(clave||'').split('|');
+  if(p[0]==='h'){
+    var cid=p[1]||'', hab=p[2]||'', nom=p.slice(3).join('|');
+    var r=null; try{ r=(hab!==''?(findRoom(Number(hab))||findRoom(hab)):null); }catch(e){}
+    var enHab=null;
+    if(r && String(r.estado)==='ocupada'){ enHab=acompDe(r).filter(function(a){ return a && _acompMismo(a,'',nom); })[0]||null; }
+    var reg=null, c=null;
+    try{ c=clientes().find(function(x){ return x.id===cid; })||null; }catch(e){}
+    if(c && Array.isArray(c.acompanantes)){ reg=c.acompanantes.filter(function(a){ return a && _acompMismo(a,'',nom); })[0]||null; }
+    var base=enHab||reg||{};
+    return { clave:clave, clienteId:cid, hab:hab, nombre:String(base.nombre||nom), docTipo:base.docTipo||'', docNum:String(base.docNum||''), edad:(acompEdadDe(enHab)||acompEdadDe(reg)), estadoCivil:(acompEcDe(enHab)||acompEcDe(reg)), ocupacion:(acompProfDe(enHab)||acompProfDe(reg)), enHotel:!!enHab };
+  }
+  var c2=null; try{ c2=clientes().find(function(x){ return x.id===p[1]; })||null; }catch(e){}
+  var a2=(c2 && Array.isArray(c2.acompanantes)) ? c2.acompanantes.filter(function(a){ return a && String(a.id||'')===String(p[2]||''); })[0] : null;
+  if(!a2) return null;
+  return { clave:clave, clienteId:p[1], hab:String(a2.hab||''), nombre:String(a2.nombre||''), docTipo:a2.docTipo||'', docNum:String(a2.docNum||''), edad:acompEdadDe(a2), estadoCivil:acompEcDe(a2), ocupacion:acompProfDe(a2), enHotel:false };
+}
+/* Pantalla chica para completar los datos de UN acompanante */
+function editarAcompRapido(clave, clienteId, hab){
+  var a=_leerAcomp(clave);
+  if(!a){ alert('No se encontró el acompañante. Búscalo en Clientes → 👫 Acompañantes.'); return; }
+  if(hab) a.hab=String(hab);
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>👫 Datos del acompañante</h2>';
+  h+='<div style="background:#f6f8fc;border-radius:10px;padding:10px 12px;margin:2px 0 12px;font-size:13px;color:#44526a"><b>'+esc(a.nombre||'(sin nombre)')+'</b>'+(a.docNum?(' · '+esc(docLabel(a.docTipo)+' '+a.docNum)):'')+(a.hab?(' · Hab. '+esc(a.hab)):'')+'</div>';
+  h+='<p style="font-size:12.5px;color:#55637a;margin:0 0 10px;line-height:1.55">Estos datos son para el <b>reporte policial</b>. Si no los sabes ahora, déjalos en blanco y complétalos después: en la hoja saldrán con “—”.</p>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="acd-edad" class="inp" type="number" min="0" max="120" style="flex:0 0 120px" value="'+escA(a.edad||'')+'" placeholder="Edad">';
+  h+='<select id="acd-ec" class="inp" style="flex:0 0 180px">'+estadoCivilOptions(estadoCivilABR(a.estadoCivil||''))+'</select>';
+  h+='<input id="acd-prof" class="inp" style="flex:1;min-width:160px" value="'+escA(a.ocupacion||'')+'" placeholder="Profesión u oficio"></div>';
+  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn-gray" style="flex:1" onclick="cerrarModal()">Cancelar</button><button class="btn-green" style="flex:2" onclick="guardarDatosAcomp('+JSON.stringify(String(clave))+','+JSON.stringify(String(a.docNum||''))+','+JSON.stringify(String(a.nombre||''))+','+JSON.stringify(String(a.hab||''))+','+JSON.stringify(String(a.clienteId||''))+')">Guardar datos</button></div>';
+  showModal(h);
+  try{ var f=document.getElementById('acd-edad'); if(f) f.focus(); }catch(e){}
+}
+function editarAcompCliente(clienteId, clave){
+  var k=String(clave||'');
+  if(!k && clienteId){
+    var c0=clientes().find(function(x){ return x.id===clienteId; });
+    if(c0 && Array.isArray(c0.acompanantes) && c0.acompanantes.length){
+      var u0=c0.acompanantes.filter(faltaDatosAcomp)[0] || c0.acompanantes[0];
+      k='a|'+String(clienteId)+'|'+String(u0.id||'');
+    }
+  }
+  if(!k){ alert('No se encontró el acompañante. Búscalo en Clientes → 👫 Acompañantes.'); return; }
+  editarAcompRapido(k, clienteId, '');
+}
+function claveAcompFila(f){
+  if(!f) return '';
+  var cid=String(f.clienteId||'');
+  return 'h|'+String(cid)+'|'+String(f.hab==null?'':f.hab)+'|'+String(f.nom||'');
+}
+function _acdValores(){
+  var _v=function(id){ try{ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }catch(e){ return ''; } };
+  var ed=_v('acd-edad'); var n0=parseInt(ed); ed=(isNaN(n0)||n0<0||n0>120)?'':String(n0);
+  return {edad:ed, estadoCivil:_v('acd-ec'), ocupacion:mayusculasYa(_v('acd-prof'))};
+}
+function guardarDatosAcomp(clave, docNum, nombre, hab, clienteId){
+  var v=_acdValores();
+  var r=acompGuardarDatos(docNum, nombre, v.edad, v.estadoCivil, v.ocupacion);
+  var enK=false;
+  if(hab) enK=acompGuardarDatosKardex(hab, docNum, nombre, v.edad, v.estadoCivil, v.ocupacion);
+  if(!r.ok && !enK && clienteId){
+    var l=clientes(); var c=l.find(function(x){ return x.id===clienteId; });
+    if(c){ if(!Array.isArray(c.acompanantes)) c.acompanantes=[]; c.acompanantes.unshift({id:'a'+Date.now(), nombre:nombre||'', docTipo:'', docNum:docNum||'', hab:hab||'', fecha:new Date().toISOString(), edad:v.edad, estadoCivil:v.estadoCivil, ocupacion:v.ocupacion}); saveClientes(l); r={ok:true}; }
+  }
+  cerrarModal();
+  try{ render(); }catch(e){}
+  alert('Datos guardados para '+(nombre||'el acompañante')+(hab?(' · Hab. '+hab):'')+'.');
+}
+function exportarAcompXLS(){
+  var l=acompListaGlobal();
+  if(!l.length){ alert('Todavía no hay acompañantes registrados.'); return; }
+  var headers=['Acompañante','Documento','Edad','Estado civil','Profesion u oficio','Hab.','Huesped principal','En el hotel ahora'];
+  var rows=l.map(function(a){ return [a.nombre||'', (a.docNum?(docLabel(a.docTipo)+' '+a.docNum):''), a.edad||'', (a.estadoCivil?estadoCivilABR(a.estadoCivil):''), a.ocupacion||'', a.hab||'', a.clienteNombre||'', (a.enHotel?'Si':'No')]; });
+  _descargarXLS('acompanantes.xls', headers, rows);
+}
+
+/* ===== [ACOMP-DATOS] Panel de acompanantes dentro de la pestana Clientes ===== */
+function acompPanelClientes(){
+  var l=acompListaGlobal();
+  var q=String(window._acompBuscar||'').trim().toUpperCase();
+  var lista = q ? l.filter(function(a){ return (String(a.nombre||'')+' '+String(a.docNum||'')).toUpperCase().indexOf(q)>=0; }) : l;
+  var faltan = l.filter(faltaDatosAcomp).length;
+  var h='';
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:14px 16px;margin-bottom:18px">';
+  h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">';
+  h+='<div class="section-title" style="font-size:15px;margin:0">👫 Acompañantes ('+l.length+')</div>';
+  if(faltan) h+='<span style="background:#fff4e5;border:1px solid #ffd59a;color:#8a5200;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:700">'+faltan+' sin edad / estado civil / profesión</span>';
+  h+='<span style="flex:1"></span>';
+  h+='<button class="btn-ghost" style="padding:7px 12px" onclick="exportarAcompXLS()">Acompañantes a Excel</button>';
+  h+='</div>';
+  h+='<p style="font-size:12.5px;color:#55637a;margin:8px 0 10px;line-height:1.55">Aquí completas o corriges los datos de los acompañantes para el <b>reporte policial</b>: edad, estado civil y profesión. Son <b>opcionales</b>: lo que dejes vacío sale con “—”. No se toca nada de dinero.</p>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><input class="inp" style="flex:1;min-width:220px;max-width:340px" value="'+escA(q)+'" placeholder="Buscar acompañante por nombre o cédula…" oninput="acompFiltrar(this.value)">';
+  h+='<button class="btn-ghost" style="padding:7px 12px" onclick="acompFiltrar(\'\')">Ver todos</button>';
+  h+='<button class="btn-ghost" style="padding:7px 12px" onclick="acompFiltrarFaltantes()">Solo los que faltan datos</button></div>';
+  if(!l.length){
+    h+='<div style="font-size:13px;color:#8893a5;padding:6px 2px">Todavía no hay acompañantes. Se anotan en el check-in o con ➕ Agregar acompañante dentro de la habitación.</div>';
+  } else if(!lista.length){
+    h+='<div style="font-size:13px;color:#8893a5;padding:6px 2px">Ningún acompañante coincide con la búsqueda.</div>';
+  } else {
+    h+='<div style="overflow:auto"><table class="users-table"><tr><th>Acompañante</th><th>Documento</th><th style="width:64px;text-align:center">Edad</th><th style="width:70px;text-align:center">E. civil</th><th>Profesión u oficio</th><th style="width:60px;text-align:center">Hab.</th><th>Huésped principal</th><th style="width:92px"></th></tr>';
+    lista.slice(0,300).forEach(function(a){
+      h+='<tr'+(a.enHotel?' style="background:#f5fbf6"':'')+'>';
+      h+='<td>'+(a.enHotel?'<span title="Está en el hotel ahora">🟢 </span>':'')+esc(a.nombre||'—')+'</td>';
+      h+='<td style="white-space:nowrap">'+esc(a.docNum?(docLabel(a.docTipo)+' '+a.docNum):'—')+'</td>';
+      h+='<td style="text-align:center;color:'+(a.edad?'#1c2430':'#c0392b')+'">'+esc(a.edad||'—')+'</td>';
+      h+='<td style="text-align:center;color:'+(a.estadoCivil?'#1c2430':'#c0392b')+'">'+esc(a.estadoCivil?estadoCivilABR(a.estadoCivil):'—')+'</td>';
+      h+='<td style="color:'+(a.ocupacion?'#1c2430':'#c0392b')+'">'+esc(a.ocupacion||'—')+'</td>';
+      h+='<td style="text-align:center">'+esc(a.hab||'—')+'</td>';
+      h+='<td>'+esc(a.clienteNombre||'—')+'</td>';
+      h+='<td><button class="btn-ghost" style="padding:5px 10px;font-size:12.5px" onclick="acompEditarDesdeLista('+escA(JSON.stringify(String(a.key)))+','+escA(JSON.stringify(String(a.clienteId||'')))+','+escA(JSON.stringify(String(a.hab||'')))+','+escA(JSON.stringify(String(a.docNum||'')))+','+escA(JSON.stringify(String(a.nombre||'')))+')">✏️ Editar</button></td>';
+      h+='</tr>';
+    });
+    h+='</table></div>';
+    if(lista.length>300) h+='<div style="font-size:12px;color:#8893a5;margin-top:6px">Se muestran 300. Usa la búsqueda para encontrar a otro.</div>';
+  }
+  h+='</div>';
+  return h;
+}
+function acompFiltrar(v){ window._acompBuscar=String(v||''); try{ render(); }catch(e){} }
+function acompFiltrarFaltantes(){ window._acompBuscar=''; try{ render(); }catch(e){} var el=document.querySelectorAll('.users-table'); try{ }catch(e){} }
+/* Editar desde la lista: arma la clave correcta (habitación si está dentro, si no su historial) */
+function acompEditarDesdeLista(key, clienteId, hab, docNum, nombre){
+  var k='';
+  if(hab && String(hab)!==''){ var r=null; try{ r=findRoom(Number(hab))||findRoom(hab); }catch(e){} if(r && String(r.estado)==='ocupada') k='h|'+String(clienteId||'')+'|'+String(hab)+'|'+String(nombre||''); }
+  if(!k && clienteId){
+    var c=clientes().find(function(x){ return x.id===clienteId; })||null;
+    if(c && Array.isArray(c.acompanantes)){
+      var a=c.acompanantes.filter(function(z){ return z && _acompMismo(z, docNum, nombre); })[0];
+      if(a) k='a|'+String(clienteId)+'|'+String(a.id||'');
+    }
+  }
+  if(!k && clienteId) k='a|'+String(clienteId)+'|';
+  if(!k){ alert('No se encontró a esta persona en ninguna ficha. Si estaba recién anotada, recarga con Ctrl+F5 y vuelve a intentar.'); return; }
+  editarAcompRapido(k, clienteId, '');
+}
 function renderClientes(){
   let h='';
   h += '<div style="background:#fff;padding:18px;border-radius:12px;max-width:640px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:20px">';
@@ -12413,6 +12754,7 @@ function renderClientes(){
   if(esMaster(session().rol)) h += '<button class="btn-ghost" style="padding:8px 14px" onclick="repararCodigosEmpresas()">Reparar códigos de empresas</button>';
   h += '<input type="file" id="cl-import-file" accept=".csv,.xls,text/csv" style="display:none" onchange="importarClientesCSV(this)">';
   h += '</div>';
+  h += acompPanelClientes();
   h += '<div id="cl-lista">'+(list.length? clienteRows() : '<div class="empty-guia"><span class="ico">👤</span><div class="t">Aún no hay clientes guardados</div><div class="s">Registra aquí a tus huéspedes y empresas para reconocerlos cuando vuelvan, llevar su historial y agilizar el check-in. Solo llena el formulario de arriba y toca “Guardar cliente”.</div></div>')+'</div>';
   return h;
 }
