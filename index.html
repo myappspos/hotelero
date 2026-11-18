@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.59 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.60 · 19/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.59 · 18/11/2026';
+const APP_VERSION = 'v1.60 · 19/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -9092,7 +9092,7 @@ function cobrarPintar(){
     if(!pagado) h+='<button class="btn-green" style="padding:9px 16px" onclick="cobrarCuentaModal(\''+_numsCta+'\')">💵 Cobrar ahora</button>';
     if(pagado) h+='<button class="btn-orange" style="padding:9px 16px" onclick="reabrirCuentaHab('+Number(first.num)+')">↩ Reabrir la cuenta</button>';
     if(!pagado) h+='<button class="btn-orange" style="padding:9px 16px" onclick="enviarACxCModal(\''+_numsCta+'\')">📋 Enviar a CXC</button>';
-    h+='<button class="btn-red" style="padding:9px 16px" onclick="checkoutCuenta(\''+_numsCta+'\')">🚪 Hacer check-out (salida)</button>';
+    h+='<button class="btn-red" style="padding:9px 16px" onclick="checkoutCuenta(\''+Number(first.num)+'\')">🚪 Hacer check-out (salida)</button>';
     h+='<button class="btn-ghost" style="padding:9px 16px" onclick="corregirNombreGrupoModal(\''+_numsCta+'\')">✏️ Corregir nombre / cliente</button>';
     h+='<button class="btn-ghost" style="padding:9px 16px" onclick="asigEmpCuentaModal(\''+_numsCta+'\')">🏢 Asignar empresa</button>';
     h+='<button class="btn-ghost" style="padding:9px 16px" onclick="salidaRegistrarAnticipada(\''+_numsCta+'\')">⏱️ Salida anticipada</button>';
@@ -9965,42 +9965,98 @@ function cobrarCuentaConfirm(numsStr, btn){
     sub:(_resta>0.009?('Abonó '+fmtUSD(_montoAhora)+'. Quedan '+fmtUSD(_resta)+' pendientes en la misma cuenta. La habitación sigue ocupada.'):'La cuenta sigue en su habitación. Cuando el huésped se vaya, usa "Hacer check-out".') };
   cerrarModal(); mostrarResultadoCobro(window._ultimoCobro);
 }
-function checkoutCuenta(numsStr){
+/* [CO-ELEGIR] Devuelve TODOS los cuartos que forman la cuenta (la principal y las unidas),
+   sin repetidos y solo los que estan ocupados. */
+function cuartosDeLaCuenta(g, r){
+  var out=[], v={};
+  function add(rr){ if(!rr || !rr.num) return; if(rr.estado!=='ocupada') return; var k=String(rr.num); if(v[k]) return; v[k]=1; out.push(rr); }
+  try{ ((g&&g.porHab)||[]).forEach(function(x){ if(x) add(x.r); }); }catch(e){}
+  if(out.length<2){
+    try{ var D=datosCobroCuentaHab((g&&g.list&&g.list[0])||r); if(D&&D.porHab) D.porHab.forEach(function(x){ if(x) add(x.r); }); }catch(e){}
+  }
+  try{ ((g&&g.list)||[]).forEach(add); }catch(e){}
+  if(!out.length && r) add(r);
+  return out;
+}
+/* [CO-ELEGIR] Antes de cerrar una cuenta unida se pregunta: ¿sale solo esta habitacion o
+   salen todas? Antes se cerraban las dos de una vez y el aviso nombraba una sola, por eso
+   parecia que la otra se habia salido sola. */
+function checkoutElegirHab(numsStr, habs){
+  var rSel=habs[0];
+  try{ rSel=findRoom(parseInt(String(numsStr).split(',')[0],10))||habs[0]; }catch(e){ rSel=habs[0]; }
+  var otros=habs.filter(function(x){ return Number(x.num)!==Number(rSel.num); });
+  var numsTxt=habs.map(function(x){ return x.num; }).join(', ');
+  var saldoT=0; try{ saldoT=Number(datosCobroCuentaHab(rSel).saldo)||0; }catch(e){ saldoT=0; }
+  var filas=habs.map(function(x){
+    var propio=0; try{ propio=Number(saldoDeHab(x))||0; }catch(e){ propio=0; }
+    return '<div style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #e8ecf4;padding:7px 0;font-size:13px">'
+      +'<div><b>Hab. '+esc(String(x.num))+'</b> · '+esc(x.huesped||'—')+'</div>'
+      +'<div style="white-space:nowrap;font-weight:700;color:'+(propio>0.009?'#a23b3b':'#2c7a4b')+'">'+(propio>0.009?('su parte: '+fmtUSD(propio)):'al día')+'</div></div>';
+  }).join('');
+  var body='<button class="close" onclick="cerrarModal()">×</button>';
+  body+='<h2>🚪 Check-out de una cuenta unida</h2>';
+  body+='<div class="rstate">La <b>Hab. '+esc(String(rSel.num))+'</b> está unida con '+otros.map(function(x){ return '<b>'+esc(String(x.num))+'</b>'; }).join(' y ')+'. La cuenta se cobra junta, pero las salidas se pueden hacer por separado.</div>';
+  body+=filas;
+  if(saldoT>0.009) body+='<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#7a5b00;margin-top:8px">⚠️ La cuenta todavía debe <b>'+fmtUSD(saldoT)+'</b>.</div>';
+  body+='<div class="divider"></div><div class="actions" style="flex-wrap:wrap">';
+  body+='<button class="btn-primary" onclick="checkoutCuenta(\''+rSel.num+'\',\'solo\')">Sale solo la '+esc(String(rSel.num))+'</button>';
+  body+='<button class="btn-orange" onclick="checkoutCuenta(\''+habs.map(function(x){ return x.num; }).join(',')+'\',\'todas\')">Salen las '+habs.length+' ('+esc(numsTxt)+')</button>';
+  body+='<button class="btn-cancelar" onclick="cerrarModal()">✖ Volver</button></div>';
+  showModal(body);
+}
+/* [CO-SEPARAR] Saca una habitacion de la cuenta unida: deja de cargar a la otra y las que
+   cargaban a ella pasan a manejar su propia cuenta. No borra ni cobra nada. */
+function separarHabDeCuenta(num){
+  var r=findRoomAny(num); if(!r) return;
+  var _era=esRaizCuenta(r);
+  var patch={cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''};
+  if(Number(r.cuentaCon||0)!==0){ try{ updateRoom(r.num, patch); }catch(e){} }
+  if(_era){ try{ rooms().forEach(function(q){ if(Number(q.cuentaCon||0)===Number(num)){ try{ updateRoom(q.num, patch); }catch(e){} } }); }catch(e){} }
+}
+function checkoutCuenta(numsStr, modo){
   let g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones.'); return; }
-  /* [CUENTA-UNIDA] Al salir de una cuenta unida hay que vaciar TODOS los cuartos del grupo,
-     no solo la principal. Antes la lista traia un solo cuarto y la otra habitacion se
-     quedaba ocupada (o se liberaba sin registrar su salida). */
-  if(g.list.length===1){
-    try{ const _gc=datosCobroCuentaHab(g.list[0]); if(_gc && _gc.list && _gc.list.length>1){
-      /* el cuadro de una cuenta unida trae solo el cuarto DUENO en list[]: se arma la lista
-         completa con el detalle por cada habitacion (porHab) para poder liberarlas todas */
-      g=Object.assign({},_gc,{ list:_gc.porHab.map(function(x){ return x.r; }) });
-    } }catch(e){}
-  }
-  const multi=g.list.length>1; const now=new Date();
-  let sinCobro=false;
-  if(g.saldo>0.009){
-    /* [CTRL-AMAR-CXC] Si debe, se AVISA y se pregunta si se pasa a CXC.
-       Ya no se sale "sin cobrar" a ciegas: o se cobra, o la deuda queda en CXC. */
-    /* [CXC-GRUPO] Sale el grupo completo: la deuda se pasa a CXC UNA vez, con todos los cuartos. */
-    checkoutConDeuda((g.nums&&g.nums.length)?g.nums.join(','):numsStr);
-    return;
+  var _numsIn=String(numsStr).split(',').map(function(x){ return parseInt(x,10); }).filter(function(n){ return !isNaN(n); });
+  var _habs=cuartosDeLaCuenta(g, g.list[0]);
+  /* [CO-ELEGIR] Cuenta unida y se pidio UNA sola habitacion: se pregunta antes de cerrar. */
+  if(_habs.length>1 && !modo && _numsIn.length<=1){ checkoutElegirHab(numsStr, _habs); return; }
+  var _sale=[], _saldo=0;
+  if(modo==='solo'){
+    var _num=_numsIn[0]||(_habs[0]&&_habs[0].num);
+    var _r1=findRoom(_num);
+    if(!_r1 || _r1.estado!=='ocupada'){ alert('Esa habitación ya no está ocupada.'); return; }
+    _sale=[_r1];
+    /* el saldo que manda es SOLO el de esta habitacion (cada cuarto lleva lo suyo) */
+    try{ _saldo=Number(saldoDeHab(_r1))||0; }catch(e){ _saldo=Number(g.saldo)||0; }
   } else {
-    if(!confirm('¿Hacer el check-out de '+(multi?('las '+g.list.length+' habitaciones'):('la habitación '+g.list[0].num))+'? La cuenta ya está pagada.')) return;
+    _sale=_habs.slice();
+    _saldo=Number(g.saldo)||0;
   }
+  if(!_sale.length){ alert('No hay habitaciones.'); return; }
+  const multi=_sale.length>1; const now=new Date();
+  let sinCobro=false;
+  if(_saldo>0.009){
+    /* [CTRL-AMAR-CXC] Si debe, se AVISA y se pregunta si se pasa a CXC. */
+    checkoutConDeuda(_sale.map(function(x){ return x.num; }).join(','));
+    return;
+  }
+  if(!confirm('¿Hacer el check-out de '+(multi?('las '+_sale.length+' habitaciones ('+_sale.map(function(x){ return x.num; }).join(', ')+')'):('la habitación '+_sale[0].num))+'? La cuenta ya está pagada.')) return;
+  /* [CO-SEPARAR] Recien aqui se suelta la habitacion de la cuenta unida (si el usuario
+     se arrepiente antes, la cuenta sigue unida como estaba). */
+  if(modo==='solo'){ try{ separarHabDeCuenta(_sale[0].num); }catch(e){} }
   var _despC=[]; /* [MSJ-CO] a quien se despide (se captura antes de limpiar los cuartos) */
-  g.porHab.forEach(x=>{ const r=x.r; const abR=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+Number(a.montoUsd||0),0);
+  _sale.forEach(function(r){
+    const abR=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+Number(a.montoUsd||0); },0);
     try{ if(checkoutMsgOn() && (r.huesped||'').trim()){ var _cc=clienteDeHab(r); _despC.push({nombre:r.huesped||'', noches:Number(r.noches||1)||1, tel:(_cc&&_cc.telefono)||'', correo:(_cc&&_cc.correo)||'', hab:r.num}); } }catch(e){}
     limpiarAutorizacionHab(r.num);
     sellarSalidaReal(r.num, r.control||0);
-    logKardex('checkout', {hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:'Check-out'+(sinCobro?' SIN cobro (quedó saldo)':' (cuenta pagada)')+(multi?(' · cuenta '+g.nums.join(', ')):''), montoUsd:0, montoBs:0, metodo:sinCobro?'Sin cobro':'Pagado'});
+    logKardex('checkout', {hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:'Check-out'+(sinCobro?' SIN cobro (quedó saldo)':' (cuenta pagada)')+(multi?(' · cuenta '+_sale.map(function(x){ return x.num; }).join(', ')):''), montoUsd:0, montoBs:0, metodo:sinCobro?'Sin cobro':'Pagado'});
     cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:abR, metodo:sinCobro?'Sin cobro':'Pagado'});
     updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, control:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''});
     try{ soltarCuentasDeHab(r.num); }catch(e){}
     try{ cerrarControlDeHab(r); }catch(_ecx){}
   });
   cerrarModal(); render();
-  alert('Check-out hecho de '+(multi?(g.list.length+' habitaciones'):('la habitación '+g.nums[0]))+'.'+(sinCobro?' Quedó registrado como salida sin cobro.':''));
+  alert('Check-out hecho de '+(multi?(_sale.length+' habitaciones ('+_sale.map(function(x){ return x.num; }).join(', ')+')'):('la habitación '+_sale[0].num))+'.'+(sinCobro?' Quedó registrado como salida sin cobro.':''));
   if(_despC.length) checkoutMensajesGrupo(_despC);
 }
 /* [MSJ-CO] Despedida cuando salen varias habitaciones: un mensaje por cada huesped */
