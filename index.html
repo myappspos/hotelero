@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.58 · 18/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.59 · 18/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.58 · 18/11/2026';
+const APP_VERSION = 'v1.59 · 18/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -2411,6 +2411,10 @@ function abonoCuentaUsd(a, r){
       }
     }catch(e){ ok=false; }
     if(!ok) return 0;
+    /* [CONTROL-CAMBIA] Si el abono esta guardado en ESTE cuarto, un cambio posterior del
+       N° de control de la cuenta no lo invalida: el dinero entro y no se puede perder.
+       Se sigue contando UNA sola vez, en el cuarto donde esta guardado. */
+    if(!a.controlOtroGrupo && a.hab!=null && String(a.hab)!=='' && Number(a.hab)===Number(r&&r.num)) return m;
   }
   /* [ABONO-SIN-CONTROL] Hueco que hacia salir el corte en cero: un abono VIEJO sin numero de
      control, guardado en un cuarto que SI tiene control, se daba por bueno en el cuarto donde
@@ -5174,19 +5178,31 @@ function detalleCuentaHab(r){
        reparten por cuarto segun lo PAGADO a cada uno, y recien el sobrante se aplica
        al hospedaje pendiente. Antes todo caia en la principal y la secundaria
        seguia apareciendo como deudora. */
-    var abs=(Array.isArray(q.abonos)?q.abonos:[]).filter(function(a){ return abonoCuentaUsd(a,q)>0; });
+    /* [PAGO-UN-SOLO-CUARTO] Cada abono cuenta UNA sola vez: en el cuarto donde quedo
+       guardado. Antes, si el N° de control de la cuenta cambiaba despues de cobrar
+       (por ejemplo al cobrar un consumo), los pagos viejos se descartaban y la cuenta
+       volvia a pedir todo otra vez ("abone completo y sigue debiendo 55 cada una"). */
+    var abs=(Array.isArray(q.abonos)?q.abonos:[]).filter(function(a){
+      if(!a) return false;
+      if(a.controlOtroGrupo || a.soloConsumo) return false;
+      if(!(Number(a.montoUsd||0)>0)) return false;
+      var habA=(a.hab!=null && String(a.hab)!=='')?Number(a.hab):null;
+      if(habA!=null && habA!==Number(q.num)){
+        var enGrupo=false;
+        for(var _k=0;_k<lista.length;_k++){ if(Number(lista[_k].num)===habA){ enGrupo=true; break; } }
+        if(enGrupo) return false;            /* se cuenta en el cuarto que dice 'hab' */
+        return true;                          /* 'hab' de un cuarto que ya no esta: cuenta aqui */
+      }
+      if(habA!=null) return true;             /* guardado en este cuarto: cuenta aqui */
+      return abonoCuentaUsd(a,q)>0;           /* abonos viejos sin 'hab' */
+    });
     var abGen=0;
-    if(lista.length>1 && abs.length){
-      var ctrlG=0; try{ ctrlG=parseInt(controlDeGrupoCuenta(lista)||0)||0; }catch(e){ ctrlG=0; }
+    if(lista.length>1){
+      /* [ABONO-GENERAL] Los abonos sin cuarto son de toda la cuenta: entran al pozo comun
+         y cubren primero lo que falte en cualquier cuarto. */
       abs=abs.filter(function(a){
-        var ac=parseInt(a.control||0)||0;
-        var unida=Array.isArray(a.cuentaUnida)?a.cuentaUnida.some(function(n){ return Number(n)===Number(q.num); }):false;
-        if(unida) return true;
-        if(ctrlG && ac && ac!==ctrlG) return false;
-        var puesto=false; try{ puesto=(a.hab!=null && Number(a.hab)===Number(q.num)); }catch(e){ puesto=false; }
-        if(puesto) return true;
-        var txt=String(a.concepto||'');
-        if((/CXC|cxc|Cuenta unida|grupo/i).test(txt)) return false;
+        var habA=(a.hab!=null && String(a.hab)!=='')?Number(a.hab):null;
+        if(habA!=null) return true;
         abGen+=Number(a.montoUsd||0);
         return false;
       });
@@ -5198,17 +5214,22 @@ function detalleCuentaHab(r){
   /* Reparto final: el pago cubre primero lo de cada cuarto (hospedaje y consumos),
      el sobrante cubre lo que el otro cuarto del grupo aun deba. */
   var sobra=0;
+  /* [PAGO-UN-SOLO-CUARTO] p.ab es el dinero GUARDADO en ese cuarto y p.cob lo que
+     realmente cubre (incluye lo que le pasa otro cuarto del grupo). Asi un cuarto que
+     pago de mas cubre al otro y el dinero no se pierde ni se cuenta dos veces. */
   pending.forEach(function(p){
-    var debe=Math.max(0,(p.hosp-p.d)+p.cons-p.ab);
-    var cubre=Math.min(debe,p.abGen);
-    p.abGen-=cubre; p.ab+=cubre; p.neto=Math.max(0,debe-cubre);
+    var cargo=Math.max(0,(p.hosp-p.d)+p.cons);
+    var cubre=Math.min(Math.max(0,cargo-p.ab),p.abGen);
+    p.abGen-=cubre; p.cob=p.ab+cubre;
+    p.neto=Math.max(0,Math.round((cargo-p.cob)*100)/100);
+    if(p.ab>cargo+0.009) sobra+=Math.round((p.ab-cargo)*100)/100;   /* lo que pago de mas cubre al otro cuarto */
     sobra+=p.abGen; p.abGen=0;
   });
   pending.forEach(function(p){
-    if(p.neto>0 && sobra>0){ var c2=Math.min(p.neto,sobra); sobra-=c2; p.ab+=c2; p.neto=Math.max(0,p.neto-c2); }
+    if(p.neto>0 && sobra>0){ var c2=Math.min(p.neto,sobra); sobra=Math.round((sobra-c2)*100)/100; p.cob+=c2; p.neto=Math.max(0,Math.round((p.neto-c2)*100)/100); }
   });
   pending.forEach(function(p){
-    out.filas.push({r:p.q, noches:p.noches, hosp:p.hosp, d:p.d, cons:p.cons, ab:p.ab, neto:p.neto, cort:!!p.cort});
+    out.filas.push({r:p.q, noches:p.noches, hosp:p.hosp, d:p.d, cons:p.cons, ab:Math.round(Number(p.cob||0)*100)/100, pagado:Math.round(Number(p.ab||0)*100)/100, neto:p.neto, cort:!!p.cort});
     out.hosp+=(p.hosp-p.d); out.cons+=p.cons; out.abo+=p.ab;
     p.abs.forEach(function(a){ out.abonos.push({a:a, hab:Number(p.q.num)}); });
   });
