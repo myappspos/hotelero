@@ -297,7 +297,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.64 · 19/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.70 · 20/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -333,7 +333,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.64 · 19/11/2026';
+const APP_VERSION = 'v1.70 · 20/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -344,7 +344,7 @@ const SB_APP_EMAIL = 'operador@hotellajareal.com';
 const SB_APP_PASS  = 'LajaReal2026-Caja';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion','comidasPrecios','objetosOlvidados','policialDestino'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion','comidasPrecios','objetosOlvidados','policialDestino','parking'];
 
 /* ====== AHORRO DE DATOS (egreso) ======
    Varias cajas casi nunca cambian (tipos de habitacion, metodos de pago,
@@ -687,11 +687,12 @@ const ROLES = {
   master:'Master / Dueño', admin:'Master / Dueño',
   recepcion:'Recepcionista', supervisor:'Supervisor de recepción',
   housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento',
-  administracion:'Administración', dueno:'Dueño'
+  administracion:'Administración', dueno:'Dueño',
+  vigilancia:'Vigilancia / Estacionamiento'
 };
 function esMaster(rol){ return rol==='master'||rol==='admin'; }
 function rolOptions(sel){
-  const opts=[['recepcion','Recepcionista'],['supervisor','Supervisor de recepción'],['administracion','Administración (solo revisa cortes y reportes)'],['housekeeping','Ama de Llaves'],['mantenimiento','Mantenimiento'],['dueno','Dueño (solo mira el panel con gráficos)'],['master','Master / Dueño']];
+  const opts=[['recepcion','Recepcionista'],['supervisor','Supervisor de recepción'],['administracion','Administración (solo revisa cortes y reportes)'],['housekeeping','Ama de Llaves'],['mantenimiento','Mantenimiento'],['dueno','Dueño (solo mira el panel con gráficos)'],['vigilancia','Vigilancia (estacionamiento)'],['master','Master / Dueño']];
   return opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>').join('');
 }
 function countMasters(){ return DB.get('users',[]).filter(u=>esMaster(u.rol)).length; }
@@ -740,7 +741,7 @@ function catalogoPermisos(rol){
   return PERMISOS_CATALOGO;
 }
 const ROLES_CONFIGURABLES=['recepcion','supervisor','housekeeping','mantenimiento'];
-const ROLES_ETIQUETA={recepcion:'Recepcionista', supervisor:'Supervisor de recepción', administracion:'Administración', housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento', dueno:'Dueño'};
+const ROLES_ETIQUETA={recepcion:'Recepcionista', supervisor:'Supervisor de recepción', administracion:'Administración', housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento', dueno:'Dueño', vigilancia:'Vigilancia'};
 function permisosDefault(rol){
   if(rol==='housekeeping') return {verPendientes:true, puedeMarcarLista:true, puedeReportarDano:true, verObjetos:true, anotarObjetos:true, puedeVerTelefonoHuesped:true, puedeEntregarObjeto:false, verificarObjetosVencidos:true};
   if(rol==='mantenimiento') return {verMantenimiento:true, puedeResolver:true, verListaHab:true, puedeReportar:true};
@@ -975,6 +976,7 @@ function render(){
   else if(rol==='mantenimiento') renderMantenimiento();
   else if(rol==='administracion') renderAdministracion();
   else if(rol==='dueno') renderDueno();
+  else if(rol==='vigilancia') renderEstacionamiento();
   else renderAdmin();
   renderNotif();
   actualizarBadgeChat();
@@ -3848,6 +3850,19 @@ function abrirHab(num){
     body += '<button class="btn-ghost" onclick="agregarMenorPost('+num+')">🧒 Agregar niño</button>';
     if(puedeUnirCuenta()) body += '<button class="btn-ghost" onclick="unirCuentaModal('+num+')">🔗 Unir cuenta</button>';
     body += '</div>';
+    /* [VEHICULO] Lo que anoto Recepcion en el check-in (marca, modelo, color, placa) */
+    (function(){
+      var _v=(r&&r.vehiculo)||null, _pl=_v?String(_v.placa||'').trim():'';
+      var _det=_v?vehResumenTxt(_v):'';
+      body += '<div class="field"><label>🚗 Vehículo del huésped</label><div style="margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+      if(_pl||_det){
+        body += '<span><b style="letter-spacing:1.5px;font-size:15px">'+esc(_pl||'—')+'</b>'+( _det?(' <span style="color:#55637a">· '+esc(_det)+'</span>'):'')+'</span>';
+      } else {
+        body += '<span style="color:#8893a5">No tiene vehículo anotado.</span>';
+      }
+      body += '<button class="btn-ghost" style="padding:4px 10px;font-size:11.5px;white-space:nowrap" onclick="vehModal(\''+num+'\')">'+((_pl||_det)?'✏️ Editar':'➕ Agregar vehículo')+'</button>';
+      body += '</div></div>';
+    })();
     try{ body += avisoPasaCuentaHTML(r); }catch(e){}
     try{ body += cuentaUnidaBox(r); }catch(e){}
     var _omen=menoresDe(r); if(_omen.length){ body += '<div class="field"><label>🧒 '+(_omen.length===1?'Menor de edad':'Menores de edad ('+_omen.length+')')+'</label><div style="margin-top:4px">'+_omen.map(function(m,mi){ return '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:2px 0"><span>'+esc(((m.nombre||'')+' '+(m.apellido||'')).trim()||'(sin nombre)')+' · Folio '+esc(m.folio||'—')+'</span><button class="btn-ghost" style="padding:2px 8px;font-size:11.5px;color:#b23b3b;white-space:nowrap" onclick="quitarMenorPost('+num+','+mi+')">✖ Quitar</button></div>'; }).join('')+'</div></div>'; }
@@ -3937,6 +3952,15 @@ function abrirHab(num){
     body += '<div class="field"><label>¿Viene por una empresa? (opcional)</label><div style="display:flex;gap:8px;align-items:center"><input id="m-empresaref" list="m-empresas-list" oninput="autoLlenarEmpresaCheckin()" placeholder="Escribe el código o nombre de la empresa" style="flex:1"><button class="btn-ghost" type="button" style="padding:9px 12px;white-space:nowrap" onclick="limpiarEmpresaRef()">Limpiar</button></div><datalist id="m-empresas-list">'+clientes().filter(c=>c.tipo==='empresa').map(e=>'<option value="'+escA(((e.codigo||'')+(e.nombre?(' — '+e.nombre):'')).trim())+'">').join('')+'</datalist><div id="m-empresa-info" style="display:none;background:#e9f8ee;border:1px solid #9fdcb4;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#1d6b38;margin-top:6px"></div></div>';
     body += '<div id="m-acomp-box"></div>';
     body += '<div id="m-menores-box"></div>';
+    /* [VEHICULO] Datos del carro del huesped (lo llena Recepcion, no Vigilancia) */
+    body += '<div class="field" style="margin-bottom:6px"><label>🚗 ¿Trae vehículo? (opcional)</label>';
+    body += '<label style="display:flex;align-items:center;gap:8px;font-weight:400;color:#44526a;margin-top:4px;cursor:pointer"><input type="checkbox" id="m-veh-si" style="width:auto;margin:0" onchange="toggleVehCheckin()"> Sí, trae carro o moto</label></div>';
+    body += '<div id="m-veh-box" style="display:none;background:#f6f8fc;border:1px solid #e2e8f2;border-radius:10px;padding:10px 12px;margin-bottom:10px">';
+    body += '<div style="display:flex;gap:8px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:120px"><label>Marca</label><input id="m-veh-marca" placeholder="Ej: Toyota" style="text-transform:uppercase"></div>';
+    body += '<div class="field" style="flex:1;min-width:120px"><label>Modelo</label><input id="m-veh-modelo" placeholder="Ej: Corolla" style="text-transform:uppercase"></div></div>';
+    body += '<div style="display:flex;gap:8px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:120px"><label>Color</label><input id="m-veh-color" placeholder="Ej: Gris" style="text-transform:uppercase"></div>';
+    body += '<div class="field" style="flex:1;min-width:120px"><label>Placa</label><input id="m-veh-placa" placeholder="Ej: AB123CD" style="text-transform:uppercase;font-weight:800;letter-spacing:2px"></div></div>';
+    body += '<div style="font-size:12px;color:#8893a5">La placa es lo único obligatorio. Vigilancia verá estos datos para reconocer el carro.</div></div>';
     const _libresExtra = rooms().filter(x=>x.estado==='libre' && x.num!==num);
     if(_libresExtra.length){
       body += '<label style="display:flex;align-items:center;gap:8px;margin:8px 0 6px;cursor:pointer;font-weight:600;color:#44526a"><input type="checkbox" id="m-multi" style="width:auto;margin:0" onchange="toggleMultiHab()"> Venderle más habitaciones al mismo cliente</label>';
@@ -4491,8 +4515,11 @@ function checkin(num){
   const acompanantes=colectarAcomp('m', adultos);
   const menores=colectarMenores('m', ninos);
   for(let _i=0;_i<menores.length;_i++){ if(!menores[_i].folio){ alert('Falta el número de folio del menor '+(_i+1)+'. El folio es obligatorio para los menores de edad.'); return; } }
+  const _veh=leerVehCheckin();
+  if(_veh===false) return;
   let extras='';
   if(ninos) extras+=' · '+ninos+' niño'+(ninos>1?'s':'');
+  if(_veh && _veh.placa) extras+=' · Vehículo: '+_veh.placa;
   extras+=acompResumenTxt(acompanantes);
   extras+=menoresResumenTxt(menores);
   const promoEl=document.getElementById('m-promo'); const promoId=promoEl?promoEl.value:''; const promoTit=promoId?promoTituloPorId(promoId):''; const promoDc=promoId?promoDescById(promoId):0;
@@ -4502,7 +4529,7 @@ function checkin(num){
     ninos:ninos, acompanantes:acompanantes, menores:menores, promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc,
     noches:noches, tarifa:tarifaEf, empresaRef:empRef, control:_ciCtrl,
     autorizada:(_auth?true:false), autorizadaModo:(_auth?_auth.modo:''), autorizadaInvitado:(_auth?_auth.invitado:''), autorizadaMotivo:(_auth?_auth.motivo:''), autorizadaPor:(_auth?autNombreLog():''), autorizadaTarifaNormal:(_auth?tarifa:0),
-    checkin:fechaISODeHoy(), salida:document.getElementById('m-salida').value||fechaSalidaAuto(noches)});
+    checkin:fechaISODeHoy(), salida:document.getElementById('m-salida').value||fechaSalidaAuto(noches), vehiculo:_veh});
   /* [POL-SALIDA] La salida REAL se sella al hacer el check-out (no la prevista) */
   logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), personas:adultos, acompanantes:acompanantes.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum, edad:(x.edad||''), estadoCivil:(x.estadoCivil||''), ocupacion:(x.ocupacion||'')}; }), menores:(menores||[]), ninos:(menores||[]).length, detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
   if(_auth){
@@ -4866,6 +4893,10 @@ function sellarSalidaReal(num, ctrlEntrada, tsSalida){
   }catch(e){}
 }
 function confirmCheckout(num){
+  /* [ESTACIONAMIENTO] Los vehiculos son cosa de Vigilancia: a Recepcion NO se le avisa nada.
+     El carro del cuarto que se va pasa calladito a la lista de Vigilancia para que
+     confirmen la salida (a veces el huesped va a comer primero). */
+  try{ parkPasarAVigilancia(num); }catch(e){}
   try{ var _rS=findRoom(num); if(_rS && _rS.estado==='ocupada') sellarSalidaReal(num, _rS.control||0); }catch(e){}
   /* [MSJ-CO] Antes de borrar los datos del cuarto, se guarda a quien despedir (solo si el mensaje de check-out esta activado) */
   var _desp=null;
@@ -4879,7 +4910,7 @@ function confirmCheckout(num){
     }
   }catch(e){ _desp=null; }
   limpiarAutorizacionHab(num);
-  updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''});
+  updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', vehiculo:null, cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''});
   try{ soltarCuentasDeHab(num); }catch(e){}
   cerrarModal(); render();
   if(_desp) checkoutMensajeModal(_desp);
@@ -13825,7 +13856,7 @@ function salidaLiberarHab(num, motivo, enGrupo){
   limpiarAutorizacionHab(num);
   try{ logKardex('checkout',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', control:(parseInt(r.control||0)||0), detalle:'Check-out'+(motivo?(' ('+motivo+')'):'')+' · salida anticipada (reservó '+(r.nochesReservadas||r.noches||1)+' noche(s), se cobraron '+(r.noches||1)+')', montoUsd:0, montoBs:0, metodo:(motivo||'')}); }catch(e){}
   cerrarEstadia(r.clienteId||'', num, {noches:r.noches||1, montoUsd:abR, metodo:(motivo||'')});
-  updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined, empresaRef:'', nochesReservadas:0});
+  updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', vehiculo:null, cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined, empresaRef:'', nochesReservadas:0});
   return _despS;
 }
 function salidaRegistrarAnticipada(numsStr){
@@ -16347,6 +16378,452 @@ function confirmarEditarPago(id, btn){
   alert('Corregido. La forma de pago qued\u00f3 en "'+nuevo+'" y el N\u00b0 de control N\u00b0 '+fmtControl(p.control)+' no se movi\u00f3.\n\nQued\u00f3 anotado en el Kardex qui\u00e9n lo corrigi\u00f3 y por qu\u00e9.');
 }
 
+/* ====== ESTACIONAMIENTO · VIGILANCIA ======
+   OJO: el carro del HUESPED no se anota aqui. Lo anota Recepcion en el check-in
+   (marca, modelo, color y placa) y esta pantalla solo lo muestra, para que el
+   vigilante reconozca el carro.
+   Aqui el vigilante anota los que vienen de paso a DEJAR algo: un pedido, una
+   encomienda, un documento. NO toca caja, montos, arqueo ni N° de control.
+   - No se numeran puestos: el huesped se estaciona donde sea.
+   - Nada se borra: si hay un error se ANULA con motivo y queda el registro. */
+var PARK_TIPOS = ['Moto','Carro','Camioneta','Bicicleta','Otro'];
+var PARK_QUE = ['Pedido de comida','Encomienda / paquete','Documento','Herramienta / material','Otro'];
+var _pkFiltro = '';
+
+function parkingLista(){ var a=DB.get('parking',[]); return Array.isArray(a)?a:[]; }
+function parkingGuardar(a){ DB.save('parking', Array.isArray(a)?a:[]); }
+/* Deja solo letras y numeros, sin acentos ni espacios: asi ABT-123 y abt 123 son la misma placa. */
+function parkNorm(t){ return String(t==null?'':t).toUpperCase()
+  .replace(/[ÁÀÄÂ]/g,'A').replace(/[ÉÈËÊ]/g,'E').replace(/[ÍÌÏÎ]/g,'I')
+  .replace(/[ÓÒÖÔ]/g,'O').replace(/[ÚÙÜÛ]/g,'U').replace(/[^A-Z0-9]/g,''); }
+function parkingAdentro(){ return parkingLista().filter(function(v){ return v && v.estado==='dentro'; }); }
+function parkingPorPlaca(p){
+  var n=parkNorm(p); if(!n) return null;
+  var l=parkingAdentro();
+  for(var i=0;i<l.length;i++){ if(parkNorm(l[i].placa)===n) return l[i]; }
+  return null;
+}
+function parkingDeHab(h){
+  h=parseInt(h,10); if(!h) return [];
+  return parkingAdentro().filter(function(v){ return parseInt(v.hab,10)===h; });
+}
+function parkingMinutos(v){
+  if(!v) return 0;
+  if(v.estado==='fuera' && v.minutos!=null) return Number(v.minutos)||0;
+  try{
+    var t0=new Date(v.entrada).getTime();
+    var t1=v.salida?new Date(v.salida).getTime():Date.now();
+    if(!isFinite(t0)||!isFinite(t1)) return 0;
+    return Math.max(0, Math.round((t1-t0)/60000));
+  }catch(e){ return 0; }
+}
+function parkTiempo(min){
+  min=Number(min)||0; if(min<60) return min+' min';
+  var h=Math.floor(min/60), m=min%60; return h+' h'+(m?(' '+m+' min'):'');
+}
+function parkHora(iso){ try{ return new Date(iso).toLocaleTimeString('es-VE',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } }
+/* Quien es / que viene a dejar (los registros viejos de huesped se siguen mostrando bien) */
+function parkQuien(v){
+  if(!v) return '—';
+  if(v.clase==='huesped' && v.origen==='checkout'){
+    return 'Hab. '+esc(String(v.hab||'—'))+' · '+esc(v.huesped||'—')+' <span style="color:#a23b3b;font-weight:700">· check-out hecho</span>';
+  }
+  if(v.clase==='pedido' || v.queTrae || v.para){
+    return 'Trae: '+esc(v.queTrae||'pedido')+(String(v.para||'').trim()?(' · '+esc(v.para)):'');
+  }
+  if(v.clase==='visita') return 'Visita · '+esc(v.visitaNombre||'—')+(v.autorizadoPor?(' · autorizó '+esc(v.autorizadoPor)):'');
+  return 'Hab. '+esc(String(v.hab||'—'))+' · '+esc(v.huesped||'—');
+}
+function parkTarjeta(lbl,num,color){
+  return '<div style="flex:1;min-width:110px;background:#fff;border:1px solid #e2e8f2;border-radius:12px;padding:10px 12px">'
+    +'<div style="font-size:10.5px;color:#8893a5;text-transform:uppercase;letter-spacing:.4px">'+lbl+'</div>'
+    +'<div style="font-size:22px;font-weight:800;color:'+color+'">'+num+'</div></div>';
+}
+/* Salida prevista de la habitacion: sirve para avisar al vigilante que ese carro se va.
+   Acepta 2026-11-22 y 22/11/2026. Devuelve {txt, dias, etiqueta, color} o null. */
+function parkSalidaInfo(s){
+  var t=String(s==null?'':s).trim(); if(!t) return null;
+  var d=null, m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t);
+  if(m) d=new Date(+m[1],+m[2]-1,+m[3]);
+  else { m=/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(t); if(m) d=new Date(+m[3],+m[2]-1,+m[1]); }
+  if(!d || isNaN(d.getTime())) return null;
+  var hoy=new Date(); hoy.setHours(0,0,0,0); d.setHours(0,0,0,0);
+  var dias=Math.round((d.getTime()-hoy.getTime())/86400000);
+  var txt=d.toLocaleDateString('es-VE',{day:'2-digit',month:'2-digit',year:'numeric'});
+  var et=('Sale el '+txt), col='#55637a';
+  if(dias<0){ et='Venció el '+txt; col='#a23b3b'; }
+  else if(dias===0){ et='SALE HOY'; col='#a23b3b'; }
+  else if(dias===1){ et='Sale mañana'; col='#b5651d'; }
+  return {txt:txt, dias:dias, etiqueta:et, color:col};
+}
+function parkSalenHoy(){
+  return parkVehHuespedes().filter(function(r){ var i=parkSalidaInfo(r.salida); return i && i.dias<=0; });
+}
+/* Carros de huespedes: solo se leen de la ficha de la habitacion (los anoto Recepcion) */
+function parkVehHuespedes(){
+  try{
+    return rooms().filter(function(r){
+      return r && r.estado==='ocupada' && r.vehiculo && String(r.vehiculo.placa||'').trim()!=='';
+    });
+  }catch(e){ return []; }
+}
+
+/* ===== Listado de vehiculos para imprimir (por mes) =====
+   Solo control de vigilancia: no toca caja, montos ni N° de control. */
+function parkMesDe(iso){
+  try{ var d=new Date(iso); if(isNaN(d.getTime())) return '';
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }catch(e){ return ''; }
+}
+function parkMesesConDatos(){
+  var m={}, arr=[];
+  parkingLista().forEach(function(v){
+    if(!v || !v.entrada) return;
+    var k=parkMesDe(v.entrada); if(!k) return;
+    if(m[k]==null){ m[k]=0; arr.push(k); }
+    m[k]++;
+  });
+  var cur=parkMesDe(new Date().toISOString());
+  if(m[cur]==null){ m[cur]=0; arr.push(cur); }
+  arr.sort(); arr.reverse();
+  return arr.map(function(k){ return {k:k, txt:mesLabel(k), n:m[k]||0}; });
+}
+function parkQuienTxt(v){
+  if(!v) return '—';
+  if(v.clase==='huesped' && v.origen==='checkout') return 'Hab. '+(v.hab||'—')+' · '+(v.huesped||'—')+' · check-out hecho';
+  if(v.clase==='pedido' || v.queTrae || v.para) return 'Trae: '+(v.queTrae||'pedido')+(String(v.para||'').trim()?(' · '+v.para):'');
+  if(v.clase==='visita') return 'Visita · '+(v.visitaNombre||'—')+(v.autorizadoPor?(' · autorizó '+v.autorizadoPor):'');
+  return 'Hab. '+(v.hab||'—')+' · '+(v.huesped||'—');
+}
+function parkHora24(iso){
+  try{ var d=new Date(iso); if(isNaN(d.getTime())) return '';
+    return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }catch(e){ return ''; }
+}
+function parkFechaHora(iso){
+  if(!iso) return '—';
+  try{ var d=new Date(iso); if(isNaN(d.getTime())) return '—';
+    return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(2)
+      +'<br><b style="font-size:12px">'+parkHora24(iso)+'</b>';
+  }catch(e){ return '—'; }
+}
+function parkVehiculoTxt(v){
+  var d=[v.marca,v.modelo,v.color].map(function(x){ return String(x||'').trim(); }).filter(function(x){ return x!==''; });
+  return d.length?d.join(' ') : String(v.tipo||'—');
+}
+function parkImprimirModal(){
+  var ms=parkMesesConDatos(), cur=parkMesDe(new Date().toISOString());
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>🖨️ Listado de vehículos</h2>';
+  h+='<div style="background:#eef6ff;border:1px solid #cfe0f5;border-radius:10px;padding:11px 13px;font-size:13px;color:#2a4a73;margin-bottom:12px;line-height:1.55">Sale con la <b>hora de entrada</b> y la <b>hora de salida</b> de cada vehículo, en orden de llegada. Elige el mes y se imprime (o lo guardas en PDF).</div>';
+  h+='<div class="field"><label>¿Qué mes quieres sacar?</label><select id="pk-mes">'
+    +ms.map(function(m){ return '<option value="'+m.k+'"'+(m.k===cur?' selected':'')+'>'+esc(m.txt)+' ('+m.n+' vehículo'+(m.n===1?'':'s')+')</option>'; }).join('')
+    +'<option value="todos">Todos los meses (desde el primer registro)</option></select></div>';
+  h+='<div class="actions"><button class="btn-green" onclick="parkImprimirListado()">🖨️ Imprimir / Guardar PDF</button><button class="btn-cancelar" onclick="cerrarModal()">✖ Cerrar</button></div>';
+  showModal(h);
+}
+function parkImprimirListado(){
+  var sel=document.getElementById('pk-mes'); var k=sel?String(sel.value||''):'';
+  if(!k) k='todos';
+  var todos=parkingLista().filter(function(v){ return v && v.entrada; });
+  var lista=todos.filter(function(v){ return (k==='todos') || (parkMesDe(v.entrada)===k); });
+  lista.sort(function(a,b){ return new Date(a.entrada)-new Date(b.entrada); });
+  var anulados=lista.filter(function(v){ return v.estado==='anulado'; });
+  var viv=lista.filter(function(v){ return v.estado!=='anulado'; });
+  var adentro=viv.filter(function(v){ return v.estado==='dentro'; });
+  var salieron=viv.filter(function(v){ return v.estado==='fuera'; });
+  var periodo=(k==='todos')?'Todos los meses':mesLabel(k);
+  if(k!=='todos'){ try{ var p=k.split('-'); periodo=mesLabel(k); }catch(e){} }
+  var filas='';
+  if(!viv.length){
+    filas='<tr><td colspan="8" class="c" style="color:#888;padding:16px">No hubo vehículos en este periodo</td></tr>';
+  } else {
+    viv.forEach(function(v,i){
+      var min=Number(v.minutos!=null?v.minutos:parkingMinutos(v))||0;
+      filas+='<tr>'
+        +'<td class="c">'+(i+1)+'</td>'
+        +'<td><b style="letter-spacing:1px">'+esc(v.placa||'—')+'</b></td>'
+        +'<td>'+esc(parkVehiculoTxt(v))+'</td>'
+        +'<td>'+esc(parkQuienTxt(v))+'</td>'
+        +'<td class="c" style="white-space:nowrap">'+parkFechaHora(v.entrada)+'</td>'
+        +'<td class="c" style="white-space:nowrap">'+(v.estado==='fuera'?parkFechaHora(v.salida):'<b style="color:#b5651d">SIGUE ADENTRO</b>')+'</td>'
+        +'<td class="c">'+(v.estado==='fuera'?esc(parkTiempo(min)):'—')+'</td>'
+        +'<td>'+esc(v.por||v.salioPor||'—')+'</td>'
+        +'</tr>';
+    });
+  }
+  var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Vehículos · '+esc(periodo)+'</title>';
+  html+='<style>@page{size:letter portrait;margin:10mm}*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}'
+    +'table{width:100%;border-collapse:collapse;font-size:11.5px}th{background:#eef3fa;text-align:left;padding:6px 6px;border:1px solid #ccd;font-size:10.5px;text-transform:uppercase;color:#44526a}td{padding:6px 6px;border:1px solid #dde;vertical-align:top}tr{page-break-inside:avoid}'
+    +'.c{text-align:center}.sub{color:#667;font-size:12px;margin:2px 0 12px}.cards{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}'
+    +'.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:8px 11px}.card .l{font-size:10px;color:#778;text-transform:uppercase;letter-spacing:.3px}.card .n{font-size:17px;font-weight:800;color:#0d3b66}'
+    +'.nota{font-size:11px;color:#667;margin-top:6px}thead{display:table-header-group}tbody tr,td{break-inside:avoid;page-break-inside:avoid}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:11.5px;text-align:center;color:#445}'
+    +'@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html+='<h1>'+esc(hotelNombre())+' · 🚗 Listado de vehículos</h1>'+hotelLinePrint();
+  html+='<div class="sub"><b>Periodo: '+esc(periodo)+'</b> · Creado '+esc(new Date().toLocaleString('es-VE'))+' · Por '+(esc(((session()||{}).nombre)||((session()||{}).user)||'—'))+'</div>';
+  html+='<div class="cards">'
+    +'<div class="card"><div class="l">Vehículos que entraron</div><div class="n">'+viv.length+'</div></div>'
+    +'<div class="card"><div class="l">Ya salieron</div><div class="n">'+salieron.length+'</div></div>'
+    +'<div class="card"><div class="l">Siguen adentro</div><div class="n">'+adentro.length+'</div></div>'
+    +'<div class="card"><div class="l">Anulados</div><div class="n">'+anulados.length+'</div></div></div>';
+  html+='<table><thead><tr><th style="width:22px" class="c">#</th><th style="width:70px">Placa</th><th style="width:15%">Vehículo</th><th style="width:22%">Huésped / motivo</th><th class="c" style="width:15%">Entró</th><th class="c" style="width:15%">Salió</th><th class="c" style="width:7%">Tiempo</th><th style="width:12%">Anota</th></tr></thead><tbody>'+filas+'</tbody></table>';
+  if(anulados.length){ html+='<div class="nota">Registros anulados en el periodo: '+anulados.length+' (no se listan; quedan guardados en el sistema con su motivo).</div>'; }
+  html+='<div class="nota">Los que dicen “SIGUE ADENTRO” todavía no han salido del estacionamiento: el vigilante confirma la salida con el botón “Salió”. Este listado es solo de control de vigilancia.</div>';
+  html+='<div class="firmas"><div class="firma">Vigilancia<br>(quien entrega el listado)</div><div class="firma">Revisado por<br>(jefe de seguridad / administración)</div></div>';
+  html+=piePaginaHTML()+'</body></html>';
+  cerrarModal();
+  return imprimirHTML(html);
+}
+function renderEstacionamiento(){
+  var c=document.getElementById('content'); if(!c) return;
+  try{ var bc=document.getElementById('btn-chat'); if(bc) bc.style.display='none'; }catch(e){}
+  var dentro=parkingAdentro(), hoy=diaKey(), entHoy=0, salHoy=0;
+  parkingLista().forEach(function(v){
+    if(!v) return;
+    try{ if(v.entrada && diaKey(new Date(v.entrada))===hoy) entHoy++; }catch(e){}
+    try{ if(v.salida && diaKey(new Date(v.salida))===hoy) salHoy++; }catch(e){}
+  });
+  var veh=parkVehHuespedes();
+  var h='<div class="section-title">🚗 Estacionamiento</div>';
+  h+='<div style="font-size:12.5px;color:#55637a;margin:-6px 0 12px;line-height:1.55">Aquí anotas los que vienen de paso a <b>dejar algo</b> (un pedido, una encomienda). El carro del huésped lo anota <b>Recepción</b> cuando hace el check-in.</div>';
+  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+    +parkTarjeta('Adentro ahora', dentro.length, '#0d3b66')
+    +parkTarjeta('Entradas hoy', entHoy, '#1f6b35')
+    +parkTarjeta('Salidas hoy', salHoy, '#7a4b00')
+    +parkTarjeta('Carros que salen hoy', parkSalenHoy().length, '#a23b3b')
+    +parkTarjeta('Esperando salida', parkEsperandoSalida().length, '#7a4b00')+'</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<button class="btn-green" style="flex:1;min-width:190px;padding:12px 14px" onclick="parkEntradaModal()">➕ Anotar entrada (pedido)</button>'
+    +'<button class="btn-ghost" style="padding:12px 14px;min-width:160px" onclick="parkImprimirModal()">🖨️ Imprimir listado</button>'
+    +'<input id="pk-buscar" placeholder="🔎 Buscar placa, qué trae o para quién" value="'+esc(_pkFiltro)+'" oninput="parkFiltrar(this.value)" style="flex:2;min-width:200px;padding:11px 12px;border:1px solid #cbd5e6;border-radius:10px;font-size:14px">'
+    +'</div>';
+  h+='<div style="background:#fff;border:1px solid #e2e8f2;border-radius:12px;padding:6px 12px">';
+  if(!dentro.length){
+    h+='<div style="text-align:center;color:#8893a5;padding:26px 8px;font-size:14px">No hay nadie de paso adentro.<br><span style="font-size:12.5px">Cuando llegue un pedido, toca “Anotar entrada”.</span></div>';
+  } else {
+    dentro.forEach(function(v){ h+=parkFilaHTML(v); });
+    h+='<div id="pk-vacio" style="display:none;text-align:center;color:#8893a5;padding:20px 8px;font-size:13.5px">Nada coincide con la búsqueda.</div>';
+  }
+  h+='</div>';
+  /* Carros de los huespedes (solo lectura) */
+  h+='<div style="margin-top:16px">';
+  h+='<div style="font-size:12.5px;font-weight:800;color:#44526a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">🚙 Carros de huéspedes ('+veh.length+')</div>';
+  if(!veh.length){
+    h+='<div style="background:#fff;border:1px solid #e2e8f2;border-radius:12px;padding:14px;text-align:center;color:#8893a5;font-size:13.5px">Ningún huésped tiene vehículo anotado.</div>';
+  } else {
+    h+='<div style="background:#fff;border:1px solid #e2e8f2;border-radius:12px;padding:4px 12px;font-size:13px">';
+    veh.forEach(function(r){
+      var v=r.vehiculo||{}; var det=vehResumenTxt(v);
+      var sal=parkSalidaInfo(r.salida);
+      h+='<div style="display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid #eef2f8;padding:9px 0">'
+        +'<div><b style="letter-spacing:1.5px;font-size:16px;color:#0d3b66">'+esc(v.placa||'—')+'</b>'
+        +(det?(' <span style="color:#55637a">· '+esc(det)+'</span>'):'')+'</div>'
+        +'<div style="text-align:right;color:#55637a">Hab. '+esc(String(r.num))+' · '+esc(r.huesped||'—')
+        +(sal?('<br><b style="color:'+sal.color+'">'+esc(sal.etiqueta)+'</b>'):'<br><span style="color:#8893a5">Sin fecha de salida</span>')+'</div></div>';
+    });
+    h+='</div>';
+    h+='<div style="font-size:11.5px;color:#8893a5;margin-top:5px;line-height:1.55">Estos los anota Recepción en el check-in y la fecha de salida es la de la habitación: si el huésped extiende la estadía, la fecha se mueve sola.<br>Cuando la habitación hace check-out, el carro pasa a la lista de arriba (“Adentro ahora”) con la marca “check-out hecho”, y ahí lo confirmas con <b>Salió</b> cuando de verdad se vaya.</div>';
+  }
+  h+='</div>';
+  /* Movimiento del dia (para revisar despues: quien entro, quien salio, que se anulo) */
+  var mov=parkingLista().filter(function(v){ try{ return v && v.entrada && diaKey(new Date(v.entrada))===hoy; }catch(e){ return false; } });
+  if(mov.length){
+    h+='<div style="margin-top:14px">';
+    h+='<div style="font-size:12.5px;font-weight:800;color:#44526a;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Movimiento de hoy ('+mov.length+')</div>';
+    h+='<div style="background:#fff;border:1px solid #e2e8f2;border-radius:12px;padding:4px 12px;font-size:12.5px">';
+    mov.slice(0,40).forEach(function(v){
+      var est=(v.estado==='anulado')?'<span style="color:#a23b3b;font-weight:700">ANULADO · '+esc(v.motivo||'')+'</span>'
+        :(v.salida?('<span style="color:#1f6b35">Salió '+esc(parkHora(v.salida))+' · '+parkTiempo(v.minutos||parkingMinutos(v))+'</span>')
+        :('<span style="color:#0d3b66;font-weight:700">Adentro</span>'));
+      h+='<div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid #eef2f8;padding:7px 0">'
+        +'<div><b>'+esc(v.placa||'—')+'</b> <span style="color:#8893a5">· '+esc(v.tipo||'')+'</span><br><span style="color:#55637a">'+parkQuien(v)+'</span></div>'
+        +'<div style="text-align:right;color:#55637a">Entró '+esc(parkHora(v.entrada))+' · '+esc(v.por||'—')+'<br>'+est+'</div></div>';
+    });
+    h+='</div></div>';
+  }
+  h+='<div style="margin-top:14px;font-size:12px;color:#8893a5;line-height:1.6">Los puestos no se numeran: el huésped se estaciona donde haya. Aquí solo se lleva la cuenta de quién está adentro y a qué hora salió.</div>';
+  c.innerHTML=h;
+  try{ if(_pkFiltro) parkFiltrar(_pkFiltro); }catch(e){}
+}
+
+function parkFilaHTML(v){
+  var min=parkingMinutos(v);
+  var busca=parkNorm([v.placa,v.hab,v.huesped,v.visitaNombre,v.tipo,v.queTrae,v.para,v.obs,v.autorizadoPor].join(' '));
+  var col=(min>720?'#a23b3b':'#2c4a6e');
+  return '<div class="pk-row" data-b="'+busca+'" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-bottom:1px solid #eef2f8;padding:10px 0">'
+    +'<div style="min-width:150px">'
+    +'<div style="font-size:17px;font-weight:800;letter-spacing:.6px;color:#0d3b66">'+esc(v.placa||'—')+'</div>'
+    +'<div style="font-size:12px;color:#55637a">'+esc(v.tipo||'Carro')+' · '+parkQuien(v)+'</div>'
+    +((v.origen==='checkout' && [v.marca,v.modelo,v.color].filter(function(x){ return String(x||'').trim()!==''; }).length)
+        ? ('<div style="font-size:11.5px;color:#8893a5">'+esc([v.marca,v.modelo,v.color].filter(function(x){ return String(x||'').trim()!==''; }).join(' '))+'</div>')
+        : '')
+    +(v.obs?('<div style="font-size:11.5px;color:#8893a5">'+esc(v.obs)+'</div>'):'')
+    +'</div>'
+    +'<div style="font-size:12px;color:#55637a;min-width:130px">'
+    +((v.origen==='checkout')
+        ? ('Check-out '+esc(parkHora(v.checkout||v.entrada))+'<br><b style="color:'+col+'">Hace '+parkTiempo(min)+'</b>')
+        : ('Entró '+esc(parkHora(v.entrada))+'<br><b style="color:'+col+'">'+parkTiempo(min)+' adentro</b>'))
+    +'</div>'
+    +'<div style="display:flex;gap:6px">'
+    +'<button class="btn-green" style="padding:9px 14px" onclick="parkSalida(\''+v.id+'\')">🚪 Salió</button>'
+    +'<button class="btn-ghost" style="padding:9px 10px" onclick="parkAnular(\''+v.id+'\')">Anular</button>'
+    +'</div></div>';
+}
+
+function parkFiltrar(v){
+  _pkFiltro=String(v==null?'':v);
+  var q=parkNorm(_pkFiltro), n=0;
+  var rows=document.querySelectorAll('.pk-row');
+  for(var i=0;i<rows.length;i++){
+    var b=rows[i].getAttribute('data-b')||'';
+    var ok=(!q || b.indexOf(q)>=0);
+    rows[i].style.display=ok?'':'none';
+    if(ok) n++;
+  }
+  var e=document.getElementById('pk-vacio'); if(e) e.style.display=n?'none':'block';
+}
+
+function parkEntradaModal(){
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>🚗 Anotar entrada</h2>';
+  h+='<div style="font-size:12.5px;color:#55637a;margin:-2px 0 10px">Para los que vienen de paso a dejar algo. El carro del huésped no se anota aquí: lo anota Recepción en el check-in.</div>';
+  h+='<div class="field"><label>Placa</label><input id="pk-placa" placeholder="Ej: AB123CD" autocomplete="off" style="text-transform:uppercase;font-weight:800;letter-spacing:2px;font-size:16px"></div>';
+  h+='<div class="field"><label>Vehículo</label><select id="pk-tipo">'+PARK_TIPOS.map(function(t){ return '<option>'+t+'</option>'; }).join('')+'</select></div>';
+  h+='<div class="field"><label>¿Qué viene a dejar?</label><select id="pk-que">'+PARK_QUE.map(function(t){ return '<option>'+t+'</option>'; }).join('')+'</select></div>';
+  h+='<div class="field"><label>¿Para quién o a dónde va? (opcional)</label><input id="pk-para" placeholder="Ej: Hab. 302 · Sr. Pérez / Cocina"></div>';
+  h+='<div class="field"><label>Detalle (opcional)</label><input id="pk-obs" placeholder="Ej: 2 cajas de comida, moto roja"></div>';
+  h+='<div class="actions"><button class="btn-green" onclick="parkGuardarEntrada(this)">✅ Anotar entrada</button><button class="btn-cancelar" onclick="cerrarModal()">✖ Cancelar</button></div>';
+  showModal(h);
+}
+
+function parkGuardarEntrada(btn){
+  if(procesoDoble(btn)) return;
+  var placa=String(((document.getElementById('pk-placa')||{}).value)||'').toUpperCase().replace(/\s+/g,'');
+  if(parkNorm(placa).length<4){ procesoListo(btn); alert('Escribe la placa (al menos 4 letras o números).'); return; }
+  var ya=parkingPorPlaca(placa);
+  if(ya){
+    procesoListo(btn);
+    alert('Esa placa YA está adentro: '+ya.placa+'\n'+parkQuien(ya).replace(/<[^>]+>/g,'')+'\nEntró '+parkHora(ya.entrada)+' y lleva '+parkTiempo(parkingMinutos(ya))+' adentro.\n\nSi va a salir, búscala en la lista y toca “Salió”.');
+    return;
+  }
+  var tipo=((document.getElementById('pk-tipo')||{}).value)||'Moto';
+  var que=((document.getElementById('pk-que')||{}).value)||'Pedido';
+  var para=String(((document.getElementById('pk-para')||{}).value)||'').trim();
+  var obs=String(((document.getElementById('pk-obs')||{}).value)||'').trim();
+  var reg={ id:'pk'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), placa:placa, tipo:tipo, clase:'pedido',
+    queTrae:que, para:para, obs:obs,
+    entrada:new Date().toISOString(), por:((session()||{}).nombre||(session()||{}).user||''), estado:'dentro' };
+  var arr=parkingLista(); arr.unshift(reg); parkingGuardar(arr);
+  cerrarModal(); render();
+  alert('✅ Anotado: '+reg.placa+'\n'+reg.queTrae+(reg.para?(' · '+reg.para):'')+'\n\nAdentro ahora: '+parkingAdentro().length+' vehículo(s).');
+}
+
+function parkSalida(id){
+  var arr=parkingLista(); var i=-1;
+  for(var k=0;k<arr.length;k++){ if(arr[k] && arr[k].id===id){ i=k; break; } }
+  if(i<0) return;
+  var v=arr[i]; var min=parkingMinutos(v);
+  var quien=parkQuien(v).replace(/<[^>]+>/g,'');
+  if(!confirm('¿Registrar la salida de '+v.placa+'?\n\n'+quien+'\nEntró '+parkHora(v.entrada)+' · estuvo '+parkTiempo(min)+' adentro.')) return;
+  v.salida=new Date().toISOString(); v.estado='fuera'; v.minutos=min; v.salioPor=((session()||{}).nombre||'');
+  arr[i]=v; parkingGuardar(arr); render();
+}
+
+function parkAnular(id){
+  var arr=parkingLista(); var i=-1;
+  for(var k=0;k<arr.length;k++){ if(arr[k] && arr[k].id===id){ i=k; break; } }
+  if(i<0) return;
+  var v=arr[i];
+  var m=prompt('Anular el registro de '+v.placa+'.\n\nEscribe el motivo (queda anotado quién lo anuló y a qué hora):','');
+  if(m===null) return;
+  m=String(m).trim();
+  if(!m){ alert('Hace falta el motivo para poder anular. No se anuló nada.'); return; }
+  v.estado='anulado'; v.motivo=m; v.anuladoPor=((session()||{}).nombre||''); v.anuladoTs=new Date().toISOString();
+  arr[i]=v; parkingGuardar(arr); render();
+}
+
+/* El carro del huesped que se va: se anota en la lista de Vigilancia y queda
+   esperando que confirmen la salida. No toca caja ni pagos. */
+function parkPasarAVigilancia(num){
+  var r=(typeof findRoomAny==='function')?findRoomAny(num):null; if(!r) return null;
+  var v=r.vehiculo||{}; var placa=String(v.placa||'').trim();
+  if(!placa) return null;
+  if(parkingPorPlaca(placa)) return null;   /* ya esta anotado: no se duplica */
+  var ahora=new Date().toISOString();
+  var reg={ id:'pk'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    placa:placa.toUpperCase(), tipo:'Carro', clase:'huesped', hab:parseInt(num,10)||num,
+    huesped:String(r.huesped||''), marca:v.marca||'', modelo:v.modelo||'', color:v.color||'',
+    entrada:ahora, por:((session()||{}).nombre||(session()||{}).user||''),
+    estado:'dentro', origen:'checkout', checkout:ahora };
+  var arr=parkingLista(); arr.unshift(reg); parkingGuardar(arr);
+  return reg;
+}
+function parkEsperandoSalida(){
+  return parkingAdentro().filter(function(v){ return v && v.origen==='checkout'; });
+}
+/* ---- Datos del vehiculo que se llenan en el check-in ---- */
+function toggleVehCheckin(){
+  var c=document.getElementById('m-veh-si'), b=document.getElementById('m-veh-box'); if(!b) return;
+  var on=!!(c&&c.checked); b.style.display=on?'':'none';
+  if(on){ var pl=document.getElementById('m-veh-placa'); if(pl){ try{ pl.focus(); }catch(e){} } }
+}
+/* Devuelve {marca,modelo,color,placa} o null. Devuelve false si falta algo (ya aviso). */
+function leerVehCheckin(){
+  var c=document.getElementById('m-veh-si'); if(!c || !c.checked) return null;
+  var g=function(id){ var e=document.getElementById(id); return e?mayusculasYa(String(e.value||'').trim()):''; };
+  var o={marca:g('m-veh-marca'), modelo:g('m-veh-modelo'), color:g('m-veh-color'), placa:g('m-veh-placa').replace(/\s+/g,'')};
+  if(!o.marca && !o.modelo && !o.color && !o.placa){ alert('Marcaste que trae vehículo: escribe al menos la placa, o desmarca la casilla.'); return false; }
+  if(!o.placa){ alert('Falta la placa del vehículo. Es el dato que usa Vigilancia para reconocerlo.'); return false; }
+  return o;
+}
+function vehResumenTxt(v){
+  if(!v || !String(v.placa||'').trim()) return '';
+  return [v.marca,v.modelo,v.color].filter(function(x){ return String(x||'').trim()!==''; }).join(' ');
+}
+
+/* ---- Vehiculo del huesped: lo llena Recepcion (check-in o despues, en la ficha) ---- */
+function vehModal(num){
+  var r=(typeof findRoomAny==='function')?findRoomAny(num):null; if(!r){ alert('No existe la habitación '+num+'.'); return; }
+  var v=r.vehiculo||{};
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>🚗 Vehículo del huésped</h2>';
+  h+='<div style="font-size:12.5px;color:#55637a;margin:-2px 0 10px">Hab. '+esc(String(num))+(r.huesped?(' · '+esc(r.huesped)):'')+'. Si el huésped no trae vehículo puedes dejarlo vacío.</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:120px"><label>Marca</label><input id="mv-marca" value="'+escA(v.marca||'')+'" placeholder="Ej: Toyota" style="text-transform:uppercase"></div>';
+  h+='<div class="field" style="flex:1;min-width:120px"><label>Modelo</label><input id="mv-modelo" value="'+escA(v.modelo||'')+'" placeholder="Ej: Corolla" style="text-transform:uppercase"></div></div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:120px"><label>Color</label><input id="mv-color" value="'+escA(v.color||'')+'" placeholder="Ej: Gris" style="text-transform:uppercase"></div>';
+  h+='<div class="field" style="flex:1;min-width:120px"><label>Placa</label><input id="mv-placa" value="'+escA(v.placa||'')+'" placeholder="Ej: AB123CD" style="text-transform:uppercase;font-weight:800;letter-spacing:2px"></div></div>';
+  h+='<div style="font-size:12px;color:#8893a5;margin-bottom:8px">La placa es lo único obligatorio. Vigilancia lo verá en su pantalla.</div>';
+  h+='<div class="actions"><button class="btn-green" onclick="vehGuardar('+num+')">💾 Guardar</button>'
+    +((String(v.placa||'').trim()||String(v.marca||'').trim())?'<button class="btn-ghost" onclick="vehQuitar('+num+')">Quitar vehículo</button>':'')
+    +'<button class="btn-cancelar" onclick="cerrarModal()">✖ Cancelar</button></div>';
+  showModal(h);
+}
+function vehGuardar(num){
+  var g=function(id){ var e=document.getElementById(id); return e?mayusculasYa(String(e.value||'').trim()):''; };
+  var o={marca:g('mv-marca'), modelo:g('mv-modelo'), color:g('mv-color'), placa:g('mv-placa').replace(/\s+/g,'')};
+  if(!o.marca && !o.modelo && !o.color && !o.placa){ updateRoom(num,{vehiculo:null}); cerrarModal(); render(); alert('Se quitó el vehículo de la habitación '+num+'.'); return; }
+  if(!o.placa){ alert('Falta la placa del vehículo.'); return; }
+  updateRoom(num,{vehiculo:o});
+  cerrarModal(); render();
+  alert('✅ Vehículo guardado en la Hab. '+num+':\n'+o.placa+(vehResumenTxt(o)?(' · '+vehResumenTxt(o)):''));
+}
+function vehQuitar(num){
+  if(!confirm('¿Quitar el vehículo de la habitación '+num+'?\n\nSolo se borra el dato del carro; la cuenta y los pagos no se tocan.')) return;
+  updateRoom(num,{vehiculo:null}); cerrarModal(); render();
+}
+
+/* Usuario de vigilancia: se crea una sola vez, si el Master no lo ha creado.
+   Clave inicial 1234 (se cambia en Master · Usuarios). */
+function parkAsegurarUsuario(){
+  try{
+    var us=DB.get('users',[])||[];
+    if(us.some(function(u){ return u && u.rol==='vigilancia'; })) return;
+    /* Si el usuario de vigilancia no existe se crea una vez (clave 1234).
+       No se usa bandera local: si la nube lo borra, se vuelve a crear al cargar. */
+    us.push({user:'vigilancia', pass:'1234', rol:'vigilancia', nombre:'Vigilancia'});
+    DB.save('users', us);
+  }catch(e){}
+}
+
+try{ parkAsegurarUsuario(); }catch(e){}
 bootstrap();
 </script>
 </body>
