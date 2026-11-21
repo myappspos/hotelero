@@ -280,6 +280,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
   background:#fff6e5;border:1px solid #f0c98a;color:#7a4a00;border-radius:12px;padding:11px 36px 11px 13px;font-size:13px;line-height:1.45;
   box-shadow:0 8px 24px rgba(13,59,102,.16);display:none;font-family:Arial,sans-serif}
 #lic-barra.on{display:block}
+#consulta-barra{position:fixed;left:0;right:0;top:0;z-index:99960;display:none;align-items:center;justify-content:center;
+  background:#7a3d00;color:#ffe9c7;font-family:Arial,sans-serif;font-size:12.5px;padding:9px 12px;text-align:center;
+  box-shadow:0 2px 10px rgba(0,0,0,.18)}
+body.consulta #consulta-barra{display:flex}
+body.consulta #view-app{padding-top:38px}
+body.consulta .topbar{top:38px}
+#consulta-aviso{display:none;position:fixed;left:50%;transform:translateX(-50%);top:auto;bottom:96px;z-index:99985;
+  background:#7a3d00;color:#fff;font-family:Arial,sans-serif;font-size:12.5px;line-height:1.4;padding:10px 14px;
+  border-radius:10px;box-shadow:0 8px 22px rgba(0,0,0,.25);max-width:90%}
+@media (max-width:640px){#consulta-aviso{top:113px;bottom:auto}}
 #lic-barra .x{position:absolute;right:6px;top:3px;border:0;background:none;font-size:19px;color:#a07a34;cursor:pointer;line-height:1}
 </style>
 <div id="lic-gate">
@@ -298,6 +308,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
   </div>
 </div>
 <div id="lic-barra"><button class="x" onclick="licOcultarAviso()">×</button><span id="lic-barra-tx"></span></div>
+<div id="consulta-barra"><span>🔒 <b>Solo consulta</b> · puedes mirar, pero no cobrar ni cambiar nada</span></div>
+<div id="consulta-aviso"></div>
 
 <!-- ===== LOGIN ===== -->
 <div id="view-login">
@@ -337,7 +349,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.73 · 21/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.74 · 21/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -394,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.73 · 21/11/2026';
+const APP_VERSION = 'v1.74 · 21/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -453,6 +465,12 @@ function colaPendientes(){ return _pendGet().length; }
 const DB = {
   get(k, def){ try{ const v = localStorage.getItem('hotel_'+k); return v?JSON.parse(v):def; }catch(e){ return def; } },
   set(k, val){
+    /* MODO SOLO CONSULTA: no se deja escribir nada del negocio.
+       Solo pasan las cosas internas (sesión, quién está en línea, chat). */
+    if(window.__consulta && ['session','presencia','forzarCierre','chat','chatLeidos','__fixCancel','__fixCiudadMayus'].indexOf(k)<0){
+      try{ consultaAviso(); }catch(e){}
+      return;
+    }
     localStorage.setItem('hotel_'+k, JSON.stringify(val));
     try{
       if(typeof CLOUD!=='undefined' && CLOUD.enabled && CLOUD.ready && SYNC_KEYS.includes(k)){
@@ -757,6 +775,17 @@ function rolOptions(sel){
   return opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>').join('');
 }
 function countMasters(){ return DB.get('users',[]).filter(u=>esMaster(u.rol)).length; }
+/* Cuántos usuarios ocupan lugar en el plan.
+   No cuentan: el Master (es el dueño) ni la cuenta de Vigilancia que la app
+   crea sola para el estacionamiento. */
+function usuariosDelPlan(){
+  return (DB.get('users',[])||[]).filter(function(u){
+    if(!u) return false;
+    if(esMaster(u.rol)) return false;
+    if(u.user==='vigilancia' && u.rol==='vigilancia') return false;
+    return true;
+  }).length;
+}
 /* ---- Permisos configurables por rol (los decide el Master) ---- */
 const PERMISOS_CATALOGO=[
   ['verTablero','Ver el Tablero del día','Muestra la pestaña “Tablero del día” con el resumen de hoy: llegadas, salidas, pagos pendientes y limpieza, de un vistazo.'],
@@ -7669,6 +7698,16 @@ function tabBtn(id,label){ return '<div class="tab '+(adminTab===id?'active':'')
 function renderUsuarios(){
   const me = session();
   let html='<div style="background:#eef6ff;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#44526a">Tú eres el <b>Master</b>: desde aquí creas, editas y eliminas usuarios y les asignas su rol.<br><span style="font-size:12.5px;color:#55637a">💡 El rol <b>Administración</b> es de <b>solo lectura</b>: entra y revisa la <b>bandeja de cortes y reportes</b> que envía Recepción/Supervisión, y puede descargarlos para auditar. No puede cobrar ni mover habitaciones.</span></div>';
+  /* Tope de usuarios del plan (el Master es el dueño y no se cuenta) */
+  var _tope=parseInt((LIC&&LIC.usuarios_max),10);
+  var _usados=usuariosDelPlan();
+  var _lleno=(isFinite(_tope)&&_tope>0&&_usados>=_tope);
+  if(isFinite(_tope)&&_tope>0){
+    html+='<div style="background:'+(_lleno?'#fff1f1':'#eef6ff')+';border:1px solid '+(_lleno?'#f3c2c2':'#dbe8f8')+';border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:'+(_lleno?'#8a2020':'#44526a')+'">'
+      +'👥 <b>Usuarios del plan: '+_usados+' de '+_tope+'</b> <span style="font-size:12px">(el Master no se cuenta)</span>'
+      +(_lleno?' · <b>llegaste al tope</b>: para crear otro, sube el plan o elimina uno que no uses.':'')
+      +'</div>';
+  }
   html+='<table class="users-table"><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Contraseña</th><th style="text-align:right">Acciones</th></tr>';
   DB.get('users',[]).forEach(u=>{
     const yo = me && u.user===me.user;
@@ -7733,6 +7772,14 @@ function addUser(){
   if(!u||!n||!p){ alert('Completa todos los campos'); return; }
   const users=DB.get('users',[]);
   if(users.find(x=>x.user===u)){ alert('Ese usuario ya existe'); return; }
+  /* Tope del plan. Un Master nuevo sí cuenta (para que no se llene el hotel
+     creando puros Master y saltándose el tope). */
+  var _tope=parseInt((LIC&&LIC.usuarios_max),10);
+  var _usados=esMaster(rol) ? users.length : usuariosDelPlan();
+  if(isFinite(_tope)&&_tope>0&&_usados>=_tope){
+    alert('Tu plan permite '+_tope+' usuarios.\n\nAhora tienes '+_usados+'.\n\nPara agregar otro, sube el plan o elimina un usuario que no uses.');
+    return;
+  }
   users.push({user:u,nombre:n,pass:p,rol:rol}); DB.save('users', users); render();
   alert('Usuario "'+u+'" creado como '+(ROLES[rol]||rol)+'.');
 }
@@ -16914,6 +16961,7 @@ function licSumarDias(iso,dias){
    gracia ya pasaron, se bloquea aunque no se haya podido preguntar. */
 function licEstado(o){
   if(!o || o.ok===false) return 'sin';
+  if(o.estado==='solo_ver') return 'solo_ver';
   if(o.estado==='bloqueado') return 'bloqueado';
   if(o.estado==='prueba') return 'prueba';
   var v=String(o.vence||'').slice(0,10);
@@ -16925,7 +16973,7 @@ function licEstado(o){
   return 'bloqueado';
 }
 function licEstadoTxt(k){
-  return ({activo:'Activa',gracia:'En gracia',bloqueado:'Bloqueada',prueba:'En prueba',sin:'Sin comprobar'})[k]||k;
+  return ({activo:'Activa',gracia:'En gracia',bloqueado:'Bloqueada',prueba:'En prueba',solo_ver:'Solo consulta',sin:'Sin comprobar'})[k]||k;
 }
 function licModulos(){
   var m=(LIC && LIC.modulos)||[];
@@ -17047,8 +17095,9 @@ function licEnviar(){
       return;
     }
     licAplicar(d,cod);
-    if(licEstado(d)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
+    if(licEstado(d)==='bloqueado'){ consultaOff(); licModo('bloqueado', licMensajeBloqueo()); return; }
     licEntrar();
+    if(licEstado(d)==='solo_ver') consultaOn(); else consultaOff();
   }).catch(function(){
     licModo('sinred','Revisa la conexión a internet. Si el equipo ya entró antes, se abre con lo último guardado.');
     var e2=document.getElementById('lic-err');
@@ -17072,9 +17121,31 @@ function licReintentar(){
       return;
     }
     licAplicar(d,LIC.codigo);
-    if(licEstado(d)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
+    if(licEstado(d)==='bloqueado'){ consultaOff(); licModo('bloqueado', licMensajeBloqueo()); return; }
+    if(licEstado(d)==='solo_ver') consultaOn(); else consultaOff();
     licEntrar();
   }).catch(function(){ licModo('sinred'); });
+}
+/* ================= MODO SOLO CONSULTA =================
+   La app entra, pero no deja escribir: nada de cobrar, check-in, caja,
+   habitaciones, usuarios ni configuración. Solo mirar (y el chat). */
+function consultaOn(){
+  window.__consulta=true;
+  try{ document.body.classList.add('consulta'); }catch(e){}
+  var b=document.getElementById('consulta-barra'); if(b) b.style.display='flex';
+}
+function consultaOff(){
+  window.__consulta=false;
+  try{ document.body.classList.remove('consulta'); }catch(e){}
+  var b=document.getElementById('consulta-barra'); if(b) b.style.display='none';
+}
+var _consAvisoT=null;
+function consultaAviso(){
+  var a=document.getElementById('consulta-aviso'); if(!a) return;
+  a.textContent='Estás en solo consulta: no se puede cobrar ni cambiar nada.';
+  a.style.display='block';
+  clearTimeout(_consAvisoT);
+  _consAvisoT=setTimeout(function(){ a.style.display='none'; }, 3200);
 }
 function licArrancar(){
   return new Promise(function(resolve){
@@ -17086,7 +17157,7 @@ function licArrancar(){
     /* 1) Con lo ultimo guardado, abre YA. Nadie espera a la nube. */
     var antes=licEstado(LIC);
     if(antes==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); }
-    else { licEntrar(); }
+    else { licEntrar(); if(antes==='solo_ver') consultaOn(); }
 
     /* 2) Revisa por detras, sin frenar el arranque */
     licPedir(LIC.codigo).then(function(d){
@@ -17094,11 +17165,16 @@ function licArrancar(){
       licAplicar(d, LIC.codigo);
       var ahora=licEstado(d);
       if(ahora==='bloqueado'){
+        if(window.__consulta) consultaOff();
         if(antes!=='bloqueado') licModo('bloqueado', licMensajeBloqueo());
-      } else if(antes==='bloqueado'){
-        licEntrar();                        /* lo desbloqueaste: entra solo */
+      } else if(ahora==='solo_ver'){
+        if(!window.__consulta) consultaOn();
+        if(antes==='bloqueado') licEntrar();   /* lo pasaste a solo consulta */
+        else licPintarAviso();
       } else {
-        licPintarAviso();                   /* aviso nuevo o cambiado */
+        if(window.__consulta) consultaOff();
+        if(antes==='bloqueado') licEntrar();    /* lo desbloqueaste: entra solo */
+        else licPintarAviso();                  /* aviso nuevo o cambiado */
       }
     }).catch(function(){ /* sin internet: se queda con lo que ya sabia */ });
   });
