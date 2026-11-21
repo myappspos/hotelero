@@ -337,7 +337,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.72 · 21/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.73 · 21/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -394,7 +394,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.72 · 21/11/2026';
+const APP_VERSION = 'v1.73 · 21/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -17013,6 +17013,15 @@ function licModo(m,txt){
 }
 function licEntrar(){
   var g=document.getElementById('lic-gate'); if(g) g.classList.remove('on');
+  /* Si la app ya estaba abierta y la puerta la habia tapado, se vuelve a mostrar */
+  try{
+    var ct=document.getElementById('content');
+    if(ct && String(ct.innerHTML||'').trim() && typeof render==='function'){
+      var va=document.getElementById('view-app');
+      if(va) va.style.display='block';
+      render();
+    }
+  }catch(e){}
   licPintarAviso();
   if(LIC_PEND){ var r=LIC_PEND; LIC_PEND=null; try{ r(); }catch(e){} }
 }
@@ -17072,23 +17081,26 @@ function licArrancar(){
     LIC_PEND=resolve;
     var g=document.getElementById('lic-gate'); if(!g){ resolve(); return; }
     g.classList.add('on');
-    if(!LIC || !LIC.codigo){ licModo('pedir'); return; }
-    licModo('comprobando','Código <b>'+esc(LIC.codigo)+'</b>. Espera un momento.');
+    if(!LIC || !LIC.codigo){ licModo('pedir'); return; }   /* no hay codigo: hay que escribirlo */
+
+    /* 1) Con lo ultimo guardado, abre YA. Nadie espera a la nube. */
+    var antes=licEstado(LIC);
+    if(antes==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); }
+    else { licEntrar(); }
+
+    /* 2) Revisa por detras, sin frenar el arranque */
     licPedir(LIC.codigo).then(function(d){
-      if(!d || d.ok===false){
-        if(d && d.motivo==='no_existe'){ licModo('pedir','Ese código ya no existe. Escribe el nuevo.'); return; }
-        throw new Error('sin respuesta');
+      if(!d || d.ok===false) return;
+      licAplicar(d, LIC.codigo);
+      var ahora=licEstado(d);
+      if(ahora==='bloqueado'){
+        if(antes!=='bloqueado') licModo('bloqueado', licMensajeBloqueo());
+      } else if(antes==='bloqueado'){
+        licEntrar();                        /* lo desbloqueaste: entra solo */
+      } else {
+        licPintarAviso();                   /* aviso nuevo o cambiado */
       }
-      licAplicar(d,LIC.codigo);
-      if(licEstado(d)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
-      licEntrar();
-    }).catch(function(){
-      if(LIC && LIC.ok!==false){
-        if(licEstado(LIC)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
-        licEntrar(); return;
-      }
-      licModo('sinred','Revisa la conexión. Si ya había entrado antes en este equipo, se abre con lo último guardado.');
-    });
+    }).catch(function(){ /* sin internet: se queda con lo que ya sabia */ });
   });
 }
 /* ---- Aviso de cobro que manda el dueño del sistema ---- */
