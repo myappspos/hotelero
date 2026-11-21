@@ -337,7 +337,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.70 · 20/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.72 · 21/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -394,7 +394,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.71 · 21/11/2026';
+const APP_VERSION = 'v1.72 · 21/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -16932,10 +16932,18 @@ function licModulos(){
   return Array.isArray(m)?m:[];
 }
 function licModuloOk(rol){
-  var m=({recepcion:'recepcion', supervisor:'supervision', housekeeping:'ama', mantenimiento:'mantenimiento'})[rol];
-  if(!m) return true;                       /* administración, dueño y vigilancia siempre entran */
+  var m=({recepcion:'recepcion', supervisor:'supervisor', administracion:'administracion',
+          housekeeping:'ama', mantenimiento:'mantenimiento', vigilancia:'vigilancia'})[rol];
+  if(!m) return true;                        /* master, admin y dueño entran siempre */
   var mods=licModulos(); if(!mods.length) return true;   /* sin dato: no se bloquea nada */
-  if(rol==='supervisor') return mods.indexOf('supervision')>=0 || mods.indexOf('recepcion')>=0;
+  /* Licencias guardadas con la lista vieja (sin administración, vigilancia ni master):
+     solo se respetan las áreas de siempre, para no cerrarle la puerta a nadie. */
+  var nueva = mods.indexOf('master')>=0 || mods.indexOf('administracion')>=0 || mods.indexOf('vigilancia')>=0;
+  if(!nueva){
+    if(rol==='administracion' || rol==='vigilancia') return true;
+    if(rol==='supervisor') return mods.indexOf('supervision')>=0 || mods.indexOf('recepcion')>=0;
+    return mods.indexOf(m)>=0;
+  }
   return mods.indexOf(m)>=0;
 }
 function licPedir(codigo){
@@ -17113,7 +17121,8 @@ function licOcultarAviso(){
 }
 /* ---- Módulo no incluido en el plan ---- */
 function renderModuloNoIncluido(rol){
-  var m=({recepcion:'Recepción', supervisor:'Supervisión', housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento'})[rol]||'Este módulo';
+  var m=({recepcion:'Recepción', supervisor:'Supervisor', administracion:'Administración',
+          housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento', vigilancia:'Vigilancia'})[rol]||'Este módulo';
   document.getElementById('content').innerHTML =
     '<div style="max-width:520px;margin:40px auto;background:#fff;border:1px solid #e2e9f4;border-radius:14px;padding:24px;text-align:center">'
     + '<div style="font-size:38px">🔒</div>'
