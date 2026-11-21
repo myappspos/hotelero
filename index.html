@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.74 · 21/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.75 · 21/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.74 · 21/11/2026';
+const APP_VERSION = 'v1.75 · 21/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -415,6 +415,28 @@ const SB_KEY = 'sb_publishable_PJfzZshU0tA9FigMiysl1Q_1wMFjKHJ';
    Debes crear ESTE MISMO usuario en Supabase (Authentication). */
 const SB_APP_EMAIL = 'operador@hotellajareal.com';
 const SB_APP_PASS  = 'LajaReal2026-Caja';
+/* ====== SEPARACION POR NEGOCIO (varios hoteles en la misma base) ======
+   Cada negocio guarda sus datos con su codigo delante (por ejemplo
+   LAJAREAL|reservas) en el equipo Y en la nube. Asi pueden convivir muchos
+   negocios en el mismo programa y en la misma base sin ver nada uno del otro.
+   El codigo sale del ultimo codigo de negocio que se escribio en este equipo. */
+var TEN = (function(){
+  try{
+    var l = JSON.parse(localStorage.getItem('hotel_lic')||'null');
+    var c = (l && (l.codigo || (l.lic && l.lic.codigo))) || '';
+    return String(c).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  }catch(e){ return ''; }
+})();
+function tenKey(k){ return 'hotel_'+(TEN?TEN+'|':'')+k; }
+function lsGet(k){ try{ return localStorage.getItem(tenKey(k)); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(tenKey(k), v); }catch(e){} }
+function lsDel(k){ try{ localStorage.removeItem(tenKey(k)); }catch(e){} }
+function claveNube(k){ return (TEN?TEN+'|':'')+k; }
+function claveLocal(cl){ cl=String(cl||''); return (TEN && cl.indexOf(TEN+'|')===0) ? cl.slice(TEN.length+1) : cl; }
+function esMio(cl){ return !TEN || String(cl||'').indexOf(TEN+'|')===0; }
+/* Etiqueta de la nube para las consultas (con * = cualquier cosa despues) */
+function filtroTen(){ return TEN ? ('clave=like.'+encodeURIComponent(TEN+'|*')) : 'clave=not.is.null'; }
+
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
 const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion','comidasPrecios','objetosOlvidados','policialDestino','parking'];
@@ -429,22 +451,22 @@ const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','karde
 const SYNC_CASI_FIJAS = ['tiposHab','metodosPago','preciosTipo','permisos','turnosRecepcion','comidasPrecios','restaurantes','hotel','impresion','promos','objetosOlvidados','forzarCierre','policialDestino'];
 const SYNC_HUELLA = 'hotel__huellaSync';
 function _huellaDe(k){
-  try{ const raw=localStorage.getItem('hotel_'+k); if(raw===null) return null; return raw.length+'_'+raw.length; }catch(e){ return null; }
+  try{ const raw=lsGet(k); if(raw===null) return null; return raw.length+'_'+raw.length; }catch(e){ return null; }
 }
-function _huellasGet(){ try{ return JSON.parse(localStorage.getItem(SYNC_HUELLA)||'{}'); }catch(e){ return {}; } }
-function _huellasSet(o){ try{ localStorage.setItem(SYNC_HUELLA, JSON.stringify(o)); }catch(e){} }
+function _huellasGet(){ try{ return JSON.parse(lsGet('__huellaSync')||'{}'); }catch(e){ return {}; } }
+function _huellasSet(o){ try{ lsSet('__huellaSync', JSON.stringify(o)); }catch(e){} }
 function _huellaIgual(k){
   try{
-    const raw=localStorage.getItem('hotel_'+k); if(raw===null) return false;
+    const raw=lsGet(k); if(raw===null) return false;
     const h=_huellasGet(); return h[k]===raw.length+'_'+raw.length;
   }catch(e){ return false; }
 }
 const SYNC_VISTOS = 'hotel__vistosSync';
-function _vistosGet(){ try{ return JSON.parse(localStorage.getItem(SYNC_VISTOS)||'{}'); }catch(e){ return {}; } }
-function _vistosSet(o){ try{ localStorage.setItem(SYNC_VISTOS, JSON.stringify(o)); }catch(e){} }
+function _vistosGet(){ try{ return JSON.parse(lsGet('__vistosSync')||'{}'); }catch(e){ return {}; } }
+function _vistosSet(o){ try{ lsSet('__vistosSync', JSON.stringify(o)); }catch(e){} }
 function _huellaGuardar(k){
   try{
-    const raw=localStorage.getItem('hotel_'+k); if(raw===null) return;
+    const raw=lsGet(k); if(raw===null) return;
     const h=_huellasGet(); h[k]=raw.length+'_'+raw.length; _huellasSet(h);
   }catch(e){}
 }
@@ -455,15 +477,15 @@ function _huellaGuardar(k){
    Se guarda solo en este equipo y NUNCA se sube (no esta en SYNC_KEYS). Si se
    cae el internet, lo que guardes queda aqui en espera y se sube solo al
    reconectar, sin que la nube lo pise. */
-function _pendGet(){ try{ return JSON.parse(localStorage.getItem('hotel__colaSync')||'[]'); }catch(e){ return []; } }
-function _pendSet(a){ try{ localStorage.setItem('hotel__colaSync', JSON.stringify(a)); }catch(e){} }
+function _pendGet(){ try{ return JSON.parse(lsGet('__colaSync')||'[]'); }catch(e){ return []; } }
+function _pendSet(a){ try{ lsSet('__colaSync', JSON.stringify(a)); }catch(e){} }
 function _pendAdd(k){ const a=_pendGet(); if(a.indexOf(k)<0){ a.push(k); _pendSet(a); } }
 function _pendDel(k){ _pendSet(_pendGet().filter(x=>x!==k)); }
 function _pendHas(k){ return _pendGet().indexOf(k)>=0; }
 function colaPendientes(){ return _pendGet().length; }
 
 const DB = {
-  get(k, def){ try{ const v = localStorage.getItem('hotel_'+k); return v?JSON.parse(v):def; }catch(e){ return def; } },
+  get(k, def){ try{ const v = lsGet(k); return v?JSON.parse(v):def; }catch(e){ return def; } },
   set(k, val){
     /* MODO SOLO CONSULTA: no se deja escribir nada del negocio.
        Solo pasan las cosas internas (sesión, quién está en línea, chat). */
@@ -471,7 +493,7 @@ const DB = {
       try{ consultaAviso(); }catch(e){}
       return;
     }
-    localStorage.setItem('hotel_'+k, JSON.stringify(val));
+    lsSet(k, JSON.stringify(val));
     try{
       if(typeof CLOUD!=='undefined' && CLOUD.enabled && CLOUD.ready && SYNC_KEYS.includes(k)){
         /* Si la caja es de las que casi nunca cambian y quedo IDENTICA a la
@@ -487,7 +509,7 @@ const DB = {
      si no cambio nada, no sube nada a la nube. Si cambio, la manda completa
      (asi ningun equipo se queda con una lista vieja). */
   save(k, arr){
-    const antes = localStorage.getItem('hotel_'+k);
+    const antes = lsGet(k);
     const desp = JSON.stringify(arr);
     if(antes === desp){ return arr; }        /* nada cambio: ni una peticion */
     this.set(k, arr);
@@ -511,7 +533,7 @@ const DB = {
 const CLOUD = {
   ready:false,
   enabled: !!(SB_URL && SB_KEY),
-  _cloudKeys:[], _lastSync:(function(){try{return localStorage.getItem('hotel__lastSync')||'';}catch(e){return '';}})(), _flushing:false,
+  _cloudKeys:[], _lastSync:(function(){try{return lsGet('__lastSync')||'';}catch(e){return '';}})(), _flushing:false,
   _token:null, _refresh:null, _exp:0,
   _authEnabled: !!(SB_APP_EMAIL && SB_APP_PASS),
   _h(extra){ const auth = this._token ? ('Bearer '+this._token) : ('Bearer '+SB_KEY); return Object.assign({'apikey':SB_KEY,'Authorization':auth,'Content-Type':'application/json'}, extra||{}); },
@@ -561,7 +583,7 @@ const CLOUD = {
        de cada caja). Antes bajabamos el contenido de TODO cada 6 segundos, y
        eso es lo que inflaba el consumo de datos. Ahora solo bajamos lo que de
        verdad se movio en otro equipo. */
-    const q = 'select=clave,actualizado&order=clave.asc&limit=200';
+    const q = 'select=clave,actualizado&order=clave.asc&limit=500&'+filtroTen();
     let url = SB_URL+'/rest/v1/estado_app?'+q;
     if(this._lastSync){
       let desde = this._lastSync;
@@ -583,8 +605,9 @@ const CLOUD = {
     const _vistosTipos = Object.assign({}, _vistos);
     const traer = [];
     lista.forEach(row=>{
-      if(!SYNC_KEYS.includes(row.clave)) return;
-      if(_pendHas(row.clave)) return;                      /* lo local manda */
+      if(!esMio(row.clave)) return;                 /* de otro negocio: ni se mira */
+      if(!SYNC_KEYS.includes(claveLocal(row.clave))) return;
+      if(_pendHas(claveLocal(row.clave))) return;                      /* lo local manda */
       if(_vistos[row.clave] && row.actualizado && _vistos[row.clave] === row.actualizado) return;
       if(this._igualALoQueTengo(row)){ _vistosTipos[row.clave] = row.actualizado || ''; return; }  /* ya lo tenemos */
       traer.push(row.clave);
@@ -604,7 +627,8 @@ const CLOUD = {
        asi lo que hiciste sin internet manda hasta que se confirme en la nube. */
     let _bajadas = 0;
     rows.forEach(row=>{
-      if(!SYNC_KEYS.includes(row.clave) || _pendHas(row.clave)) return;
+      if(!esMio(row.clave)) return;                 /* de otro negocio: ni se toca */
+      if(!SYNC_KEYS.includes(claveLocal(row.clave)) || _pendHas(claveLocal(row.clave))) return;
       const _antes = localStorage.getItem('hotel_'+row.clave);
       const _nuevo = JSON.stringify(row.valor);
       if(_antes === _nuevo) return;                  /* ya lo teniamos: no tocar */
@@ -631,17 +655,17 @@ const CLOUD = {
        estamos al dia). Asi nunca se repite la misma peticion grande cada 6s. */
     if(_bajadas===0 && traer.length===0){
       let _ahora=''; try{ _ahora=new Date().toISOString(); }catch(e){}
-      if(_ahora && (!_ls || _ahora>_ls)){ this._lastSync=_ahora; try{ localStorage.setItem('hotel__lastSync', _ahora); }catch(e){} }
+      if(_ahora && (!_ls || _ahora>_ls)){ this._lastSync=_ahora; try{ lsSet('__lastSync', _ahora); }catch(e){} }
       return;
     }
-    if(_ls && _ls !== this._lastSync){ this._lastSync = _ls; try{ localStorage.setItem('hotel__lastSync', _ls); }catch(e){} }
+    if(_ls && _ls !== this._lastSync){ this._lastSync = _ls; try{ lsSet('__lastSync', _ls); }catch(e){} }
   },
   async push(k, val, _reintento){
     if(!this.enabled || !this.ready) return false;
     if(!SYNC_KEYS.includes(k)) return false;
     try{
       await this.ensureAuth();
-      const body = JSON.stringify({clave:k, valor:val, actualizado:new Date().toISOString()});
+      const body = JSON.stringify({clave:claveNube(k), valor:val, actualizado:new Date().toISOString()});
       let r = await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave', {method:'POST', headers:this._h({'Prefer':'resolution=merge-duplicates'}), body});
       /* Si la sesion vencio (401), renovamos UNA sola vez y reintentamos.
          Antes, cada subida pedia usuario y clave de nuevo, y eso era la
@@ -679,7 +703,7 @@ const CLOUD = {
         for(const k of pend){
           if(!SYNC_KEYS.includes(k)){ _pendDel(k); continue; }
           /* Tomamos una FOTO exacta (texto) de lo que vamos a subir. */
-          const raw = localStorage.getItem('hotel_'+k);
+          const raw = lsGet(k);
           let v; try{ v = raw!=null?JSON.parse(raw):null; }catch(e){ v = null; }
           const ok = await this.push(k, (v===undefined?null:v));
           if(ok){
@@ -688,7 +712,7 @@ const CLOUD = {
                cuarto por cuarto), la dejamos pendiente y la volvemos a subir,
                para que la nube termine con la version final y pullAll no la
                pise con una version vieja. */
-            if(localStorage.getItem('hotel_'+k) === raw){ _pendDel(k); }
+            if(lsGet(k) === raw){ _pendDel(k); }
             else { this._flushAgain = true; }
           } else {
             /* Sin conexion: paramos y reintentamos luego (queda en la cola). */
@@ -710,14 +734,14 @@ const CLOUD = {
     await this.ensureAuth();
     for(const k of SYNC_KEYS){
       const local = DB.get(k);
-      if(local!==undefined && local!==null && !this._cloudKeys.includes(k)){ await this.push(k, local); }
+      if(local!==undefined && local!==null && !this._cloudKeys.includes(claveNube(k))){ await this.push(k, local); }
     }
   },
   async clearAll(){
     if(!this.enabled) return;
     await this.ensureAuth();
-    let r = await fetch(SB_URL+'/rest/v1/estado_app?clave=not.is.null', {method:'DELETE', headers:this._h()});
-    if(r.status===401 && this._authEnabled){ await this.signIn(); r = await fetch(SB_URL+'/rest/v1/estado_app?clave=not.is.null', {method:'DELETE', headers:this._h()}); }
+    let r = await fetch(SB_URL+'/rest/v1/estado_app?'+filtroTen(), {method:'DELETE', headers:this._h()});
+    if(r.status===401 && this._authEnabled){ await this.signIn(); r = await fetch(SB_URL+'/rest/v1/estado_app?'+filtroTen(), {method:'DELETE', headers:this._h()}); }
     this._cloudKeys=[];
   }
 };
@@ -1917,7 +1941,7 @@ function cerrarNotif(){ const p=document.getElementById('notif-panel'); if(p) p.
 function cerrarNotifOut(ev){ const w=document.getElementById('notif-wrap'); if(w && !w.contains(ev.target)) cerrarNotif(); }
 let _roomsRaw=null, _roomsCache=null;
 function rooms(){
-  const raw=localStorage.getItem('hotel_rooms');
+  const raw=lsGet('rooms');
   if(raw===_roomsRaw && _roomsCache) return _roomsCache;
   try{ _roomsCache = raw?JSON.parse(raw):[]; }catch(e){ _roomsCache=[]; }
   _roomsRaw=raw;
@@ -7938,9 +7962,9 @@ function aplicarResetHab(){
     });
     saveRooms(limpias);
   } else {
-    try{ localStorage.removeItem('hotel_rooms'); }catch(e){}
+    try{ lsDel('rooms'); }catch(e){}
   }
-  try{ localStorage.removeItem('hotel_reportes'); }catch(e){}
+  try{ lsDel('reportes'); }catch(e){}
   try{ if(typeof selHabs!=='undefined' && selHabs.clear) selHabs.clear(); }catch(e){}
   seed();
   try{ if(typeof render==='function') render(); }catch(e){}
@@ -7962,14 +7986,14 @@ async function borrarTodoDesdeCero(){
   /* 1) Vaciar la nube por completo */
   try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.clearAll(); } }catch(e){}
   /* 2) Vaciar este equipo por completo */
-  try{ SYNC_KEYS.forEach(k=> localStorage.removeItem('hotel_'+k)); }catch(e){}
-  try{ ['hotel','impresion','promos','restaurantes'].forEach(k=> localStorage.removeItem('hotel_'+k)); }catch(e){}
+  try{ SYNC_KEYS.forEach(k=> lsDel(k)); }catch(e){}
+  try{ ['hotel','impresion','promos','restaurantes'].forEach(k=> lsDel(k)); }catch(e){}
   try{ localStorage.removeItem('hotel_session'); localStorage.removeItem('hotel_ultimoRespaldo'); }catch(e){}
   try{ sessionStorage.removeItem('hotel_avisoRespaldo'); }catch(e){}
   /* 3) Reconstruir un estado NUEVO y limpio en este equipo */
   seed(); /* habitaciones, usuario admin y cajas basicas */
   const _vacios = { clientes:[], turnos:[], kardex:[], reservas:[], promos:[], enviosAdmin:[], chat:[], chatLeidos:{}, presencia:{}, cxc:[], restaurantes:[], hotel:{}, impresion:{}, forzarCierre:{} };
-  try{ Object.keys(_vacios).forEach(k=> localStorage.setItem('hotel_'+k, JSON.stringify(_vacios[k]))); }catch(e){}
+  try{ Object.keys(_vacios).forEach(k=> lsSet(k, JSON.stringify(_vacios[k]))); }catch(e){}
   /* 4) Subir TODAS las cajas (ya vacias) a la nube, para que NINGUN otro equipo reviva datos viejos */
   try{
     if(typeof CLOUD!=='undefined' && CLOUD.enabled){
@@ -14884,7 +14908,7 @@ function startPolling(){
   setInterval(async ()=>{
     try{
       const antes = {};
-      SYNC_KEYS.forEach(k=> antes[k]=localStorage.getItem('hotel_'+k));
+      SYNC_KEYS.forEach(k=> antes[k]=lsGet(k));
       try{ await CLOUD.flushQueue(); }catch(e){}  /* sube lo pendiente ANTES de bajar */
       await CLOUD.pullAll();
       revisarCierreForzado();
@@ -14893,7 +14917,7 @@ function startPolling(){
         if(session() && _chatFirmaCambio()) revisarMensajesNuevos();
       }catch(e){}
       let cambio=false;
-      SYNC_KEYS.forEach(k=>{ if(antes[k]!==localStorage.getItem('hotel_'+k)) cambio=true; });
+      SYNC_KEYS.forEach(k=>{ if(antes[k]!==lsGet(k)) cambio=true; });
       if(cambio && !hayFormularioActivo()){
         const _sy = (window.scrollY||window.pageYOffset||0);
         aplicarTema(); pintarMarca();
@@ -14950,13 +14974,91 @@ if('serviceWorker' in navigator){
   if(esIOS() && !yaInstalada()) mostrarBotonInstalar(true);
 }
 
+/* ================= PASAR LOS DATOS VIEJOS AL NEGOCIO =================
+   Antes de la separacion, los datos se guardaban sin etiqueta (por ejemplo
+   'reservas'). Aqui se copian UNA sola vez a la etiqueta del negocio
+   ('CODIGO|reservas'), en este equipo y en la nube. No se borra nada hasta
+   comprobar que la copia quedo completa. */
+function migrarDatosViejos(){
+  if(!TEN) return;
+  try{
+    var duenio=localStorage.getItem('hotel__tenDatos');
+    if(duenio && duenio!==TEN) return;            /* esos datos son de otro negocio */
+    if(duenio===TEN && localStorage.getItem(tenKey('__migLocal'))) return;
+    var copiados=0;
+    for(var i=0;i<SYNC_KEYS.length;i++){
+      var k=SYNC_KEYS[i];
+      var viejo=localStorage.getItem('hotel_'+k);
+      if(viejo===null) continue;
+      var actual=localStorage.getItem(tenKey(k));
+      if(actual===null){ localStorage.setItem(tenKey(k), viejo); copiados++; continue; }
+      /* La lista de usuarios puede haberse creado sola antes de migrar
+         (por ejemplo, el usuario de vigilancia). No se pisa: se fusiona,
+         para que las cuentas reales del hotel nunca se pierdan. */
+      if(k==='users'){
+        try{
+          var viejos=JSON.parse(viejo)||[], ahora=JSON.parse(actual)||[];
+          if(viejos.length && ahora.length){
+            var nombres={}; ahora.forEach(function(u){ if(u&&u.user) nombres[String(u.user).toLowerCase()]=1; });
+            var agregados=0;
+            viejos.forEach(function(u){ if(u&&u.user && !nombres[String(u.user).toLowerCase()]){ ahora.push(u); agregados++; } });
+            if(agregados){ localStorage.setItem(tenKey(k), JSON.stringify(ahora)); copiados++; }
+          }
+        }catch(e){}
+      }
+    }
+    localStorage.setItem(tenKey('__migLocal'), String(copiados));
+    if(!duenio) localStorage.setItem('hotel__tenDatos', TEN);
+  }catch(e){}
+}
+async function migrarNubeVieja(){
+  if(!TEN) return;
+  try{ if(lsGet('__migNube')) return; }catch(e){}
+  /* Solo el equipo que YA tenia la app (con datos viejos sin etiqueta) puede
+     reclamar lo viejo de la nube. Un equipo nuevo de otro negocio nunca lo toca. */
+  try{
+    var tenia=false;
+    for(var i=0;i<SYNC_KEYS.length;i++){ if(localStorage.getItem('hotel_'+SYNC_KEYS[i])!==null){ tenia=true; break; } }
+    if(!tenia){ lsSet('__migNube','equipo_nuevo'); return; }
+  }catch(e){}
+  var lista=SYNC_KEYS.map(encodeURIComponent).join(',');
+  try{
+    await CLOUD.ensureAuth();
+    var r=await fetch(SB_URL+'/rest/v1/estado_app?select=clave,valor&clave=in.('+lista+')',{headers:CLOUD._h()});
+    if(!r.ok) return;
+    var olds=await r.json();
+    if(!Array.isArray(olds) || !olds.length){ lsSet('__migNube','vacio'); return; }
+    var faltan=0;
+    for(var i=0;i<olds.length;i++){
+      var row=olds[i];
+      if(!row || SYNC_KEYS.indexOf(String(row.clave))<0) continue;
+      var q=await fetch(SB_URL+'/rest/v1/estado_app?select=clave&clave=eq.'+encodeURIComponent(claveNube(row.clave)),{headers:CLOUD._h()});
+      var ya=[]; try{ ya=await q.json(); }catch(e){ ya=[]; }
+      if(Array.isArray(ya) && ya.length) continue;             /* ya estaba copiada */
+      var up=await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave',{method:'POST',
+        headers:CLOUD._h({'Prefer':'resolution=merge-duplicates,return=minimal'}),
+        body:JSON.stringify({clave:claveNube(row.clave),valor:row.valor,actualizado:new Date().toISOString()})});
+      if(!up.ok) faltan++;
+    }
+    if(faltan) return;                                         /* no se borra nada */
+    var quedan=await fetch(SB_URL+'/rest/v1/estado_app?select=clave&clave=in.('+lista+')',{headers:CLOUD._h()});
+    var arrQ=[]; try{ arrQ=await quedan.json(); }catch(e){ arrQ=[]; }
+    if(Array.isArray(arrQ) && arrQ.length===olds.length){
+      await fetch(SB_URL+'/rest/v1/estado_app?clave=in.('+lista+')',{method:'DELETE',headers:CLOUD._h({'Prefer':'return=minimal'})});
+      lsSet('__migNube','1');
+    }
+  }catch(e){}
+}
+
 async function bootstrap(){
   /* Si este equipo YA tiene los datos guardados (por ejemplo, al recargar la
      pagina), no hace falta bajar todo otra vez: se baja solo lo que cambio.
      Eso ahorra muchisimo dato, sobre todo al principio. */
   let yaTieneDatos = false;
-  try{ yaTieneDatos = !!(localStorage.getItem('hotel_rooms') && localStorage.getItem('hotel_hotel')); }catch(e){}
-  if(!yaTieneDatos){ try{ localStorage.removeItem('hotel__lastSync'); CLOUD._lastSync=''; }catch(e){} }
+  try{ yaTieneDatos = !!(lsGet('rooms') && lsGet('hotel')); }catch(e){}
+  if(!yaTieneDatos){ try{ lsDel('__lastSync'); CLOUD._lastSync=''; }catch(e){} }
+  try{ migrarDatosViejos(); }catch(e){}          /* datos viejos -> etiqueta del negocio */
+  try{ await migrarNubeVieja(); }catch(e){}      /* lo mismo, en la nube */
   try{ await CLOUD.pullAll(); }catch(e){ /* sin conexión al iniciar: usamos datos del equipo */ }
   seed();                 // completa cajas que falten (sin pisar lo que ya hay)
   CLOUD.ready = true;
@@ -17074,7 +17176,12 @@ function licEntrar(){
   if(LIC_PEND){ var r=LIC_PEND; LIC_PEND=null; try{ r(); }catch(e){} }
 }
 function licAplicar(d,codigo){
-  d.codigo=codigo; d.ts=Date.now(); LIC=d; licGuardarLic(d);
+  d.codigo=codigo; d.ts=Date.now();
+  var nuevo=String(codigo||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  var cambio=!!(TEN && nuevo && nuevo!==TEN);      /* escribieron OTRO negocio */
+  LIC=d; licGuardarLic(d);
+  if(!TEN && nuevo) TEN=nuevo;
+  if(cambio){ try{ setTimeout(function(){ location.reload(); },60); }catch(e){} }
 }
 function licEnviar(){
   var inp=document.getElementById('lic-cod');
@@ -17114,7 +17221,9 @@ function licCambiar(){
 function licReintentar(){
   if(!LIC || !LIC.codigo){ licModo('pedir'); return; }
   licModo('comprobando','Código <b>'+esc(LIC.codigo)+'</b>. Espera un momento.');
+  var _codR=String(LIC.codigo);
   licPedir(LIC.codigo).then(function(d){
+    if(!LIC || String(LIC.codigo)!==_codR) return;
     if(!d || d.ok===false){
       if(d && d.motivo==='no_existe'){ licModo('pedir','Ese código ya no existe. Escribe el nuevo.'); return; }
       licModo('sinred');
@@ -17160,8 +17269,12 @@ function licArrancar(){
     else { licEntrar(); if(antes==='solo_ver') consultaOn(); }
 
     /* 2) Revisa por detras, sin frenar el arranque */
+    var _cod0=String(LIC.codigo);
     licPedir(LIC.codigo).then(function(d){
       if(!d || d.ok===false) return;
+      /* Si mientras tanto escribieron OTRO codigo de negocio, esta respuesta
+         es vieja y se descarta (no puede devolvernos al negocio anterior). */
+      if(!LIC || String(LIC.codigo)!==_cod0) return;
       licAplicar(d, LIC.codigo);
       var ahora=licEstado(d);
       if(ahora==='bloqueado'){
@@ -17220,6 +17333,7 @@ function renderModuloNoIncluido(rol){
     + '</div>';
 }
 
+try{ migrarDatosViejos(); }catch(e){}   /* antes de crear nada nuevo con la etiqueta */
 try{ parkAsegurarUsuario(); }catch(e){}
 licArrancar().then(function(){ bootstrap(); });
 </script>
