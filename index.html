@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.75 · 21/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.76 · 22/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.75 · 21/11/2026';
+const APP_VERSION = 'v1.76 · 22/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -766,13 +766,28 @@ function seed(){
     }
     DB.save('rooms', rooms);
   }
-  if(!DB.get('users')){
-    DB.save('users', [
-      {user:'admin', pass:'admin', rol:'admin', nombre:'Administrador'},
-      {user:'recepcion', pass:'1234', rol:'recepcion', nombre:'Recepción'},
-      {user:'limpieza', pass:'1234', rol:'housekeeping', nombre:'Ama de Llaves'},
-      {user:'mantenimiento', pass:'1234', rol:'mantenimiento', nombre:'Mantenimiento'}
-    ]);
+  /* Usuarios de fabrica.
+     OJO: antes esto era un simple "si no hay lista de usuarios". El problema
+     es que el usuario de Vigilancia se crea solo al abrir la app (antes de
+     llegar aqui), asi que la lista ya existia con ese unico usuario y el
+     Master nunca se creaba: el hotel quedaba sin llave y nadie podia entrar.
+     Ahora: si la lista esta vacia se crean todos; si tiene usuarios pero
+     NINGUNO es Master, se crea el Master para no dejar el hotel encerrado. */
+  var _us = DB.get('users', null);
+  var _base = [
+    {user:'admin', pass:'admin', rol:'admin', nombre:'Administrador'},
+    {user:'recepcion', pass:'1234', rol:'recepcion', nombre:'Recepción'},
+    {user:'limpieza', pass:'1234', rol:'housekeeping', nombre:'Ama de Llaves'},
+    {user:'mantenimiento', pass:'1234', rol:'mantenimiento', nombre:'Mantenimiento'}
+  ];
+  if(!Array.isArray(_us) || !_us.length){
+    DB.save('users', _base);
+  } else if(!_us.some(function(u){ return u && (u.rol==='master'||u.rol==='admin'); })){
+    var _nuevo = _us.slice();
+    _base.forEach(function(b){
+      if(!_nuevo.some(function(u){ return u && String(u.user||'').toLowerCase()===b.user; })) _nuevo.push(b);
+    });
+    DB.save('users', _nuevo);
   }
   if(!DB.get('reportes')) DB.save('reportes', []);
   if(DB.get('tasa')===undefined) DB.save('tasa', 888.12);
