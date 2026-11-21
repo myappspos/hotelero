@@ -259,6 +259,46 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 </head>
 <body>
 
+<!-- ===== CÓDIGO DEL NEGOCIO (licencia) ===== -->
+<style>
+#lic-gate{position:fixed;inset:0;z-index:99990;display:none;align-items:center;justify-content:center;padding:16px;
+  background:radial-gradient(700px 420px at 12% -10%,#dbe8ff,transparent 62%),#eef2f9;font-family:Arial,sans-serif}
+#lic-gate.on{display:flex}
+.lic-card{width:100%;max-width:432px;background:#fff;border-radius:16px;padding:26px 22px 22px;box-shadow:0 14px 44px rgba(13,59,102,.20);text-align:center}
+.lic-ico{font-size:40px;line-height:1}
+.lic-card h2{font-size:19.5px;color:#0d3b66;margin:8px 0 6px;line-height:1.3}
+.lic-tx{font-size:13.5px;color:#55637a;line-height:1.55}
+.lic-lbl{display:block;text-align:left;font-size:11.5px;color:#55637a;font-weight:700;margin:16px 0 5px;text-transform:uppercase;letter-spacing:.5px}
+#lic-cod{width:100%;padding:13px 12px;font-size:17px;letter-spacing:1.6px;text-transform:uppercase;border:1.5px solid #c9d6e8;border-radius:10px;outline:none;color:#0d3b66;font-weight:800;text-align:center;font-family:Arial,sans-serif}
+#lic-cod:focus{border-color:#2e7cf6;box-shadow:0 0 0 3px rgba(46,124,246,.15)}
+.lic-btn{width:100%;margin-top:12px;padding:13px;border:0;border-radius:10px;background:#1b6ca8;color:#fff;font-size:15px;font-weight:700;cursor:pointer}
+.lic-btn:disabled{opacity:.6;cursor:default}
+.lic-err{min-height:16px;font-size:13px;color:#c0392b;margin-top:9px;line-height:1.45}
+.lic-pie{font-size:12px;color:#8893a5;margin-top:14px;line-height:1.5}
+.lic-lnk{background:none;border:0;color:#1b6ca8;font-size:12.5px;text-decoration:underline;cursor:pointer;padding:4px}
+#lic-barra{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:99980;max-width:540px;width:calc(100% - 24px);
+  background:#fff6e5;border:1px solid #f0c98a;color:#7a4a00;border-radius:12px;padding:11px 36px 11px 13px;font-size:13px;line-height:1.45;
+  box-shadow:0 8px 24px rgba(13,59,102,.16);display:none;font-family:Arial,sans-serif}
+#lic-barra.on{display:block}
+#lic-barra .x{position:absolute;right:6px;top:3px;border:0;background:none;font-size:19px;color:#a07a34;cursor:pointer;line-height:1}
+</style>
+<div id="lic-gate">
+  <div class="lic-card">
+    <div class="lic-ico" id="lic-ico">🔒</div>
+    <h2 id="lic-tit">Activar el sistema</h2>
+    <div class="lic-tx" id="lic-tx">Escribe el <b>código del negocio</b> que te entregaron al contratar el sistema. Se escribe una sola vez en cada equipo.</div>
+    <div id="lic-caja">
+      <label class="lic-lbl" for="lic-cod">Código del negocio</label>
+      <input id="lic-cod" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="EJ: HOTELLAJARAREAL" onkeydown="if(event.key==='Enter'){event.preventDefault();licEnviar();}">
+      <button class="lic-btn" id="lic-btn" onclick="licEnviar()">Comprobar y entrar</button>
+    </div>
+    <div class="lic-err" id="lic-err"></div>
+    <div class="lic-pie" id="lic-pie">Si no tienes el código, pídelo a la persona que te instaló el sistema.</div>
+    <div id="lic-extra" style="display:none;margin-top:8px"><button class="lic-lnk" onclick="licReintentar()">Volver a comprobar</button><button class="lic-lnk" onclick="licCambiar()">Cambiar el código</button></div>
+  </div>
+</div>
+<div id="lic-barra"><button class="x" onclick="licOcultarAviso()">×</button><span id="lic-barra-tx"></span></div>
+
 <!-- ===== LOGIN ===== -->
 <div id="view-login">
   <div class="login-card">
@@ -314,6 +354,26 @@ function verVersionModal(){
   h+='<div>Este equipo: <b>'+esc(APP_VERSION)+'</b></div>';
   h+='<div>Archivo cargado en este equipo: <b>'+esc(_f())+'</b></div>';
   h+='<div style="font-size:12.5px;color:#8893a5;margin-top:6px">Si un compañero ve un número distinto, o le sale “desactualizado”, tiene que recargar con <b>Ctrl+F5</b> (o abrir en incógnito).</div>';
+  try{
+    var _est=licEstado(LIC);
+    var _mods=licModulos();
+    var _nom={recepcion:'Recepción',supervision:'Supervisión',ama:'Ama de Llaves',mantenimiento:'Mantenimiento',comidas:'Comidas',reportes:'Reportes'};
+    h+='<div style="margin-top:14px;border-top:1px solid #e3eaf4;padding-top:12px">';
+    h+='<div style="font-weight:800;color:#0d3b66;margin-bottom:6px">🔑 Licencia del sistema</div>';
+    if(!LIC || !LIC.codigo){
+      h+='<div style="font-size:13px;color:#8893a5">Este equipo no tiene código.</div>';
+    } else {
+      h+='<div>Código: <b>'+esc(String(LIC.codigo))+'</b></div>';
+      if(LIC.negocio) h+='<div>Negocio: <b>'+esc(String(LIC.negocio))+'</b></div>';
+      h+='<div>Estado: <b>'+esc(licEstadoTxt(_est))+'</b>'+(LIC.vence?(' · vence '+esc(licFechaLinda(LIC.vence))):'')+'</div>';
+      if(_est==='gracia' && LIC.dias_restantes!=null) h+='<div style="color:#b36b00;font-size:12.5px">Le quedan <b>'+esc(String(LIC.dias_restantes))+'</b> día(s) de gracia antes del bloqueo.</div>';
+      h+='<div>Módulos: <b>'+esc(_mods.length? _mods.map(function(k){return _nom[k]||k;}).join(', ') : 'todos')+'</b></div>';
+      if(LIC.usuarios_max) h+='<div style="font-size:12.5px;color:#55637a">Usuarios permitidos: <b>'+esc(String(LIC.usuarios_max))+'</b></div>';
+      if(LIC.ts){ try{ h+='<div style="font-size:12px;color:#8893a5;margin-top:4px">Última comprobación: '+esc(new Date(LIC.ts).toLocaleString('es-VE'))+'</div>'; }catch(e){} }
+    }
+    h+='</div>';
+  }catch(e){}
+
   h+='</div><div id="ver-net" style="margin-top:12px;font-size:13px;color:#8893a5">Buscando la versión publicada…</div>';
   h+='<div style="margin-top:16px;text-align:right"><button class="btn-primary" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(h);
@@ -328,12 +388,13 @@ function verVersionModal(){
     }).catch(function(){ const box=document.getElementById('ver-net'); if(box) box.innerHTML='No se pudo revisar internet (sin señal). La versión de este equipo es la de arriba.'; });
   }catch(e){}
 }
-function pintarLoginVersion(){ try{ const el=document.getElementById('login-ver'); if(el) el.textContent='Versión '+APP_VERSION; }catch(e){} }
+function pintarLoginVersion(){ try{ const el=document.getElementById('login-ver'); if(el) el.textContent='Versión '+APP_VERSION; }catch(e){}
+  try{ const vt=document.getElementById('ver-txt'); if(vt) vt.textContent=APP_VERSION; }catch(e){} }
 try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded', pintarLoginVersion); }catch(e){}
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.70 · 20/11/2026';
+const APP_VERSION = 'v1.71 · 21/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -967,6 +1028,7 @@ function openApp(){
 function render(){
   const rol = session().rol;
   if(vistaChat){ renderChatFull(); renderNotif(); actualizarBadgeChat(); return; }
+  try{ if(!licModuloOk(rol)){ renderModuloNoIncluido(rol); renderNotif(); actualizarBadgeChat(); return; } }catch(e){}
   try{ limpiarCanceladasViejas(); }catch(e){}
   try{ limpiarCiudadesMinuscula(); }catch(e){}
   try{ vigilarMayusculas(); }catch(e){}
@@ -16823,8 +16885,246 @@ function parkAsegurarUsuario(){
   }catch(e){}
 }
 
+/* =====================================================================
+   CÓDIGO DEL NEGOCIO Y ESTADO DE LA LICENCIA
+   El negocio escribe su código una vez en cada equipo. La app le pregunta
+   a la nube si puede trabajar. Si no hay internet, usa lo último que supo.
+   ===================================================================== */
+var LIC_KEY='hotel_lic';
+var LIC=null, LIC_PEND=null;
+try{ LIC=JSON.parse(localStorage.getItem(LIC_KEY)||'null'); }catch(e){ LIC=null; }
+if(!LIC || typeof LIC!=='object') LIC=null;
+
+function licGuardarLic(o){ try{ localStorage.setItem(LIC_KEY, JSON.stringify(o)); }catch(e){} }
+function licHoy(){
+  var d=new Date();
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+function licFechaLinda(iso){
+  var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[3]+'/'+m[2]+'/'+m[1]) : '';
+}
+function licSumarDias(iso,dias){
+  var m=String(iso||'').match(/^(\d{4})-(\d{2})-(\d{2})/); if(!m) return iso;
+  var d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
+  d.setDate(d.getDate()+dias);
+  return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+}
+/* Estado de hoy, calculado también sin internet: si el vencimiento y la
+   gracia ya pasaron, se bloquea aunque no se haya podido preguntar. */
+function licEstado(o){
+  if(!o || o.ok===false) return 'sin';
+  if(o.estado==='bloqueado') return 'bloqueado';
+  if(o.estado==='prueba') return 'prueba';
+  var v=String(o.vence||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return o.estado||'activo';
+  var g=(parseInt(o.dias_gracia,10)>=0?parseInt(o.dias_gracia,10):3);
+  var lim=licSumarDias(v,g), hoy=licHoy();
+  if(hoy<v) return 'activo';
+  if(hoy<=lim) return 'gracia';
+  return 'bloqueado';
+}
+function licEstadoTxt(k){
+  return ({activo:'Activa',gracia:'En gracia',bloqueado:'Bloqueada',prueba:'En prueba',sin:'Sin comprobar'})[k]||k;
+}
+function licModulos(){
+  var m=(LIC && LIC.modulos)||[];
+  return Array.isArray(m)?m:[];
+}
+function licModuloOk(rol){
+  var m=({recepcion:'recepcion', supervisor:'supervision', housekeeping:'ama', mantenimiento:'mantenimiento'})[rol];
+  if(!m) return true;                       /* administración, dueño y vigilancia siempre entran */
+  var mods=licModulos(); if(!mods.length) return true;   /* sin dato: no se bloquea nada */
+  if(rol==='supervisor') return mods.indexOf('supervision')>=0 || mods.indexOf('recepcion')>=0;
+  return mods.indexOf(m)>=0;
+}
+function licPedir(codigo){
+  var ctl=null, to=null;
+  try{ ctl=new AbortController(); }catch(e){}
+  to=setTimeout(function(){ try{ if(ctl) ctl.abort(); }catch(e){} }, 9000);
+  return fetch(SB_URL+'/rest/v1/rpc/pc_licencia',{
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({p_codigo:String(codigo||'')}),
+      signal: ctl?ctl.signal:undefined
+    })
+   .then(function(r){
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      return r.json();
+    })
+   .then(function(d){
+      if(Array.isArray(d)) d=d[0];
+      if(d && d.pc_licencia) d=d.pc_licencia;
+      clearTimeout(to);
+      return d||null;
+    })
+   .catch(function(e){ clearTimeout(to); throw e; });
+}
+function licMensajeBloqueo(){
+  var n=(LIC && LIC.negocio) ? String(LIC.negocio) : 'este negocio';
+  return 'El sistema de <b>'+esc(n)+'</b> está bloqueado. '
+       + (LIC && LIC.vence ? ('La mensualidad venció el <b>'+licFechaLinda(LIC.vence)+'</b> y se acabaron los días de gracia. ') : '')
+       + 'Para reactivarlo, comunícate con la persona que te instaló el sistema.';
+}
+function licModo(m,txt){
+  var g=document.getElementById('lic-gate'); if(!g) return;
+  g.classList.add('on');
+  try{
+    var _vl=document.getElementById('view-login'), _va=document.getElementById('view-app');
+    if(_vl) _vl.style.display='none';
+    if(_va) _va.style.display='none';
+  }catch(e){}
+  var ico=document.getElementById('lic-ico'), tit=document.getElementById('lic-tit'),
+      tx=document.getElementById('lic-tx'), caja=document.getElementById('lic-caja'),
+      err=document.getElementById('lic-err'), extra=document.getElementById('lic-extra'),
+      btn=document.getElementById('lic-btn');
+  if(err) err.textContent='';
+  if(caja) caja.style.display='none';
+  if(extra) extra.style.display='none';
+  if(m==='pedir'){
+    if(ico) ico.textContent='🔒';
+    if(tit) tit.textContent='Activar el sistema';
+    if(caja) caja.style.display='block';
+    if(extra) extra.style.display=(LIC&&LIC.codigo)?'block':'none';
+    if(btn){ btn.disabled=false; btn.textContent='Comprobar y entrar'; }
+  } else if(m==='comprobando'){
+    if(ico) ico.textContent='⏳';
+    if(tit) tit.textContent='Comprobando el código…';
+  } else if(m==='bloqueado'){
+    if(ico) ico.textContent='⛔';
+    if(tit) tit.textContent='El servicio está suspendido';
+    if(extra) extra.style.display='block';
+  } else if(m==='sinred'){
+    if(ico) ico.textContent='📡';
+    if(tit) tit.textContent='No pude comprobar el código';
+    if(caja) caja.style.display='block';
+    if(extra) extra.style.display='block';
+    if(btn){ btn.disabled=false; btn.textContent='Volver a intentar'; }
+  }
+  if(txt && tx) tx.innerHTML=txt;
+}
+function licEntrar(){
+  var g=document.getElementById('lic-gate'); if(g) g.classList.remove('on');
+  licPintarAviso();
+  if(LIC_PEND){ var r=LIC_PEND; LIC_PEND=null; try{ r(); }catch(e){} }
+}
+function licAplicar(d,codigo){
+  d.codigo=codigo; d.ts=Date.now(); LIC=d; licGuardarLic(d);
+}
+function licEnviar(){
+  var inp=document.getElementById('lic-cod');
+  var cod=String(inp?inp.value:'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(inp) inp.value=cod;
+  var err=document.getElementById('lic-err');
+  if(!cod){ if(err) err.textContent='Escribe el código del negocio.'; return; }
+  var btn=document.getElementById('lic-btn');
+  if(btn){ btn.disabled=true; btn.textContent='Comprobando…'; }
+  if(err) err.textContent='';
+  licPedir(cod).then(function(d){
+    if(!d || d.ok===false){
+      var mot=d&&d.motivo;
+      if(err) err.textContent = (mot==='no_existe')
+        ? 'Ese código no existe. Revísalo: tiene que ser igualito al que te dieron.'
+        : 'No pude comprobar el código. Revisa la conexión e inténtalo otra vez.';
+      if(btn){ btn.disabled=false; btn.textContent='Comprobar y entrar'; }
+      return;
+    }
+    licAplicar(d,cod);
+    if(licEstado(d)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
+    licEntrar();
+  }).catch(function(){
+    licModo('sinred','Revisa la conexión a internet. Si el equipo ya entró antes, se abre con lo último guardado.');
+    var e2=document.getElementById('lic-err');
+    if(e2) e2.textContent='No hubo respuesta de la nube.';
+  });
+}
+function licCambiar(){
+  LIC_PEND=LIC_PEND||null;
+  var i=document.getElementById('lic-cod'); if(i) i.value='';
+  licModo('pedir');
+  var e=document.getElementById('lic-err'); if(e) e.textContent='Escribe el código nuevo.';
+  try{ var f=document.getElementById('lic-cod'); if(f) f.focus(); }catch(_){}
+}
+function licReintentar(){
+  if(!LIC || !LIC.codigo){ licModo('pedir'); return; }
+  licModo('comprobando','Código <b>'+esc(LIC.codigo)+'</b>. Espera un momento.');
+  licPedir(LIC.codigo).then(function(d){
+    if(!d || d.ok===false){
+      if(d && d.motivo==='no_existe'){ licModo('pedir','Ese código ya no existe. Escribe el nuevo.'); return; }
+      licModo('sinred');
+      return;
+    }
+    licAplicar(d,LIC.codigo);
+    if(licEstado(d)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
+    licEntrar();
+  }).catch(function(){ licModo('sinred'); });
+}
+function licArrancar(){
+  return new Promise(function(resolve){
+    LIC_PEND=resolve;
+    var g=document.getElementById('lic-gate'); if(!g){ resolve(); return; }
+    g.classList.add('on');
+    if(!LIC || !LIC.codigo){ licModo('pedir'); return; }
+    licModo('comprobando','Código <b>'+esc(LIC.codigo)+'</b>. Espera un momento.');
+    licPedir(LIC.codigo).then(function(d){
+      if(!d || d.ok===false){
+        if(d && d.motivo==='no_existe'){ licModo('pedir','Ese código ya no existe. Escribe el nuevo.'); return; }
+        throw new Error('sin respuesta');
+      }
+      licAplicar(d,LIC.codigo);
+      if(licEstado(d)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
+      licEntrar();
+    }).catch(function(){
+      if(LIC && LIC.ok!==false){
+        if(licEstado(LIC)==='bloqueado'){ licModo('bloqueado', licMensajeBloqueo()); return; }
+        licEntrar(); return;
+      }
+      licModo('sinred','Revisa la conexión. Si ya había entrado antes en este equipo, se abre con lo último guardado.');
+    });
+  });
+}
+/* ---- Aviso de cobro que manda el dueño del sistema ---- */
+function licPintarAviso(){
+  var bar=document.getElementById('lic-barra'); if(!bar) return;
+  var av=(LIC && LIC.aviso) ? String(LIC.aviso).trim() : '';
+  var sp=document.getElementById('lic-barra-tx');
+  if(!av){ bar.classList.remove('on'); licAjustarChips(); return; }
+  var clave=licHoy()+'|'+av.slice(0,40);
+  var off=''; try{ off=localStorage.getItem('hotel_lic_aviso_off')||''; }catch(e){}
+  if(off===clave){ bar.classList.remove('on'); licAjustarChips(); return; }
+  if(sp) sp.textContent='📢 '+av;
+  bar.classList.add('on');
+  licAjustarChips();
+}
+/* Sube los chips de abajo para que el aviso no los tape */
+function licAjustarChips(){
+  var bar=document.getElementById('lic-barra');
+  var on=!!(bar && bar.classList.contains('on'));
+  var h=on ? ((bar.offsetHeight||60)+20) : 0;
+  var vc=document.getElementById('ver-chip'); if(vc) vc.style.bottom=(52+h)+'px';
+  var gc=document.getElementById('guardado-chip'); if(gc) gc.style.bottom=(18+h)+'px';
+}
+try{ window.addEventListener('resize', function(){ try{ licAjustarChips(); }catch(e){} }); }catch(e){}
+function licOcultarAviso(){
+  var av=(LIC && LIC.aviso) ? String(LIC.aviso) : '';
+  try{ localStorage.setItem('hotel_lic_aviso_off', licHoy()+'|'+av.slice(0,40)); }catch(e){}
+  var bar=document.getElementById('lic-barra'); if(bar) bar.classList.remove('on');
+  licAjustarChips();
+}
+/* ---- Módulo no incluido en el plan ---- */
+function renderModuloNoIncluido(rol){
+  var m=({recepcion:'Recepción', supervisor:'Supervisión', housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento'})[rol]||'Este módulo';
+  document.getElementById('content').innerHTML =
+    '<div style="max-width:520px;margin:40px auto;background:#fff;border:1px solid #e2e9f4;border-radius:14px;padding:24px;text-align:center">'
+    + '<div style="font-size:38px">🔒</div>'
+    + '<div style="font-size:18px;font-weight:800;color:#0d3b66;margin:8px 0 6px">'+esc(m)+' no está incluido</div>'
+    + '<div style="font-size:13.5px;color:#55637a;line-height:1.6">El plan de este negocio no tiene ese módulo activo. '
+    + 'Si lo necesitas, comunícate con la persona que instaló el sistema.</div>'
+    + '</div>';
+}
+
 try{ parkAsegurarUsuario(); }catch(e){}
-bootstrap();
+licArrancar().then(function(){ bootstrap(); });
 </script>
 </body>
 </html>
