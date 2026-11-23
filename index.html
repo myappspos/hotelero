@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.84 · 23/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.85 · 23/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.84 · 23/11/2026';
+const APP_VERSION = 'v1.85 · 23/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -968,10 +968,10 @@ function mayusculasAntesDeGuardar(){
 async function login(){
   const u = document.getElementById('in-user').value.trim().toLowerCase();
   const p = document.getElementById('in-pass').value;
+  // Actualizar antes de validar: el dueño puede haber cambiado el Master desde su panel.
+  try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.pullAll(); } }catch(e){}
   const found = DB.get('users',[]).find(x=>x.user===u && x.pass===p);
   if(!found){ document.getElementById('login-err').innerText='Usuario o contraseña incorrectos'; return; }
-  // Traer el estado más reciente de la nube para saber quién está conectado
-  try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.pullAll(); } }catch(e){}
   if(usuarioYaConectado(u)){ document.getElementById('login-err').innerText='Este usuario ya tiene una sesión abierta en otro equipo. Cierra la sesión allí o espera un momento e inténtalo de nuevo.'; return; }
   DB.set('session', Object.assign({}, found, {loginTs:Date.now()}));
   document.getElementById('login-err').innerText='';
