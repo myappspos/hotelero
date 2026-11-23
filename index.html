@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.82 · 23/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.83 · 23/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.82 · 23/11/2026';
+const APP_VERSION = 'v1.83 · 23/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -988,7 +988,19 @@ function logout(){
     }
   }
   try{ presenciaSalir(); }catch(e){}
-  localStorage.removeItem('hotel_session'); location.reload();
+  finalizarSesionLocal();
+}
+/* Cierra solo la sesión de este negocio, sin recargar ni borrar pendientes. */
+function finalizarSesionLocal(){
+  lsDel('session');
+  if(_presTimer){ clearInterval(_presTimer); _presTimer=null; }
+  vistaChat=false;
+  try{ cerrarModal(); }catch(e){}
+  const content=document.getElementById('content'); if(content) content.innerHTML='';
+  const pass=document.getElementById('in-pass'); if(pass) pass.value='';
+  const err=document.getElementById('login-err'); if(err) err.innerText='';
+  document.getElementById('view-app').style.display='none';
+  document.getElementById('view-login').style.display='flex';
 }
 function session(){ return DB.get('session', null); }
 
@@ -1024,9 +1036,8 @@ function revisarCierreForzado(){
 }
 function cerrarSesionForzada(){
   try{ presenciaSalir(); }catch(e){}
-  localStorage.removeItem('hotel_session');
+  finalizarSesionLocal();
   alert('El administrador cerró tu sesión. Vuelve a iniciar sesión si lo necesitas.');
-  location.reload();
 }
 function cerrarSesionRemota(dev, nombre){
   if(dev===deviceId()){ alert('Esa es tu propia sesión en este equipo. Para salir usa el botón “Salir” de arriba.'); return; }
@@ -1105,13 +1116,15 @@ function openApp(){
   { const bc=document.getElementById('btn-chat'); if(bc) bc.style.display='inline-flex'; }
   iniciarPresencia();
   revisarCierreForzado();
+  if(!session()) return;
   render();
   avisarRespaldo();
 }
 
 /* ====== RENDER PRINCIPAL ====== */
 function render(){
-  const rol = session().rol;
+  const ses=session(); if(!ses) return;
+  const rol = ses.rol;
   if(vistaChat){ renderChatFull(); renderNotif(); actualizarBadgeChat(); return; }
   try{ if(!licModuloOk(rol)){ renderModuloNoIncluido(rol); renderNotif(); actualizarBadgeChat(); return; } }catch(e){}
   try{ limpiarCanceladasViejas(); }catch(e){}
