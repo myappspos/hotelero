@@ -299,7 +299,7 @@ body.consulta .topbar{top:38px}
     <div class="lic-tx" id="lic-tx">Escribe el <b>código del negocio</b> que te entregaron al contratar el sistema. Se escribe una sola vez en cada equipo.</div>
     <div id="lic-caja">
       <label class="lic-lbl" for="lic-cod">Código del negocio</label>
-      <input id="lic-cod" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="EJ: HOTELLAJARAREAL" onkeydown="if(event.key==='Enter'){event.preventDefault();licEnviar();}">
+      <input id="lic-cod" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Coloque aquí su licencia" onkeydown="if(event.key==='Enter'){event.preventDefault();licEnviar();}">
       <button class="lic-btn" id="lic-btn" onclick="licEnviar()">Comprobar y entrar</button>
     </div>
     <div class="lic-err" id="lic-err"></div>
@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.83 · 23/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.84 · 23/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.83 · 23/11/2026';
+const APP_VERSION = 'v1.84 · 23/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
