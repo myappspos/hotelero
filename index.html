@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.85 · 23/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.88 · 25/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.85 · 23/11/2026';
+const APP_VERSION = 'v1.88 · 25/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -2346,6 +2346,7 @@ function renderTablero(){
 function renderRecepcion(){
   const c = document.getElementById('content');
   let html = '<div class="section-title">Panel de Recepción</div>';
+  if(['recepcion','supervisor'].indexOf(session().rol)>=0) html += '<button class="btn-gray" style="margin-bottom:12px" onclick="revisarEntradasModal()">🔎 Revisar fechas de entrada</button>';
   const _rol = session().rol;
   const esConfig = ROLES_CONFIGURABLES.indexOf(_rol)>=0;
   // Pestañas según los permisos que el Master activó para este rol
@@ -5076,7 +5077,101 @@ function fechaSalidaAuto(noches){ var d=new Date(); d.setDate(d.getDate()+(parse
    se devuelve. Se calcula desde la ENTRADA del huesped (no desde hoy), asi una
    cuenta vieja no salta de fecha cada vez que se abre.
    Va en formato AAAA-MM-DD, que es como se guarda la entrada. */
-function fechaISODeHoy(){ return fechaSalidaAuto(0); }
+function fechaISODeHoy(){ return hoyISO(); }
+/* [FECHA-CI v1.86] Revisión de solo lectura. No reescribe registros. */
+function revisionFechaCaracas(ts){
+  if(!ts || !/(Z|[+-]\d{2}:?\d{2})$/.test(String(ts))) return '';
+  var d=new Date(ts); if(isNaN(d.getTime()))return '';
+  var p=new Intl.DateTimeFormat('en',{timeZone:'America/Caracas',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d),o={};
+  p.forEach(function(x){o[x.type]=x.value;});return o.year+'-'+o.month+'-'+o.day;
+}
+function revisionEntradaHabitaciones(){
+  var ks=kardexAll().filter(function(k){return k&&k.tipo==='checkin'&&!k.salidaReal;});
+  return rooms().filter(function(r){return r.estado==='ocupada';}).map(function(r){
+    var guardada=entradaISO(r),ctrl=parseInt(r.control||0)||0;
+    var posibles=ks.filter(function(k){
+      if(String(k.hab)!==String(r.num))return false;
+      if(ctrl && parseInt(k.ctrlEntrada||0)!==ctrl)return false;
+      if(r.clienteId && k.clienteId && String(r.clienteId)!==String(k.clienteId))return false;
+      if(!ctrl){
+        if(r.clienteId && k.clienteId)return String(r.clienteId)===String(k.clienteId);
+        return !!(r.huesped && k.huesped && String(r.huesped).trim().toUpperCase()===String(k.huesped).trim().toUpperCase());
+      }
+      return true;
+    }).sort(function(a,b){return (new Date(b.ts).getTime()||0)-(new Date(a.ts).getTime()||0);});
+    var k=posibles[0],registrada=k?revisionFechaCaracas(k.ts):'';
+    var delta=null;
+    if(guardada && registrada){delta=Math.round((Date.parse(guardada+'T00:00:00Z')-Date.parse(registrada+'T00:00:00Z'))/86400000);if(isNaN(delta))delta=null;}
+    return {num:r.num,huesped:r.huesped||'',guardada:guardada,registrada:registrada,delta:delta,control:ctrl,registroId:k?(k.id||''):'',registroTs:k?(k.ts||''):'',registroUnico:posibles.length===1&&ctrl>0,
+      estado:delta===1?'adelantada':delta===0?'coincide':delta===null?'sin_comprobar':'otra_diferencia'};
+  });
+}
+function revisarEntradasModal(){
+  var s=session();if(!s||['recepcion','supervisor'].indexOf(s.rol)<0)return;
+  var lista=revisionEntradaHabitaciones(),mal=lista.filter(function(x){return x.estado==='adelantada';}),otras=lista.filter(function(x){return x.estado==='otra_diferencia';}),pend=lista.filter(function(x){return x.estado==='sin_comprobar';});
+  var body='<button class="close" onclick="cerrarModal()">×</button><h2>🔎 Revisar fechas de entrada</h2>';
+  body+='<p style="font-size:13px;line-height:1.6;color:#44526a">Se compara la entrada de cada habitación ocupada con el registro de su check-in en el Kardex, usando la fecha de Venezuela. Esta revisión <b>no cambia fechas, noches, salidas, pagos ni cobros.</b></p>';
+  body+='<div style="background:#fff8e8;border:1px solid #efcb80;border-radius:9px;padding:10px;font-size:13px;margin-bottom:12px">Habitaciones ocupadas: <b>'+lista.length+'</b> · Entrada adelantada un día: <b>'+mal.length+'</b> · Otras diferencias: <b>'+otras.length+'</b> · Sin comprobar: <b>'+pend.length+'</b></div>';
+  if(!lista.length){body+='<p>No hay habitaciones ocupadas en la copia de datos de este equipo.</p>';showModal(body);return;}
+  body+='<div style="display:grid;gap:8px">';
+  lista.sort(function(a,b){var rank={adelantada:0,otra_diferencia:1,sin_comprobar:2,coincide:3};return rank[a.estado]-rank[b.estado]||Number(a.num)-Number(b.num);}).forEach(function(x){
+    var etiquetas={adelantada:'⚠️ Adelantada 1 día',otra_diferencia:'⚠️ Revisar diferencia',sin_comprobar:'Sin registro suficiente',coincide:'✓ Coincide'};
+    var fondo=x.estado==='adelantada'?'#fff0e5':x.estado==='coincide'?'#edf8f0':'#f3f6fb';
+    body+='<div style="background:'+fondo+';border-radius:8px;padding:10px;font-size:12px;overflow-wrap:anywhere"><div style="font-weight:700;margin-bottom:5px">Hab. '+esc(x.num)+' · '+esc(x.huesped)+'</div><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px"><div>Entrada guardada<br><b>'+esc(fmtFechaCorta(x.guardada)||'—')+'</b></div><div>Check-in registrado<br><b>'+esc(fmtFechaCorta(x.registrada)||'—')+'</b></div></div><div style="margin-top:6px;font-weight:700">'+etiquetas[x.estado]+'</div></div>';
+  });
+  body+='</div><p style="font-size:12px;color:#55637a;line-height:1.6">Las entradas adelantadas un día son posibles casos del error corregido. Los cambios de habitación, registros antiguos o un reloj incorrecto necesitan revisión manual. “Coincide” solo confirma que ambas fechas coinciden. Si hay cambios sin sincronizar, esta lista corresponde a los datos locales de este equipo.</p>';
+  if(lista.some(function(x){return CI_REPARAR_HABS.indexOf(Number(x.num))>=0&&x.estado==='adelantada';})) body+='<button class="btn-green" style="margin:0 8px 8px 0" onclick="corregirEntradasSeleccionadasModal()">Corregir entradas 105, 106, 108, 110, 203 y 305</button>';
+  body+='<button class="btn-gray" onclick="cerrarModal()">Cerrar revisión</button>';showModal(body);
+}
+
+/* Reparación puntual solicitada: solo estas habitaciones, y solo desfase +1. */
+var CI_REPARAR_HABS=[105,106,108,110,203,305],CI_REPARAR_PLAN=null;
+function ciPuedeReparar(){var s=session();return !!(s&&['recepcion','supervisor'].indexOf(s.rol)>=0&&!window.__consulta);}
+function corregirEntradasSeleccionadasModal(){
+  if(!ciPuedeReparar()){alert('Esta corrección corresponde a Recepción o Supervisión con acceso de edición.');return;}
+  var lista=revisionEntradaHabitaciones(),plan=[];
+  var body='<button class="close" onclick="cerrarModal()">×</button><h2>Corregir entradas indicadas</h2><p style="font-size:13px;line-height:1.6">Solo se cambiará la <b>fecha de entrada</b> de las habitaciones indicadas que tengan un registro de check-in identificable y la entrada adelantada un día. Se mantienen las noches, la salida, las tarifas, los consumos, los pagos y las cuentas por cobrar.</p>';
+  CI_REPARAR_HABS.forEach(function(num){
+    var x=lista.find(function(v){return Number(v.num)===num;});
+    if(x&&x.estado==='adelantada'&&x.registroUnico&&x.registroId&&x.registroTs){
+      var r=findRoom(num);if(!r)return;
+      plan.push({num:num,antes:JSON.stringify(r),entradaAnterior:r.checkin,nueva:x.registrada,registroId:x.registroId,registroTs:x.registroTs,control:x.control,huesped:x.huesped});
+      body+='<div style="background:#fff4e8;border-radius:8px;padding:10px;margin-bottom:8px;font-size:13px"><b>Hab. '+num+' · '+esc(x.huesped)+'</b><br>'+esc(fmtFechaCorta(x.guardada))+' → <b>'+esc(fmtFechaCorta(x.registrada))+'</b></div>';
+    }else{
+      var motivo=!x?'No está ocupada':x.estado==='coincide'?'La fecha ya coincide':x.estado==='sin_comprobar'?'No hay un registro suficiente':x.estado==='otra_diferencia'?'La diferencia no corresponde al error de un día':'El registro es ambiguo o no tiene un control identificable';
+      body+='<p style="font-size:12px;color:#55637a">Hab. '+num+': '+motivo+'. No se modificará.</p>';
+    }
+  });
+  CI_REPARAR_PLAN=plan;
+  if(plan.length){
+    body+='<label style="display:flex;gap:8px;font-size:13px;line-height:1.5;margin:12px 0"><input type="checkbox" id="ci-reparar-ok" style="width:16px;height:16px;flex:0 0 16px;padding:0;margin:3px 0 0;box-sizing:border-box"><span>Confirmo cambiar solo estas '+plan.length+' fecha(s) de entrada por las fechas de sus registros de check-in.</span></label>';
+    body+='<button class="btn-green" onclick="confirmarCorreccionEntradas()">Confirmar corrección de fechas</button> ';
+  }else body+='<p>No hay fechas que puedan corregirse con seguridad en esas habitaciones.</p>';
+  body+='<button class="btn-gray" onclick="cerrarModal()">Cancelar</button>';showModal(body);
+}
+function confirmarCorreccionEntradas(){
+  if(!ciPuedeReparar()){alert('No tienes acceso de edición para esta corrección.');return;}
+  var ok=document.getElementById('ci-reparar-ok');if(!ok||!ok.checked){alert('Marca la casilla para confirmar las fechas indicadas.');return;}
+  var plan=CI_REPARAR_PLAN;if(!plan||!plan.length){alert('Abre nuevamente la revisión.');return;}
+  var actual=revisionEntradaHabitaciones();
+  for(var p of plan){
+    var r=findRoom(p.num),x=actual.find(function(v){return Number(v.num)===p.num;});
+    if(CI_REPARAR_HABS.indexOf(p.num)<0||!r||JSON.stringify(r)!==p.antes||!x||x.estado!=='adelantada'||!x.registroUnico||x.registrada!==p.nueva||x.registroId!==p.registroId||x.registroTs!==p.registroTs){
+      CI_REPARAR_PLAN=null;alert('La habitación '+p.num+' o su registro cambió. No se corrigió ninguna fecha. Abre la revisión otra vez.');return;
+    }
+  }
+  /* Respaldo exclusivamente local antes de cambiar. Sin borrar la cola offline. */
+  var respaldo={fecha:new Date().toISOString(),habitaciones:plan.map(function(p){return JSON.parse(p.antes);})};
+  try{localStorage.setItem(tenKey('__respaldoEntradas187'),JSON.stringify(respaldo));}
+  catch(e){alert('No pude guardar el respaldo local. No se cambió ninguna fecha.');return;}
+  var nums=plan.map(function(p){return p.num;}),rs=rooms();
+  rs=rs.map(function(r){var p=plan.find(function(v){return Number(v.num)===Number(r.num);});return p?Object.assign({},r,{checkin:p.nueva}):r;});
+  saveRooms(rs);
+  plan.forEach(function(p){logKardex('correccion',{hab:p.num,huesped:p.huesped,ctrlEntrada:p.control,detalle:'Corrección de fecha de entrada por desfase de un día: '+p.entradaAnterior+' → '+p.nueva+'. Según check-in '+p.registroId+'. Noches, salida y pagos sin cambios.',entradaAnterior:p.entradaAnterior,entradaCorregida:p.nueva,registroCheckin:p.registroId,montoUsd:0,montoBs:0});});
+  CI_REPARAR_PLAN=null;cerrarModal();render();
+  alert('Fecha de entrada corregida en: '+nums.join(', ')+'.\nLas noches, la salida y los pagos se conservaron.\nSi estás sin internet, los cambios quedan pendientes de sincronizar.');
+}
+
 function nochesEntreISO(ent, sal){
   try{
     var p1=String(ent||'').split('-'), p2=String(sal||'').split('-');
