@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.88 · 25/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.90 · 25/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.88 · 25/11/2026';
+const APP_VERSION = 'v1.90 · 25/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -4336,6 +4336,7 @@ function abrirHab(num){
     try{ body += controlAmarradoHTML(r); }catch(e){}
     if(!r.autorizada) body += '<button class="btn-green" onclick="agregarCargoModal('+num+')">Agregar consumo</button>';
     body += '<button class="btn-blue" onclick="cobrarCuentaModal(\''+num+'\')">💵 Cobrar ahora</button>';
+    if(crpPermitido()) body += '<button class="btn-green" onclick="cobroCuentaReservaModal(\''+num+'\')">💵 Pagar cuenta y reserva</button>';
     body += '<button class="btn-gray" onclick="extenderEstadiaModal('+num+')">Extender estadía</button>';
     body += '<button class="btn-gray" onclick="solicitarLimpieza('+num+')">Solicitar limpieza</button>';
     body += '<button class="btn-gray" onclick="salidaRegistrarAnticipada(\''+num+'\')">⏱️ Salida anticipada</button>';
@@ -4944,13 +4945,14 @@ function checkin(num){
   const promoEl=document.getElementById('m-promo'); const promoId=promoEl?promoEl.value:''; const promoTit=promoId?promoTituloPorId(promoId):''; const promoDc=promoId?promoDescById(promoId):0;
   if(promoTit) extras+=' · Promoción: '+promoTit+(promoDc>0?(' (−'+promoDc+'%)'):'');
   const _ciCtrl=siguienteControl();
+  const _ciTs=new Date().toISOString(), _ciFecha=revisionFechaCaracas(_ciTs);
   updateRoom(num,{estado:'ocupada', huesped:h, clienteId:clienteId||'', personas:adultos,
     ninos:ninos, acompanantes:acompanantes, menores:menores, promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc,
     noches:noches, tarifa:tarifaEf, empresaRef:empRef, control:_ciCtrl,
     autorizada:(_auth?true:false), autorizadaModo:(_auth?_auth.modo:''), autorizadaInvitado:(_auth?_auth.invitado:''), autorizadaMotivo:(_auth?_auth.motivo:''), autorizadaPor:(_auth?autNombreLog():''), autorizadaTarifaNormal:(_auth?tarifa:0),
-    checkin:fechaISODeHoy(), salida:document.getElementById('m-salida').value||fechaSalidaAuto(noches), vehiculo:_veh});
+    checkin:_ciFecha, salida:document.getElementById('m-salida').value||fechaSalidaAuto(noches), vehiculo:_veh});
   /* [POL-SALIDA] La salida REAL se sella al hacer el check-out (no la prevista) */
-  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), personas:adultos, acompanantes:acompanantes.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum, edad:(x.edad||''), estadoCivil:(x.estadoCivil||''), ocupacion:(x.ocupacion||'')}; }), menores:(menores||[]), ninos:(menores||[]).length, detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
+  logKardex('checkin', {ts:_ciTs, hab:num, huesped:h, clienteId:clienteId||'', ctrlEntrada:_ciCtrl, salidaPrev:(document.getElementById('m-salida').value||fechaSalidaAuto(noches)), personas:adultos, acompanantes:acompanantes.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum, edad:(x.edad||''), estadoCivil:(x.estadoCivil||''), ocupacion:(x.ocupacion||'')}; }), menores:(menores||[]), ninos:(menores||[]).length, detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
   if(_auth){
     const _modoTxt=autorizaModoTxt(_auth.modo);
     const _autCtrl=siguienteControl();
@@ -4983,9 +4985,9 @@ function checkin(num){
         const _xl=clientes(); _xl.push(_xnuevo); saveClientes(_xl); _xcid=_xnuevo.id;
       }
       const tar=Number(er.tarifa||0)>0?Number(er.tarifa):tarifa;
-      updateRoom(mx.en,{estado:'ocupada', huesped:_xh, clienteId:_xcid, tituId:(clienteId||''), personas:1, ninos:0, acompanantes:[], noches:noches, tarifa:tar, empresaRef:empRef, control:_ciCtrl, checkin:fechaISODeHoy(), salida:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches))});
+      updateRoom(mx.en,{estado:'ocupada', huesped:_xh, clienteId:_xcid, tituId:(clienteId||''), personas:1, ninos:0, acompanantes:[], noches:noches, tarifa:tar, empresaRef:empRef, control:_ciCtrl, checkin:_ciFecha, salida:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches))});
       updateRoom(mx.en,{promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc});
-      logKardex('checkin', {hab:mx.en, huesped:_xh, clienteId:_xcid, ctrlEntrada:_ciCtrl, salidaPrev:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches)), titularHab:num, personas:1, acompanantes:[], detalle:'Habitación del grupo · titular: '+h+' · '+noches+' noche(s) · '+fmtUSD(tar)+'/noche', montoUsd:0, montoBs:0, metodo:''});
+      logKardex('checkin', {ts:_ciTs, hab:mx.en, huesped:_xh, clienteId:_xcid, ctrlEntrada:_ciCtrl, salidaPrev:(salidaPrev||salidaPorNoches(fechaISODeHoy(), noches)), titularHab:num, personas:1, acompanantes:[], detalle:'Habitación del grupo · titular: '+h+' · '+noches+' noche(s) · '+fmtUSD(tar)+'/noche', montoUsd:0, montoBs:0, metodo:''});
       abrirEstadia(_xcid, mx.en, noches, tar);
     });
   }
@@ -5077,7 +5079,7 @@ function fechaSalidaAuto(noches){ var d=new Date(); d.setDate(d.getDate()+(parse
    se devuelve. Se calcula desde la ENTRADA del huesped (no desde hoy), asi una
    cuenta vieja no salta de fecha cada vez que se abre.
    Va en formato AAAA-MM-DD, que es como se guarda la entrada. */
-function fechaISODeHoy(){ return hoyISO(); }
+function fechaISODeHoy(){ return revisionFechaCaracas(new Date().toISOString()); }
 /* [FECHA-CI v1.86] Revisión de solo lectura. No reescribe registros. */
 function revisionFechaCaracas(ts){
   if(!ts || !/(Z|[+-]\d{2}:?\d{2})$/.test(String(ts))) return '';
@@ -5120,23 +5122,24 @@ function revisarEntradasModal(){
     body+='<div style="background:'+fondo+';border-radius:8px;padding:10px;font-size:12px;overflow-wrap:anywhere"><div style="font-weight:700;margin-bottom:5px">Hab. '+esc(x.num)+' · '+esc(x.huesped)+'</div><div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px"><div>Entrada guardada<br><b>'+esc(fmtFechaCorta(x.guardada)||'—')+'</b></div><div>Check-in registrado<br><b>'+esc(fmtFechaCorta(x.registrada)||'—')+'</b></div></div><div style="margin-top:6px;font-weight:700">'+etiquetas[x.estado]+'</div></div>';
   });
   body+='</div><p style="font-size:12px;color:#55637a;line-height:1.6">Las entradas adelantadas un día son posibles casos del error corregido. Los cambios de habitación, registros antiguos o un reloj incorrecto necesitan revisión manual. “Coincide” solo confirma que ambas fechas coinciden. Si hay cambios sin sincronizar, esta lista corresponde a los datos locales de este equipo.</p>';
-  if(lista.some(function(x){return CI_REPARAR_HABS.indexOf(Number(x.num))>=0&&x.estado==='adelantada';})) body+='<button class="btn-green" style="margin:0 8px 8px 0" onclick="corregirEntradasSeleccionadasModal()">Corregir entradas 105, 106, 108, 110, 203 y 305</button>';
+  if(lista.some(function(x){return x.estado==='adelantada';})) body+='<button class="btn-green" style="margin:0 8px 8px 0" onclick="corregirEntradasSeleccionadasModal()">Corregir entradas adelantadas (temporal)</button>';
   body+='<button class="btn-gray" onclick="cerrarModal()">Cerrar revisión</button>';showModal(body);
 }
 
 /* Reparación puntual solicitada: solo estas habitaciones, y solo desfase +1. */
-var CI_REPARAR_HABS=[105,106,108,110,203,305],CI_REPARAR_PLAN=null;
+var CI_REPARAR_PLAN=null;
 function ciPuedeReparar(){var s=session();return !!(s&&['recepcion','supervisor'].indexOf(s.rol)>=0&&!window.__consulta);}
 function corregirEntradasSeleccionadasModal(){
   if(!ciPuedeReparar()){alert('Esta corrección corresponde a Recepción o Supervisión con acceso de edición.');return;}
   var lista=revisionEntradaHabitaciones(),plan=[];
-  var body='<button class="close" onclick="cerrarModal()">×</button><h2>Corregir entradas indicadas</h2><p style="font-size:13px;line-height:1.6">Solo se cambiará la <b>fecha de entrada</b> de las habitaciones indicadas que tengan un registro de check-in identificable y la entrada adelantada un día. Se mantienen las noches, la salida, las tarifas, los consumos, los pagos y las cuentas por cobrar.</p>';
-  CI_REPARAR_HABS.forEach(function(num){
+  var body='<button class="close" onclick="cerrarModal()">×</button><h2>Corrección temporal de entradas</h2><p style="font-size:13px;line-height:1.6">Solo se cambiará la <b>fecha de entrada</b> de las habitaciones indicadas que tengan un registro de check-in identificable y la entrada adelantada un día. Se mantienen las noches, la salida, las tarifas, los consumos, los pagos y las cuentas por cobrar.</p>';
+  lista.filter(function(x){return x.estado==='adelantada';}).forEach(function(fila){
+    var num=Number(fila.num);
     var x=lista.find(function(v){return Number(v.num)===num;});
     if(x&&x.estado==='adelantada'&&x.registroUnico&&x.registroId&&x.registroTs){
       var r=findRoom(num);if(!r)return;
       plan.push({num:num,antes:JSON.stringify(r),entradaAnterior:r.checkin,nueva:x.registrada,registroId:x.registroId,registroTs:x.registroTs,control:x.control,huesped:x.huesped});
-      body+='<div style="background:#fff4e8;border-radius:8px;padding:10px;margin-bottom:8px;font-size:13px"><b>Hab. '+num+' · '+esc(x.huesped)+'</b><br>'+esc(fmtFechaCorta(x.guardada))+' → <b>'+esc(fmtFechaCorta(x.registrada))+'</b></div>';
+      body+='<div style="background:#fff4e8;border-radius:8px;padding:10px;margin-bottom:8px;font-size:13px"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" class="ci-reparar-hab" value="'+num+'" style="width:16px;height:16px;margin:0"><b>Hab. '+num+' · '+esc(x.huesped)+'</b></label><br>'+esc(fmtFechaCorta(x.guardada))+' → <b>'+esc(fmtFechaCorta(x.registrada))+'</b></div>';
     }else{
       var motivo=!x?'No está ocupada':x.estado==='coincide'?'La fecha ya coincide':x.estado==='sin_comprobar'?'No hay un registro suficiente':x.estado==='otra_diferencia'?'La diferencia no corresponde al error de un día':'El registro es ambiguo o no tiene un control identificable';
       body+='<p style="font-size:12px;color:#55637a">Hab. '+num+': '+motivo+'. No se modificará.</p>';
@@ -5144,7 +5147,7 @@ function corregirEntradasSeleccionadasModal(){
   });
   CI_REPARAR_PLAN=plan;
   if(plan.length){
-    body+='<label style="display:flex;gap:8px;font-size:13px;line-height:1.5;margin:12px 0"><input type="checkbox" id="ci-reparar-ok" style="width:16px;height:16px;flex:0 0 16px;padding:0;margin:3px 0 0;box-sizing:border-box"><span>Confirmo cambiar solo estas '+plan.length+' fecha(s) de entrada por las fechas de sus registros de check-in.</span></label>';
+    body+='<label style="display:flex;gap:8px;font-size:13px;line-height:1.5;margin:12px 0"><input type="checkbox" id="ci-reparar-ok" style="width:16px;height:16px;flex:0 0 16px;padding:0;margin:3px 0 0;box-sizing:border-box"><span>Confirmo cambiar solo las habitaciones que marqué, usando las fechas de sus registros de check-in.</span></label>';
     body+='<button class="btn-green" onclick="confirmarCorreccionEntradas()">Confirmar corrección de fechas</button> ';
   }else body+='<p>No hay fechas que puedan corregirse con seguridad en esas habitaciones.</p>';
   body+='<button class="btn-gray" onclick="cerrarModal()">Cancelar</button>';showModal(body);
@@ -5152,11 +5155,13 @@ function corregirEntradasSeleccionadasModal(){
 function confirmarCorreccionEntradas(){
   if(!ciPuedeReparar()){alert('No tienes acceso de edición para esta corrección.');return;}
   var ok=document.getElementById('ci-reparar-ok');if(!ok||!ok.checked){alert('Marca la casilla para confirmar las fechas indicadas.');return;}
-  var plan=CI_REPARAR_PLAN;if(!plan||!plan.length){alert('Abre nuevamente la revisión.');return;}
+  var elegidas=Array.from(document.querySelectorAll('.ci-reparar-hab:checked')).map(function(el){return Number(el.value);});
+  var plan=(CI_REPARAR_PLAN||[]).filter(function(p){return elegidas.indexOf(p.num)>=0;});if(!plan.length){alert('Marca al menos una habitación para corregir.');return;}
+  if(!CI_REPARAR_PLAN||!CI_REPARAR_PLAN.length){alert('Abre nuevamente la revisión.');return;}
   var actual=revisionEntradaHabitaciones();
   for(var p of plan){
     var r=findRoom(p.num),x=actual.find(function(v){return Number(v.num)===p.num;});
-    if(CI_REPARAR_HABS.indexOf(p.num)<0||!r||JSON.stringify(r)!==p.antes||!x||x.estado!=='adelantada'||!x.registroUnico||x.registrada!==p.nueva||x.registroId!==p.registroId||x.registroTs!==p.registroTs){
+    if(!r||JSON.stringify(r)!==p.antes||!x||x.estado!=='adelantada'||!x.registroUnico||x.registrada!==p.nueva||x.registroId!==p.registroId||x.registroTs!==p.registroTs){
       CI_REPARAR_PLAN=null;alert('La habitación '+p.num+' o su registro cambió. No se corrigió ninguna fecha. Abre la revisión otra vez.');return;
     }
   }
@@ -10369,6 +10374,66 @@ function detalleCierreCuenta(g){
   }catch(e){}
   return out;
 }
+/* Cuenta actual + reserva pendiente: un ingreso distribuido, dos destinos contables. */
+var CRP_PLAN=null,CRP_RECIBO=null;
+function crpPermitido(){var s=session();return !!(s&&['recepcion','supervisor'].indexOf(s.rol)>=0&&!window.__consulta);}
+function cobroCuentaReservaModal(numsStr){
+ if(!crpPermitido()){alert('Solo Recepción y Supervisión con acceso de edición.');return;}if(guardTurno())return;
+ var g=cobroGrupoDatos(numsStr);if(!g.list.length){alert('La cuenta no está ocupada.');return;}
+ var disponibles=reservas().filter(function(r){return r.estado==='pendiente'&&!r.habsAsignadas?.length;});
+ if(!disponibles.length){alert('Primero registra la reserva de la persona que llegará. No hay reservas pendientes disponibles.');return;}
+ CRP_PLAN={nums:numsStr,rooms:JSON.stringify(rooms()),reservas:JSON.stringify(reservas())};
+ var b='<button class="close" onclick="cerrarModal()">×</button><h2>Pagar cuenta y reserva</h2><p>Un solo pago, separado entre la cuenta actual y el anticipo de una reserva. La reserva conserva su huésped.</p>';
+ b+='<div class="field"><label>Quién paga</label><input id="crp-pagador" value="'+escA(g.tituNombre||g.list[0].huesped||'')+'"></div>';
+ b+='<div class="field"><label>Pago a la cuenta actual · Hab. '+esc(g.nums.join(', '))+' · saldo '+fmtUSD(g.saldo)+' (USD)</label><input id="crp-cuenta" type="number" min="0" step="0.01" value="'+Math.round(g.saldo*100)/100+'" oninput="crpCalcular()"></div>';
+ b+='<div class="field"><label>Reserva que también paga</label><select id="crp-reserva" onchange="crpElegirReserva()">';
+ disponibles.forEach(function(r){b+='<option value="'+escA(r.loc)+'">'+esc(r.loc+' · '+((r.nombre||'')+' '+(r.apellido||'')).trim()+' · '+fmtFechaCorta(r.fechaEntrada)+' · '+resHabsDe(r).map(function(h){return h.hab?'Hab. '+h.hab:h.tipo;}).join(', '))+'</option>';});
+ b+='</select></div><div id="crp-detalle" style="font-size:13px;margin:8px 0"></div><div class="field"><label>Anticipo para esa reserva (USD)</label><input id="crp-anticipo" type="number" min="0" step="0.01" oninput="crpCalcular()"></div><div id="crp-total" style="font-weight:bold;margin:12px 0"></div>';
+ b+=pmWidget('crp','Distribuye el TOTAL entre las formas de pago. Los montos se expresan en USD; el equivalente en Bs usa la tasa actual.');
+ b+='<div class="actions"><button class="btn-green" onclick="crpConfirmar(this)">Registrar pago conjunto</button><button class="btn-gray" onclick="cerrarModal()">Cancelar</button></div>';
+ showModal(b);pmReset('crp',0);crpElegirReserva();
+}
+function crpElegirReserva(){var r=reservas().find(function(r){return r.loc===document.getElementById('crp-reserva').value;});if(!r)return;var pendiente=Math.max(0,Math.round((resTotalReserva(r)-resAnticipoUsd(r))*100)/100);document.getElementById('crp-detalle').textContent='Total reserva: '+fmtUSD(resTotalReserva(r))+' · anticipo previo: '+fmtUSD(resAnticipoUsd(r))+' · falta: '+fmtUSD(pendiente);document.getElementById('crp-anticipo').value=pendiente;crpCalcular();}
+function crpCalcular(){var a=Number(document.getElementById('crp-cuenta').value)||0,b=Number(document.getElementById('crp-anticipo').value)||0,t=Math.round((a+b)*100)/100;document.getElementById('crp-total').textContent='Total que entrega el pagador: '+fmtUSD(t)+' · '+fmtBs(precioBs(t));if(PM_STATE.crp)PM_STATE.crp.total=t;try{pmRecalc('crp');}catch(e){}}
+function crpMetodosParte(metodos,parte,total){var resta=Math.round(parte*100);return metodos.map(function(m){var cent=Math.min(resta,Math.round(m.montoUsd*100));resta-=cent;return Object.assign({},m,{montoUsd:cent/100,montoBs:precioBs(cent/100)});});}
+function crpConfirmar(btn){
+ if(!crpPermitido()||guardTurno())return;if(procesoDoble(btn))return;
+ function fallo(msg){procesoListo(btn);alert(msg);}
+ var plan=CRP_PLAN;if(!plan){fallo('Abre el cobro otra vez.');return;}
+ var g=cobroGrupoDatos(plan.nums),rl=reservas(),r=rl.find(function(x){return x.loc===document.getElementById('crp-reserva').value;});
+ var a=Math.round(Number(document.getElementById('crp-cuenta').value)*100)/100,b=Math.round(Number(document.getElementById('crp-anticipo').value)*100)/100,total=Math.round((a+b)*100)/100,pagador=document.getElementById('crp-pagador').value.trim();
+ if(!g.list.length||!r||r.estado!=='pendiente'||(r.habsAsignadas||[]).length){fallo('La cuenta o la reserva ya no está disponible.');return;}
+ if(!pagador||!Number.isFinite(a)||!Number.isFinite(b)||a<0||b<=0||a>g.saldo+0.001||b>Math.max(0,Math.round((resTotalReserva(r)-resAnticipoUsd(r))*100)/100)+0.001){fallo('Indica quién paga, un anticipo mayor a cero y montos que no superen el saldo de cada destino.');return;}
+ if(a>0&&g.porHab.some(function(x){return habHospEnCxc(x.r);})){fallo('Esta cuenta incluye hospedaje en CXC. Cóbralo desde CXC; el anticipo puede registrarse por separado en Reservas.');return;}
+ if(PM_STATE.crp)PM_STATE.crp.total=total;var pm=pmLeer('crp');if(!pm.ok){fallo(pm.msg);return;}
+ var rsAntes=JSON.stringify(rooms()),resAntes=JSON.stringify(rl);
+ if(plan.rooms!==rsAntes||plan.reservas!==resAntes){fallo('Los datos cambiaron desde que abriste el cobro. Vuelve a abrirlo para revisar los saldos.');return;}
+ pagoConfirmarEnPanel('Pagador: '+pagador+'\nCuenta Hab. '+g.nums.join(', ')+': '+fmtUSD(a)+'\nReserva '+r.loc+' · '+((r.nombre||'')+' '+(r.apellido||'')).trim()+': '+fmtUSD(b)+'\nTOTAL: '+fmtUSD(total)+' · '+pm.metodoStr+'\n\nSe registrará una operación con dos destinos, sin cobrar dos veces. ¿Confirmar?',function(){
+  if(!crpPermitido()||guardTurno()||CRP_PLAN!==plan){procesoListo(btn);return;}
+  if(JSON.stringify(rooms())!==rsAntes||JSON.stringify(reservas())!==resAntes){fallo('La cuenta o la reserva cambió. No se registró el pago; revisa otra vez.');return;}
+  try{localStorage.setItem(tenKey('__respaldoCobroReserva190'),JSON.stringify({fecha:new Date().toISOString(),rooms:rooms(),reservas:reservas(),pagos:DB.get('pagos',[])}));}catch(e){fallo('No pude guardar el respaldo local. No se registró el cobro.');return;}
+  var now=new Date(),operacion='CRP'+now.getTime()+Math.random().toString(36).slice(2,6),usuario=session().nombre||'',cuentaCtrl=a>0?(controlDeGrupoCuenta(g.list)||siguienteControl()):0,resCtrl=parseInt(r.control)||siguienteControl();
+  var base={ts:now.getTime(),dia:diaKey(now),fechaStr:now.toLocaleString('es-VE'),tasa:tasa(),usuario:usuario,pagadorNombre:pagador,pagadorClienteId:pagador.toUpperCase()===String(g.tituNombre||g.list[0].huesped||'').trim().toUpperCase()?(g.tituId||g.list[0].clienteId||''):'',operacionConjunta:operacion,totalOperacionUsd:total};
+  var nom=((r.nombre||'')+' '+(r.apellido||'')).trim(),pagos=DB.get('pagos',[]),nuevos=[];
+  if(a>0)nuevos.push(Object.assign({},base,{id:operacion+'C',control:cuentaCtrl,hab:g.nums.join(', '),huesped:g.tituNombre||g.list[0].huesped||'',clienteId:g.tituId||g.list[0].clienteId||'',concepto:'Pago cuenta · pagado por '+pagador+' · operación '+operacion,metodo:pm.metodoStr,metodos:crpMetodosParte(pm.metodos,a,total),montoUsd:a,montoBs:precioBs(a),saldoAntes:g.saldo,saldoDespues:Math.round((g.saldo-a)*100)/100,abonoParcial:a<g.saldo}));
+  nuevos.push(Object.assign({},base,{id:operacion+'R',control:resCtrl,hab:0,reservaLoc:r.loc,esAnticipo:true,huesped:nom,clienteId:'',clienteDoc:r.docNum||'',concepto:'Anticipo reserva '+r.loc+' · pagado por '+pagador+' · operación '+operacion,metodo:pm.metodoStr,metodos:[],montoUsd:b,montoBs:precioBs(b)}));
+  /* Diferencia por línea: conserva cada forma de pago exactamente al centavo. */
+  var partesC=crpMetodosParte(pm.metodos,a,total);
+  if(a>0)nuevos[0].metodos=partesC.filter(function(m){return m.montoUsd>0;});
+  nuevos[nuevos.length-1].metodos=pm.metodos.map(function(m,i){var v=Math.round((m.montoUsd-partesC[i].montoUsd)*100)/100;return Object.assign({},m,{montoUsd:v,montoBs:precioBs(v)});}).filter(function(m){return m.montoUsd>0;});
+  nuevos.forEach(function(p){p.metodo=p.metodos.map(function(m){return m.metodo+' ('+fmtUSD(m.montoUsd)+')'+(m.ref?' [Ref: '+m.ref+']':'');}).join(' + ');});
+  r.control=resCtrl;r.controlEstado='abierto';r.controlAbierto=r.controlAbierto||now.toISOString();if(!Array.isArray(r.anticipos))r.anticipos=[];
+  r.anticipos.push({ts:now.toISOString(),montoUsd:b,montoBs:precioBs(b),metodo:nuevos[nuevos.length-1].metodo,nota:'Pagado por '+pagador,control:resCtrl,usuario:usuario,pagadorNombre:pagador,pagadorClienteId:base.pagadorClienteId,operacionConjunta:operacion});
+  r.anticipoUsd=resAnticipoUsd(r);r.confirmadaPago=true;r.confirmadaPagoEn=r.confirmadaPagoEn||now.toISOString();
+  DB.save('pagos',nuevos.concat(pagos));saveReservas(rl);if(a>0)_aplicarPagoCuenta(g,a,cuentaCtrl,nuevos[0].metodo,now);
+  confirmarControl(resCtrl);if(a>0)confirmarControl(cuentaCtrl);
+  logKardex('pago',{hab:g.nums.join(', '),huesped:pagador,clienteId:base.pagadorClienteId,detalle:'Pago conjunto '+operacion+' · cuenta '+fmtUSD(a)+' · anticipo reserva '+r.loc+' de '+nom+': '+fmtUSD(b),montoUsd:total,montoBs:precioBs(total),metodo:pm.metodoStr,operacionConjunta:operacion});
+  CRP_PLAN=null;CRP_RECIBO={operacion:operacion,pagador:pagador,fecha:now.toLocaleString('es-VE'),cuenta:g.nums.join(', '),a:a,b:b,total:total,loc:r.loc,huesped:nom,cuentaCtrl:cuentaCtrl,resCtrl:resCtrl,metodo:pm.metodoStr};
+  cerrarModal();render();mostrarResultadoCobro({titulo:'Pago conjunto registrado',sub:'La cuenta sigue ocupada. El anticipo de la reserva se aplicará al check-in.',lineas:[{txt:'Pagador: '+esc(pagador)},{txt:'Cuenta Hab. '+esc(g.nums.join(', '))+': '+fmtUSD(a)},{txt:'Reserva '+esc(r.loc)+' · '+esc(nom)+': '+fmtUSD(b)},{txt:'Total recibido: '+fmtUSD(total),strong:true},{txt:'<button class="btn-primary" onclick="crpImprimirRecibo()">Imprimir / PDF del pago conjunto</button>'}]});
+ },btn);
+}
+function crpImprimirRecibo(){var r=CRP_RECIBO;if(!r)return;var w=window.open('','_blank');if(!w){alert('Permite ventanas emergentes para imprimir.');return;}w.document.write('<!doctype html><html lang="es"><meta charset="utf-8"><title>Comprobante de pago conjunto</title><body style="font-family:Arial;max-width:700px;margin:40px auto"><h1>'+esc(hotel().nombre||'Hotel')+'</h1><h2>Comprobante de pago conjunto</h2><p>'+esc(r.fecha)+'<br>Operación: '+esc(r.operacion)+'<br>Pagador: <b>'+esc(r.pagador)+'</b></p><table style="width:100%;border-collapse:collapse"><tr><th align="left">Destino</th><th align="right">USD</th></tr><tr><td>Cuenta Hab. '+esc(r.cuenta)+' · Control '+(r.cuentaCtrl?fmtControl(r.cuentaCtrl):'sin cobro')+'</td><td align="right">'+fmtUSD(r.a)+'</td></tr><tr><td>Anticipo reserva '+esc(r.loc)+' · '+esc(r.huesped)+' · Control '+fmtControl(r.resCtrl)+'</td><td align="right">'+fmtUSD(r.b)+'</td></tr><tr><td><b>Total recibido</b></td><td align="right"><b>'+fmtUSD(r.total)+'</b></td></tr></table><p>Forma de pago: '+esc(r.metodo)+'</p><p>El anticipo se aplica al check-in de la reserva. Este comprobante agrupa los dos registros; no representa un ingreso adicional.</p></body></html>');w.document.close();w.focus();w.print();}
+
 function cobrarCuentaModal(numsStr){
   if(guardTurno()) return;
   let g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
@@ -10416,6 +10481,7 @@ function cobrarCuentaModal(numsStr){
   body+='<div style="text-align:center;font-size:11px;color:#8893a5;margin-top:8px">Tasa: '+fmtBs(tasa())+' / $1</div></div>';
   /* [PAGO-PARCIAL] Se puede abonar una parte del saldo (ej: de 80 paga 40).
      El resto queda como saldo pendiente en la MISMA cuenta y el MISMO control. */
+  if(crpPermitido()) body+='<button class="btn-blue" onclick="cobroCuentaReservaModal(\''+g.nums.join(',')+'\')">Pagar también una reserva</button>';
   body+=ctaParcialBloqueHTML(g.saldo);
   body+='<div id="grp-parcial-res" style="margin-top:8px;font-weight:700;font-size:13px"></div>';
   body+=pmWidget('grp','⚠️ Escribe aquí arriba cuánto paga y cómo pagó (puedes dividirlo). Ese monto es el abono: si es menor que lo que debe, el resto queda pendiente en la misma cuenta.');
