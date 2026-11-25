@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.93 · 25/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.94 · 25/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.93 · 25/11/2026';
+const APP_VERSION = 'v1.94 · 25/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -1993,7 +1993,7 @@ function rooms(){
   _roomsRaw=raw;
   return _roomsCache;
 }
-function saveRooms(r){ DB.save('rooms', r); }
+function saveRooms(r){ DB.save('rooms', ccPrepararRooms(r)); }
 function findRoom(num){ return rooms().find(r=>r.num===num); }
 function pisos(){ return [...new Set(rooms().map(r=>r.piso))].sort((a,b)=>a-b); }
 /* ---- Tarifas y tasa cambiaria ---- */
@@ -3397,6 +3397,7 @@ function resCardHTML(r){
       h+='<button class="btn-green" style="padding:8px 14px" onclick="checkinReservaModal(\''+r.loc+'\')">✅ Hacer check-in</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="cobrarAnticipoModal(\''+r.loc+'\')">💵 Cobrar anticipo</button>';
       if(r.cortesiaReserva&&chPuede())h+='<button class="btn-orange" onclick="chQuitarModal(\'reserva\',\''+escA(r.loc)+'\')">Quitar cortesía por error</button>';
+      if(r.cortesiaReserva&&chPuede())h+='<button class="btn-blue" onclick="ccConfigurarModal(\'reserva\',\''+escA(r.loc)+'\')">Configurar cobro de consumos</button>';
       h+=chReservaResumen(r);if(!r.cortesiaReserva&&chPuede())h+='<button class="btn-gray" onclick="chAutorizarModal(\'reserva\',\''+escA(r.loc)+'\')">👑 Cortesía de hospedaje</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="enviarLocalizador(\''+r.loc+'\')">📲 Enviar localizador</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="nuevaReservaModal(\''+r.loc+'\')">✏️ Editar</button>';
@@ -3517,6 +3518,40 @@ function resHabDel(i){ if(_resHabs.length<=1) return; resHabsSync(); _resHabs.sp
 function renderAcompResH(i){ pintarAcomp('resh'+i,'resh'+i+'-acomp-box','resh'+i+'-personas'); }
 /* Cortesía prospectiva: no utiliza la cortesía antigua que anulaba toda la cuenta. */
 var CH_PLAN=null;
+/* Cada cortesía decide cómo se tratan los consumos nuevos. No se borran cargos ni ingresos. */
+var CC_PLAN=null;
+function ccTexto(c){return c&&c.cobrarConsumosSeparado===false?'Consumos nuevos incluidos en cortesía (sin cobro al huésped)':'Consumos cobrados aparte';}
+function ccPrepararRooms(lista){
+ var anteriores=DB.get('rooms',[]);return lista.map(function(r){
+  var c=r.cortesiaHosp;if(!c||c.cobrarConsumosSeparado!==false)return r;
+  var viejo=anteriores.find(function(x){return Number(x.num)===Number(r.num);}),ids=(viejo&&viejo.cargos||[]).map(function(x){return String(x.id);});
+  var cargos=(r.cargos||[]).map(function(cg){
+   if(!cg||cg.pagado||cg.cubiertoPorCortesia||!cg.id||ids.indexOf(String(cg.id))>=0)return cg;
+   return Object.assign({},cg,{pagado:true,cubiertoPorCortesia:true,cortesiaConsumosDesde:c.consumosDesde||c.desde,cortesiaAutorizadaPor:c.por,fechaCobertura:new Date().toISOString()});
+  });return Object.assign({},r,{cargos:cargos});
+ });
+}
+function ccRestaurarCargos(r){return (r.cargos||[]).map(function(c){if(!c.cubiertoPorCortesia)return c;var n=Object.assign({},c,{pagado:false});delete n.cubiertoPorCortesia;delete n.cortesiaConsumosDesde;delete n.cortesiaAutorizadaPor;delete n.fechaCobertura;return n;});}
+function ccDetalle(r){var c=r.cortesiaHosp;if(!c)return '';var cubiertos=(r.cargos||[]).filter(function(x){return x.cubiertoPorCortesia;}),total=cubiertos.reduce(function(s,x){return s+Number(x.montoUsd||0);},0);return '<div style="background:#eef6ff;padding:10px;border-radius:8px;margin:8px 0;font-size:13px"><b>'+esc(ccTexto(c))+'</b><div>Los consumos anteriores a la elección se conservan. No se modifica ningún pago.</div>'+(cubiertos.length?'<div>Consumos cubiertos por cortesía: '+fmtUSD(total)+' (no representan dinero recibido).</div>'+cubiertos.map(function(x){return '<div>• '+esc((x.tipo||'Consumo')+' '+(x.desc||''))+' · '+fmtUSD(x.montoUsd)+' · cortesía</div>';}).join(''):'')+'</div>';}
+function ccConfigurarModal(tipo,id){
+ if(!chPuede()){alert('Necesitas permiso para autorizar habitaciones.');return;}if(guardTurno())return;
+ var r=tipo==='reserva'?reservas().find(function(x){return x.loc===id;}):findRoom(Number(id)),c=r&&(tipo==='reserva'?r.cortesiaReserva:r.cortesiaHosp);
+ if(!c||(tipo==='reserva'?r.estado!=='pendiente':r.estado!=='ocupada')){alert('No hay una cortesía activa disponible para configurar.');return;}
+ CC_PLAN={tipo:tipo,id:id,antes:JSON.stringify(r)};
+ var b='<button class="close" onclick="cerrarModal()">×</button><h2>Consumos de la cortesía</h2><p>Esta elección solo afecta consumos nuevos. Los anteriores y los pagos quedan como estaban.</p><div class="field"><label>¿Cómo manejar los consumos?</label><select id="cc-modo"><option value="separado"'+(c.cobrarConsumosSeparado!==false?' selected':'')+'>Cobrar consumos aparte</option><option value="incluido"'+(c.cobrarConsumosSeparado===false?' selected':'')+'>Incluir consumos nuevos en cortesía</option></select></div><div class="field"><label>Motivo (obligatorio)</label><input id="cc-motivo"></div><label style="display:flex;gap:8px;margin:12px 0"><input id="cc-ok" type="checkbox" style="width:16px;height:16px;margin:0"><span>Confirmo esta elección para los consumos nuevos.</span></label><button class="btn-green" onclick="ccConfigurarConfirmar()">Guardar elección</button> <button class="btn-gray" onclick="cerrarModal()">Cancelar</button>';showModal(b);
+}
+function ccConfigurarConfirmar(){
+ if(!chPuede()||guardTurno())return;var p=CC_PLAN;if(!p)return;var motivo=document.getElementById('cc-motivo').value.trim();if(!motivo||!document.getElementById('cc-ok').checked){alert('Escribe el motivo y confirma.');return;}
+ var lista=p.tipo==='reserva'?reservas():rooms(),r=lista.find(function(x){return p.tipo==='reserva'?x.loc===p.id:Number(x.num)===Number(p.id);});
+ if(!r||JSON.stringify(r)!==p.antes){alert('Los datos cambiaron. No se guardó la elección. Abre nuevamente.');CC_PLAN=null;return;}
+ var c=p.tipo==='reserva'?r.cortesiaReserva:r.cortesiaHosp,ts=new Date().toISOString(),separado=document.getElementById('cc-modo').value!=='incluido';
+ try{localStorage.setItem(tenKey('__respaldoConsumos194'),JSON.stringify({tipo:p.tipo,registro:r,ts:ts}));}catch(e){alert('No pude guardar el respaldo. No se cambió la elección.');return;}
+ var nuevo=Object.assign({},c,{cobrarConsumosSeparado:separado,consumosDesde:ts,consumosMotivo:motivo,consumosRegistradoPor:session().nombre||''});
+ if(p.tipo==='reserva'){r.cortesiaReserva=nuevo;saveReservas(lista);}else updateRoom(r.num,{cortesiaHosp:nuevo});
+ logKardex('autorizada',{hab:p.tipo==='reserva'?0:r.num,reservaLoc:p.tipo==='reserva'?r.loc:'',huesped:r.huesped||r.nombre||'',detalle:'Elección de consumos de cortesía: '+ccTexto(nuevo)+' · solo consumos nuevos · motivo '+motivo,montoUsd:0,montoBs:0,cobrarConsumosSeparado:separado,consumosDesde:ts});
+ CC_PLAN=null;cerrarModal();render();alert('Elección guardada. Solo se aplica a los consumos nuevos; los anteriores y los pagos se conservaron.');
+}
+
 function chPuede(){var s=session();return !!(s&&['recepcion','supervisor'].indexOf(s.rol)>=0&&!window.__consulta&&puede('habAutorizada')&&autorizadasOn());}
 function chCalculo(r,ts){
  var fecha=revisionFechaCaracas(ts),entrada=entradaISO(r),total=nochesHab(r);
@@ -3528,8 +3563,8 @@ function chCalculo(r,ts){
  var d=new Date(fecha+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+1);
  return {desde:ts,primeraNocheGratis:d.toISOString().slice(0,10),nochesPrevias:previas,brutoAnterior:bruto,descuentoAnterior:descuento,netoAnterior:Math.round((bruto-descuento)*100)/100,tarifaAnterior:Number(r.tarifa)||0};
 }
-function chResumen(r){var c=r&&r.cortesiaHosp;if(!c)return '';var pagos=(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0);return '<div style="background:#f3eefb;border:1px solid #dccdf1;border-radius:10px;padding:12px;margin:10px 0;font-size:13px"><b>👑 Cortesía de hospedaje</b><div>Desde la noche del '+esc(fmtFechaCorta(c.primeraNocheGratis))+'. Las noches anteriores, incluida la noche de autorización, se cobran completas.</div><div>Hospedaje anterior: '+c.nochesPrevias+' noche(s) · <b>'+fmtUSD(c.netoAnterior)+'</b>.</div><div>Autorizó: '+esc(c.por)+' · Motivo: '+esc(c.motivo)+'</div><div>Registrado: '+esc(new Date(c.desde).toLocaleString('es-VE',{timeZone:'America/Caracas'}))+'</div><div>Los consumos se cobran aparte. Los pagos recibidos se conservan.</div>'+(pagos>0?'<div style="color:#8a5200">Pagos/anticipos conservados: '+fmtUSD(pagos)+'. Administración debe revisar cualquier excedente; no se devuelve ni se mueve automáticamente.</div>':'')+'</div>';}
-function chReservaResumen(r){var c=r&&r.cortesiaReserva;if(!c)return '';return '<div style="background:#f3eefb;padding:10px;border-radius:8px;font-size:13px"><b>👑 Reserva con cortesía de hospedaje desde el check-in</b><div>Autorizó: '+esc(c.por)+' · '+esc(c.motivo)+'</div><div>Comidas y consumos no incluidos en la cortesía.</div>'+(resAnticipoUsd(r)>0?'<div style="color:#8a5200">Anticipo conservado: '+fmtUSD(resAnticipoUsd(r))+'. Pendiente de revisión por Administración.</div>':'')+'</div>';}
+function chResumen(r){var c=r&&r.cortesiaHosp;if(!c)return '';var pagos=(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0);return '<div style="background:#f3eefb;border:1px solid #dccdf1;border-radius:10px;padding:12px;margin:10px 0;font-size:13px"><b>👑 Cortesía de hospedaje</b><div>Desde la noche del '+esc(fmtFechaCorta(c.primeraNocheGratis))+'. Las noches anteriores, incluida la noche de autorización, se cobran completas.</div><div>Hospedaje anterior: '+c.nochesPrevias+' noche(s) · <b>'+fmtUSD(c.netoAnterior)+'</b>.</div><div>Autorizó: '+esc(c.por)+' · Motivo: '+esc(c.motivo)+'</div><div>Registrado: '+esc(new Date(c.desde).toLocaleString('es-VE',{timeZone:'America/Caracas'}))+'</div><div>'+esc(ccTexto(c))+'. Los pagos recibidos se conservan.</div>'+(pagos>0?'<div style="color:#8a5200">Pagos/anticipos conservados: '+fmtUSD(pagos)+'. Administración debe revisar cualquier excedente; no se devuelve ni se mueve automáticamente.</div>':'')+'</div>';}
+function chReservaResumen(r){var c=r&&r.cortesiaReserva;if(!c)return '';return '<div style="background:#f3eefb;padding:10px;border-radius:8px;font-size:13px"><b>👑 Reserva con cortesía de hospedaje desde el check-in</b><div>Autorizó: '+esc(c.por)+' · '+esc(c.motivo)+'</div><div>'+esc(ccTexto(c))+'. La elección se aplica desde el check-in.</div>'+(resAnticipoUsd(r)>0?'<div style="color:#8a5200">Anticipo conservado: '+fmtUSD(resAnticipoUsd(r))+'. Pendiente de revisión por Administración.</div>':'')+'</div>';}
 function chAutorizarModal(tipo,id){
  if(!chPuede()){alert('Necesitas permiso para autorizar habitaciones en Recepción o Supervisión.');return;}if(guardTurno())return;
  var r=tipo==='reserva'?reservas().find(function(x){return x.loc===id;}):findRoom(Number(id));
@@ -3538,7 +3573,8 @@ function chAutorizarModal(tipo,id){
  if(tipo!=='reserva'&&(r.autorizada||r.creditoCxc||r.autorizadaCxcId)){alert('Esta habitación ya tiene una autorización o cuenta en CXC. Administración debe revisar esa cuenta antes de aplicar otra cortesía.');return;}
  var calc=tipo==='reserva'?null:chCalculo(r,new Date().toISOString());if(tipo!=='reserva'&&!calc){alert('No se puede comprobar la fecha de entrada. Corrígela antes de autorizar.');return;}
  CH_PLAN={tipo:tipo,id:id,antes:JSON.stringify(r),calc:calc};
- var b='<button class="close" onclick="cerrarModal()">×</button><h2>Cortesía de hospedaje · '+esc(tipo==='reserva'?id:'Hab. '+id)+'</h2><p>'+(tipo==='reserva'?'El hospedaje será cortesía desde el check-in. La tarifa de referencia, las fechas y el huésped se conservan.':'Se cobra completa la noche en curso. La cortesía comienza la noche del <b>'+esc(fmtFechaCorta(calc.primeraNocheGratis))+'</b>. Hospedaje anterior que se conserva: <b>'+fmtUSD(calc.netoAnterior)+'</b> ('+calc.nochesPrevias+' noche(s)).')+'</p><p>Los consumos y comidas se cobran aparte. Los pagos y anticipos no se borran ni se devuelven automáticamente.</p>';
+ var b='<button class="close" onclick="cerrarModal()">×</button><h2>Cortesía de hospedaje · '+esc(tipo==='reserva'?id:'Hab. '+id)+'</h2><p>'+(tipo==='reserva'?'El hospedaje será cortesía desde el check-in. La tarifa de referencia, las fechas y el huésped se conservan.':'Se cobra completa la noche en curso. La cortesía comienza la noche del <b>'+esc(fmtFechaCorta(calc.primeraNocheGratis))+'</b>. Hospedaje anterior que se conserva: <b>'+fmtUSD(calc.netoAnterior)+'</b> ('+calc.nochesPrevias+' noche(s)).')+'</p><p>Elige abajo si los consumos nuevos se cobran aparte o quedan incluidos. Los pagos y anticipos no se borran ni se devuelven automáticamente.</p>';
+ b+='<div class="field"><label>Consumos de esta cortesía</label><select id="ch-consumos"><option value="separado">Cobrar consumos aparte</option><option value="incluido">Incluir consumos nuevos en cortesía</option></select><div style="font-size:12px">La elección afecta solo consumos nuevos; los anteriores siguen como estaban.</div></div>';
  b+='<div class="field"><label>Quién autoriza (obligatorio)</label><input id="ch-por" value="'+escA(autNombreLog())+'"></div><div class="field"><label>Motivo (obligatorio)</label><input id="ch-motivo"></div><label style="display:flex;gap:8px;margin:12px 0;font-size:13px"><input id="ch-ok" type="checkbox" style="width:16px;height:16px;margin:0"><span>Confirmo la cortesía de hospedaje y la conservación de la deuda anterior, consumos y pagos.</span></label><div class="actions"><button class="btn-green" onclick="chAutorizarConfirmar(this)">Confirmar cortesía</button><button class="btn-gray" onclick="cerrarModal()">Cancelar</button></div>';showModal(b);
 }
 function chAutorizarConfirmar(btn){
@@ -3550,10 +3586,10 @@ function chAutorizarConfirmar(btn){
  var ts=new Date().toISOString(),calc=p.tipo==='reserva'?null:chCalculo(r,ts);
  if(calc&&JSON.stringify(Object.assign({},calc,{desde:p.calc.desde}))!==JSON.stringify(p.calc)){alert('Cambió la noche en curso. Abre nuevamente para confirmar el período correcto.');return;}
  try{localStorage.setItem(tenKey('__respaldoCortesia191'),JSON.stringify({ts:ts,tipo:p.tipo,registro:r}));}catch(e){alert('No pude guardar el respaldo. No se aplicó la cortesía.');return;}
- var c=Object.assign({},calc||{desde:ts,primeraNocheGratis:'checkin',nochesPrevias:0,brutoAnterior:0,descuentoAnterior:0,netoAnterior:0},{por:por,motivo:motivo,registradoPor:session().nombre||'',tipo:'soloHospedaje'});
+ var c=Object.assign({},calc||{desde:ts,primeraNocheGratis:'checkin',nochesPrevias:0,brutoAnterior:0,descuentoAnterior:0,netoAnterior:0},{por:por,motivo:motivo,registradoPor:session().nombre||'',tipo:'soloHospedaje',cobrarConsumosSeparado:document.getElementById('ch-consumos').value!=='incluido',consumosDesde:ts});
  if(p.tipo==='reserva'){r.cortesiaReserva=c;r.cortesiaRevisionAdmin=resAnticipoUsd(r)>0;saveReservas(lista);}else{updateRoom(r.num,{cortesiaHosp:c,cortesiaRevisionAdmin:(r.abonos||[]).length>0,ocultarCobrar:false});}
- logKardex('autorizada',{hab:p.tipo==='reserva'?0:r.num,huesped:r.huesped||((r.nombre||'')+' '+(r.apellido||'')).trim(),clienteId:r.clienteId||'',reservaLoc:p.tipo==='reserva'?r.loc:'',detalle:'Cortesía prospectiva de hospedaje · autorizó '+por+' · motivo '+motivo+(calc?' · noche actual completa · anterior conservado '+fmtUSD(calc.netoAnterior)+' · gratis desde '+calc.primeraNocheGratis:' · reserva, desde el check-in')+' · consumos y pagos conservados',montoUsd:0,montoBs:0,autModo:'gratis',autInvitado:r.huesped||r.nombre||'',autMotivo:motivo,autTarifaNormal:r.tarifa||0,autTarifaCobra:0,autorizadoPor:por,cortesiaDesde:c.primeraNocheGratis,hospedajeAnteriorUsd:c.netoAnterior,pagosConservadosUsd:p.tipo==='reserva'?resAnticipoUsd(r):(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0),cortesiaRevisionAdmin:true});
- CH_PLAN=null;cerrarModal();render();alert('Cortesía registrada. '+(calc?'La noche actual y las anteriores se cobran completas; las siguientes son cortesía.':'Se aplicará al hospedaje desde el check-in.')+' Los consumos y los pagos se conservaron.');
+ logKardex('autorizada',{hab:p.tipo==='reserva'?0:r.num,huesped:r.huesped||((r.nombre||'')+' '+(r.apellido||'')).trim(),clienteId:r.clienteId||'',reservaLoc:p.tipo==='reserva'?r.loc:'',detalle:'Cortesía prospectiva de hospedaje · autorizó '+por+' · motivo '+motivo+(calc?' · noche actual completa · anterior conservado '+fmtUSD(calc.netoAnterior)+' · gratis desde '+calc.primeraNocheGratis:' · reserva, desde el check-in')+' · '+ccTexto(c)+' · consumos anteriores y pagos conservados',montoUsd:0,montoBs:0,cobrarConsumosSeparado:c.cobrarConsumosSeparado,autModo:'gratis',autInvitado:r.huesped||r.nombre||'',autMotivo:motivo,autTarifaNormal:r.tarifa||0,autTarifaCobra:0,autorizadoPor:por,cortesiaDesde:c.primeraNocheGratis,hospedajeAnteriorUsd:c.netoAnterior,pagosConservadosUsd:p.tipo==='reserva'?resAnticipoUsd(r):(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0),cortesiaRevisionAdmin:true});
+ CH_PLAN=null;cerrarModal();render();alert('Cortesía registrada. '+(calc?'La noche actual y las anteriores se cobran completas; las siguientes son cortesía.':'Se aplicará al hospedaje desde el check-in.')+' '+ccTexto(c)+'. Los consumos anteriores y los pagos se conservaron.');
 }
 function chAvisosAdmin(){var filas=[];kardexAll().filter(function(k){return k.tipo==='autorizada'&&k.cortesiaRevisionAdmin&&k.pagosConservadosUsd>0;}).forEach(function(k){filas.push('Registro de cortesía '+(k.reservaLoc?'reserva '+k.reservaLoc:'Hab. '+k.hab)+' · pagos conservados '+fmtUSD(k.pagosConservadosUsd)+' · revisar antes de devolver');});rooms().forEach(function(r){if(r.cortesiaHosp&&r.cortesiaRevisionAdmin)filas.push('Hab. '+r.num+' · '+(r.huesped||'')+' · pagos conservados para revisión');});reservas().forEach(function(r){if(r.cortesiaReserva&&r.cortesiaRevisionAdmin)filas.push('Reserva '+r.loc+' · '+(r.nombre||'')+' · anticipo '+fmtUSD(resAnticipoUsd(r))+' conservado');});return filas.length?'<div style="background:#fff8e1;padding:12px;margin:12px 0;border-radius:8px"><b>Cortesías con pagos o anticipos para revisar</b>'+filas.map(function(t){return '<div>'+esc(t)+'</div>';}).join('')+'<p>No se efectuó ninguna devolución automática. Antes de devolver, comprueba hospedaje anterior y consumos.</p></div>':'';}
 
@@ -3562,7 +3598,7 @@ var CH_QUITAR_PLAN=null;
 function chQuitarSimular(tipo,r){
  var copia=JSON.parse(JSON.stringify(r));
  if(tipo==='reserva'){if(!copia.cortesiaReserva)return null;copia.cortesiaReserva=null;return copia;}
- if(copia.cortesiaHosp){if(tramosActivos(copia).some(function(t){return Number(t.tarifa)===0;}))return null;copia.cortesiaHosp=null;return copia;}
+ if(copia.cortesiaHosp){copia.cargos=ccRestaurarCargos(copia);if(tramosActivos(copia).some(function(t){return Number(t.tarifa)===0;}))return null;copia.cortesiaHosp=null;return copia;}
  if(habCortesia(copia)){
   var tarifa=Number(copia.autorizadaTarifaNormal);if(!(tarifa>0)||tramosActivos(copia).some(function(t){return Number(t.tarifa)===0;}))return null;
   copia.autorizada=false;copia.autorizadaModo='';copia.autorizadaInvitado='';copia.autorizadaMotivo='';copia.autorizadaPor='';copia.tarifa=tarifa;
@@ -3573,7 +3609,7 @@ function chQuitarSimular(tipo,r){
 function chQuitarImportes(tipo,r){
  var normal=chQuitarSimular(tipo,r);if(!normal)return null;
  if(tipo==='reserva'){return {normal:normal,antes:resTotalReserva(r),despues:resTotalReserva(normal),pagos:resAnticipoUsd(r),saldoAntes:Math.max(0,resTotalReserva(r)-resAnticipoUsd(r)),saldoDespues:Math.max(0,resTotalReserva(normal)-resAnticipoUsd(r))};}
- var antes=brutoHab(r)-descUsd(r),despues=brutoHab(normal)-descUsd(normal),cons=cargosDe(r).filter(function(c){return !c.pagado;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0),pagos=(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0);
+ var antes=brutoHab(r)-descUsd(r),despues=brutoHab(normal)-descUsd(normal),cons=cargosDe(normal).filter(function(c){return !c.pagado;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0),pagos=(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0);
  return {normal:normal,antes:Math.round(antes*100)/100,despues:Math.round(despues*100)/100,pagos:pagos,cons:cons,saldoAntes:Math.max(0,antes+cons-pagos),saldoDespues:Math.max(0,despues+cons-pagos)};
 }
 function chQuitarModal(tipo,id){
@@ -3584,7 +3620,7 @@ function chQuitarModal(tipo,id){
  var imp=chQuitarImportes(tipo,r);if(!imp){alert('No hay una cortesía que pueda anularse con una tarifa comprobable. No se modificó nada.');return;}
  CH_QUITAR_PLAN={tipo:tipo,id:id,antes:JSON.stringify(r),importe:imp};
  var b='<button class="close" onclick="cerrarModal()">×</button><h2>Quitar cortesía por error · '+esc(tipo==='reserva'?id:'Hab. '+id)+'</h2><p>Se anula la cortesía como si no se hubiera aplicado. Se restablece el cobro normal de '+(tipo==='reserva'?'la reserva':'toda la estadía registrada, incluido el período que estaba gratis')+'. <b>No se registra un pago ni una devolución.</b></p>';
- b+='<div style="background:#fff8e1;border-radius:8px;padding:12px;font-size:13px"><div>'+(tipo==='reserva'?'Total reserva actual':'Hospedaje actual')+': <b>'+fmtUSD(imp.antes)+'</b></div><div>Después de quitar cortesía: <b>'+fmtUSD(imp.despues)+'</b></div><div>Cobro que se restablece: <b>'+fmtUSD(imp.despues-imp.antes)+'</b></div><div>Pagos/anticipos conservados: '+fmtUSD(imp.pagos)+'</div>'+(tipo==='reserva'?'<div>Pendiente de la reserva después: '+fmtUSD(imp.saldoDespues)+'</div>':'<div>Los consumos y la distribución de pagos de cuentas unidas se conservan. El saldo de la cuenta se recalculará al confirmar.</div>')+'</div>';
+ b+='<div style="background:#fff8e1;border-radius:8px;padding:12px;font-size:13px"><div>'+(tipo==='reserva'?'Total reserva actual':'Hospedaje actual')+': <b>'+fmtUSD(imp.antes)+'</b></div><div>Después de quitar cortesía: <b>'+fmtUSD(imp.despues)+'</b></div><div>Cobro que se restablece: <b>'+fmtUSD(imp.despues-imp.antes)+'</b></div><div>Consumos incluidos que volverán a cobrarse: '+fmtUSD((r.cargos||[]).filter(function(c){return c.cubiertoPorCortesia;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0))+'</div><div>Pagos/anticipos conservados: '+fmtUSD(imp.pagos)+'</div>'+(tipo==='reserva'?'<div>Pendiente de la reserva después: '+fmtUSD(imp.saldoDespues)+'</div>':'<div>Los consumos y la distribución de pagos de cuentas unidas se conservan. El saldo de la cuenta se recalculará al confirmar.</div>')+'</div>';
  b+='<div class="field"><label>Motivo de la corrección (obligatorio)</label><input id="ch-quitar-motivo" placeholder="Ej.: se marcó cortesía por equivocación"></div><label style="display:flex;gap:8px;margin:12px 0;font-size:13px"><input type="checkbox" id="ch-quitar-ok" style="width:16px;height:16px;margin:0"><span>Confirmo anular la cortesía y restablecer el cobro mostrado, conservando consumos, pagos y la autorización anterior en la auditoría.</span></label><div class="actions"><button class="btn-orange" onclick="chQuitarConfirmar(this)">Confirmar quitar cortesía</button><button class="btn-gray" onclick="cerrarModal()">Cancelar</button></div>';showModal(b);
 }
 function chQuitarConfirmar(btn){
@@ -3598,11 +3634,11 @@ function chQuitarConfirmar(btn){
  try{localStorage.setItem(tenKey('__respaldoQuitarCortesia192'),JSON.stringify({ts:ts,tipo:p.tipo,registro:r}));}catch(e){alert('No pude guardar el respaldo. No se quitó la cortesía.');return;}
  var historial=(r.cortesiasAnuladas||[]).slice();historial.push(registro);
  if(p.tipo==='reserva'){r.cortesiaReserva=null;r.cortesiaRevisionAdmin=false;r.cortesiasAnuladas=historial;saveReservas(list);}else{
-  var patch={cortesiaHosp:null,cortesiaRevisionAdmin:false,cortesiasAnuladas:historial,ocultarCobrar:false};
+  var patch={cortesiaHosp:null,cortesiaRevisionAdmin:false,cortesiasAnuladas:historial,ocultarCobrar:false,cargos:ccRestaurarCargos(r)};
   if(habCortesia(r)){Object.assign(patch,{autorizada:false,autorizadaModo:'',autorizadaInvitado:'',autorizadaMotivo:'',autorizadaPor:'',autorizadaTarifaNormal:0,tarifa:imp.normal.tarifa});}
   updateRoom(r.num,patch);
  }
- logKardex('correccion',{hab:p.tipo==='reserva'?0:r.num,reservaLoc:p.tipo==='reserva'?r.loc:'',clienteId:r.clienteId||'',huesped:r.huesped||((r.nombre||'')+' '+(r.apellido||'')).trim(),detalle:'Cortesía ANULADA POR ERROR · '+motivo+' · hospedaje/total antes '+fmtUSD(imp.antes)+' → '+fmtUSD(imp.despues)+' · pagos y consumos conservados · por '+usuario,montoUsd:0,montoBs:0,cortesiaAnulada:true,cortesiaOriginal:registro.autorizacionAnterior,importeRestablecidoUsd:Math.round((imp.despues-imp.antes)*100)/100});
+ logKardex('correccion',{hab:p.tipo==='reserva'?0:r.num,reservaLoc:p.tipo==='reserva'?r.loc:'',clienteId:r.clienteId||'',huesped:r.huesped||((r.nombre||'')+' '+(r.apellido||'')).trim(),detalle:'Cortesía ANULADA POR ERROR · '+motivo+' · hospedaje/total antes '+fmtUSD(imp.antes)+' → '+fmtUSD(imp.despues)+' · consumos incluidos restablecidos '+fmtUSD((r.cargos||[]).filter(function(c){return c.cubiertoPorCortesia;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0))+' · pagos conservados · por '+usuario,montoUsd:0,montoBs:0,cortesiaAnulada:true,cortesiaOriginal:registro.autorizacionAnterior,importeRestablecidoUsd:Math.round((imp.despues-imp.antes)*100)/100});
  CH_QUITAR_PLAN=null;cerrarModal();render();alert('Cortesía anulada por error. Se restableció el cobro normal. Los pagos y consumos se conservaron y la corrección quedó en la auditoría.');
 }
 
@@ -3615,6 +3651,7 @@ function nuevaReservaModal(loc){
   let b='<button class="close" onclick="cerrarModal()">×</button>';
   b+='<h2>'+(esEdit?('Editar reserva '+esc(r.loc)):'Nueva reserva')+'</h2>';
   if(r&&r.estado==='pendiente'&&r.cortesiaReserva&&chPuede())b+='<button class="btn-orange" onclick="chQuitarModal(\'reserva\',\''+escA(r.loc)+'\')">Quitar cortesía por error</button>';
+  if(r&&r.estado==='pendiente'&&r.cortesiaReserva&&chPuede())b+='<button class="btn-blue" onclick="ccConfigurarModal(\'reserva\',\''+escA(r.loc)+'\')">Configurar cobro de consumos</button>';
   if(r){b+=chReservaResumen(r);if(r.estado==='pendiente'&&!r.cortesiaReserva&&chPuede())b+='<button class="btn-gray" onclick="chAutorizarModal(\'reserva\',\''+escA(r.loc)+'\')">👑 Autorizar cortesía de hospedaje</button>';}
   b+='<div style="max-height:66vh;overflow:auto;padding-right:4px">';
   b+='<label class="lbl">¿Cómo reservó?</label>';
@@ -4037,7 +4074,7 @@ function confirmarCheckinReserva(loc){
     if(habsR.length>1) extras+=' · Reserva de '+asign.length+' hab. (titular: '+asign[0].nombreCompleto+')';
     var _abPrev=Array.isArray(a.hab.abonos)?a.hab.abonos.slice():[];
     var _abIni=_abPrev.concat(_repartoAnt[k]||[]);
-    updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:(1+acsI.length), ninos:_mensI.length, acompanantes:acsI, menores:_mensI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:_chFecha, salida:_sPre, control:_resCtrl, abonos:_abIni, autorizada:false,autorizadaModo:'',cortesiaHosp:r.cortesiaReserva?Object.assign({},r.cortesiaReserva,{desde:_chTs,primeraNocheGratis:_chFecha,nochesPrevias:0,brutoAnterior:0,descuentoAnterior:0,netoAnterior:0}):null,cortesiaRevisionAdmin:!!(r.cortesiaReserva&&_antUsd>0)});
+    updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:(1+acsI.length), ninos:_mensI.length, acompanantes:acsI, menores:_mensI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:_chFecha, salida:_sPre, control:_resCtrl, abonos:_abIni, autorizada:false,autorizadaModo:'',cortesiaHosp:r.cortesiaReserva?Object.assign({},r.cortesiaReserva,{desde:_chTs,consumosDesde:_chTs,primeraNocheGratis:_chFecha,nochesPrevias:0,brutoAnterior:0,descuentoAnterior:0,netoAnterior:0}):null,cortesiaRevisionAdmin:!!(r.cortesiaReserva&&_antUsd>0)});
     logKardex('checkin', {ts:_chTs, hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:_sPre, personas:(1+acsI.length), acompanantes:acsI.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum, edad:(x.edad||''), estadoCivil:(x.estadoCivil||''), ocupacion:(x.ocupacion||'')}; }), menores:(_mensI||[]), ninos:(_mensI||[]).length, detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
     abrirEstadia(a.clienteId, a.num, noches, a.tarifa);
     if(k===0 && _rPlan!=='solo'){
@@ -4357,7 +4394,7 @@ function abrirHab(num){
     body += cxcAvisoCliente(clienteDeHab(r));
     if(r.autorizada){ body += autorizaBadgeHTML(r); }
     if((r.cortesiaHosp||habCortesia(r))&&chPuede())body+='<button class="btn-orange" onclick="chQuitarModal(\'hab\','+num+')">Quitar cortesía por error</button>';
-    body+=chResumen(r);if(!r.cortesiaHosp&&!r.autorizada&&chPuede())body+='<button class="btn-gray" onclick="chAutorizarModal(\'hab\','+num+')">👑 Pasar hospedaje a cortesía</button>';
+    body+=chResumen(r)+ccDetalle(r);if(r.cortesiaHosp&&chPuede())body+='<button class="btn-blue" onclick="ccConfigurarModal(\'hab\','+num+')">Configurar cobro de consumos</button>';if(!r.cortesiaHosp&&!r.autorizada&&chPuede())body+='<button class="btn-gray" onclick="chAutorizarModal(\'hab\','+num+')">👑 Pasar hospedaje a cortesía</button>';
     body += '<div class="field"><label>Huésped</label><div style="font-weight:700;margin-top:4px">'+esc(r.huesped||'—')+clienteFichaLink(r)+'</div></div>';
     body += '<div style="display:flex;gap:10px"><div class="field" style="flex:1"><label>Personas (adultos)</label><div style="margin-top:4px">'+(r.personas||1)+'</div></div>';
     body += '<div class="field" style="flex:1"><label>Niños</label><div style="margin-top:4px">'+(r.ninos||0)+'</div></div>';
@@ -6078,8 +6115,8 @@ function guardarCargo(num){
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
   /* [CXC-SUMAR] si el hospedaje ya esta a credito en CXC, el consumo va a esa MISMA cuenta */
   var _sumCxc=null;
-  try{ _sumCxc=cxcSumarHab(num,{concepto:'Consumo · '+tipo+(rest?(' · '+rest):'')+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]}); }catch(e){}
-  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, control:_cgCtrl, detalle:tipo+(rest?(' · '+rest):'')+(desc?' · '+desc:'')+' · '+fmtUSD(monto)+' · N° control '+fmtControl(_cgCtrl), restaurante:rest, cargoTipo:tipo, cargoUsd:monto, cargoBs:precioBs(monto), montoUsd:0, montoBs:0, metodo:''});
+  try{ if(!cargosDe(findRoom(num)).find(function(c){return c.id===_cgId&&c.cubiertoPorCortesia;}))_sumCxc=cxcSumarHab(num,{concepto:'Consumo · '+tipo+(rest?(' · '+rest):'')+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]}); }catch(e){}
+  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, control:_cgCtrl, detalle:(cargosDe(findRoom(num)).some(function(c){return c.id===_cgId&&c.cubiertoPorCortesia;})?'Consumo incluido en cortesía (sin ingreso) · ':'')+tipo+(rest?(' · '+rest):'')+(desc?' · '+desc:'')+' · '+fmtUSD(monto)+' · N° control '+fmtControl(_cgCtrl), restaurante:rest, cargoTipo:tipo, cargoUsd:monto, cargoBs:precioBs(monto), montoUsd:0, montoBs:0, metodo:''});
   abrirHab(num);
   if(_sumCxc){ setTimeout(function(){ alert('Sumado a la cuenta CXC N° '+fmtControl(_sumCxc.control||0)+' de '+cxcNombreDe(_sumCxc)+'.\nAhora debe '+fmtUSD(cxcSaldo(_sumCxc))+(cxcViveEnHab(_sumCxc)?'':'.\n\nEl huesped ya hizo check-out: este consumo lleva su propio N° de control dentro de la misma cuenta.')); },80); }
 }
@@ -6331,6 +6368,7 @@ function imprimirRecibo(num){
   const _logo=(_hl.logo && impConfig().mostrarLogo)?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
   html += '<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+'</h1>'+hotelLinePrint()+'</div></div><div class="sub">'+esc(tituloDoc('recibo','Recibo de hospedaje'))+' · Control N° '+fmtControl(ctrlRecibo)+' · Habitación '+num+' · Emitido: '+now.toLocaleString('es-VE')+'</div>';
   if(filasCli){ html += '<h2>Datos del cliente</h2><table>'+filasCli+'</table>'; }
+  if(r.cortesiaHosp)html+=ccDetalle(r);
   html += '<h2>Detalle de la estadía</h2><table>';
   html += '<tr><td>Huésped</td><td>'+esc(r.huesped||'—')+'</td></tr>';
   html += '<tr><td>Tipo de habitación</td><td>'+esc(r.tipo||'—')+'</td></tr>';
@@ -11095,6 +11133,7 @@ function imprimirReciboGrupo(numsStr){
   const _logo=(_hl.logo && impConfig().mostrarLogo)?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
   html+='<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+'</h1>'+hotelLinePrint()+'</div></div><div class="sub">'+esc(tituloDoc('recibo','Recibo de hospedaje'))+' (cuenta combinada) · Control N° '+fmtControl(ctrlRecibo)+' · '+g.nums.length+' habitaciones · Emitido: '+now.toLocaleString('es-VE')+'</div>';
   if(filasCli){ html+='<h2>Datos del cliente</h2><table>'+filasCli+'</table>'; }
+  g.porHab.forEach(function(x){if(x.r.cortesiaHosp)html+='<h2>Hab. '+esc(x.r.num)+'</h2>'+ccDetalle(x.r);});
   html+='<h2>Detalle por habitación</h2><table>';
   g.porHab.forEach(x=>{ const r=x.r; if(r&&r.cortesiaHosp){html+='<tr><td>Hab. '+r.num+'</td><td>'+esc(lineaTarifaHab(r))+' · hospedaje neto '+fmtUSD(x.hosp-x.d)+' + consumos '+fmtUSD(x.cons)+' = '+fmtUSD(x.hosp-x.d+x.cons)+'</td></tr>';return;} if(r && r.autorizada && r.autorizadaModo==='gratis'){ html+='<tr><td>Hab. '+r.num+' · '+esc(r.tipo||'')+'</td><td>Cortesía autorizada · '+x.noches+' noche(s) · hospedaje no se cobra'+(x.cons>0.009?(' + consumos '+fmtUSD(x.cons)+' = '+fmtUSD(x.cons)):' = '+fmtUSD(0))+'</td></tr>'; return; } html+='<tr><td>Hab. '+r.num+' · '+esc(r.tipo||'')+'</td><td>'+fmtUSD(r.tarifa)+' × '+x.noches+(x.d>0.009?(' −'+promoPct(r)+'%'):'')+(x.cons>0?(' + consumos '+fmtUSD(x.cons)):'')+' = '+fmtUSD(x.hosp-x.d+x.cons)+'</td></tr>'; });
   if(metodo) html+='<tr><td>Forma de pago</td><td>'+esc(metodo)+'</td></tr>';
