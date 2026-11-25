@@ -138,6 +138,7 @@ input[type=text]:not(.puedeMinus):not(.puede-minus), textarea:not(.puedeMinus):n
 /* MODAL */
 .modal-bg{position:fixed;inset:0;background:rgba(13,30,55,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:16px;}
 .modal{background:#fff;border-radius:16px;width:420px;max-width:100%;padding:24px;max-height:90vh;overflow:auto;}
+.modal.cxc-detalle-wide{width:900px;}
 .modal h2{font-size:19px;color:var(--azul);margin-bottom:4px;}
 .modal .rstate{font-size:13px;font-weight:600;margin-bottom:16px;}
 .modal .field{margin-bottom:12px;}
@@ -349,7 +350,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.98 · 25/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.99 · 26/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +407,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.98 · 25/11/2026';
+const APP_VERSION = 'v1.99 · 26/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -4389,6 +4390,7 @@ function abrirHab(num){
         body += '<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;color:#2a4a73">🔄 <b>Estuvo en la habitación '+esc(x.hab)+'</b> y pasó a la '+r.num+(x.motivo?' · '+esc(x.motivo):'')+'<div style="color:#667;margin-top:2px">Cambio hecho por '+esc(x.por||'—')+(f?' · '+esc(f):'')+'</div></div>';
       });
     }
+    body += ceAvisoHab(r);
     body += csResumen(r);
     body += cobroHoyAvisoHTML(r);
     body += cuentaCerradaBannerHTML(r);
@@ -4571,7 +4573,7 @@ const _obsContent=new MutationObserver(function(){
 function vigilarMayusculas(){
   try{ const c=document.getElementById('content'); if(c && !c.__mayusVigila){ c.__mayusVigila=true; _obsContent.observe(c,{childList:true,subtree:true}); } }catch(e){}
 }
-function showModal(h){ document.getElementById('modal').innerHTML=h; modalOriginalHTML=document.getElementById('modal').innerHTML; document.getElementById('modal-bg').style.display='flex'; try{ mayusculasEnTodo(document.getElementById('modal')); }catch(e){} if(limpiaCedulaPendiente){ limpiaCedulaPendiente=false; try{ const c=document.getElementById('m-cedula'); if(c) c.value=''; const r=document.getElementById('m-cedula-res'); if(r) r.innerHTML=''; const sl=document.getElementById('m-cliente'); if(sl){ sl.value=''; if(sl.dataset) sl.dataset.auto='0'; } }catch(e){} } }
+function showModal(h){ document.getElementById('modal').classList.remove('cxc-detalle-wide');document.getElementById('modal').innerHTML=h; modalOriginalHTML=document.getElementById('modal').innerHTML; document.getElementById('modal-bg').style.display='flex'; try{ mayusculasEnTodo(document.getElementById('modal')); }catch(e){} if(limpiaCedulaPendiente){ limpiaCedulaPendiente=false; try{ const c=document.getElementById('m-cedula'); if(c) c.value=''; const r=document.getElementById('m-cedula-res'); if(r) r.innerHTML=''; const sl=document.getElementById('m-cliente'); if(sl){ sl.value=''; if(sl.dataset) sl.dataset.auto='0'; } }catch(e){} } }
 function cerrarModal(){ document.getElementById('modal-bg').style.display='none'; }
 function cerrarModalPago(){
   try{
@@ -6116,7 +6118,7 @@ function csGuardarBase(num){
      Si la habitacion no esta en CXC, el consumo lleva su propio numero, como siempre. */
   var _cgEnCxc=false; try{ _cgEnCxc=!!(CS_ALTA&&CS_ALTA.destino==='cxc'&&cxcCuentaDeHabCobro(findRoom(num))); }catch(e){ _cgEnCxc=false; }
   var _cgCtrl=0;
-  if(_cgEnCxc){ try{ var _cgCu=cxcCuentaDeHabCobro(findRoom(num)); _cgCtrl=parseInt((_cgCu&&_cgCu.control)||0)||0; }catch(e){} }
+  if(_cgEnCxc){ try{ var _cgCu=cxcCuentaDeHabCobro(findRoom(num)); _cgCtrl=parseInt(r.creditoCxcControl||(_cgCu&&_cgCu.control)||0)||0; }catch(e){} }
   if(!_cgCtrl) _cgCtrl=siguienteControl();
   function _ligaCargosCtrl(_ids,_c){ if(!_ids||!_ids.length||!_c) return; const _l=cargosDe(findRoom(num)).map(function(x){ return _ids.indexOf(x.id)>=0?Object.assign({},x,{control:(x.control||_c),controlPago:_c}):x; }); updateRoom(num,{cargos:_l}); }
   cargos.push({id:_cgId, tipo:tipo, desc:(_acNom?('['+_acNom+'] '+(desc||'')):desc), montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false,destinoConsumo:CS_ALTA&&CS_ALTA.destino||'huesped',enCxc:false, control:_cgCtrl, acompId:_acompId, hab:num, habOriginal:num});
@@ -10933,6 +10935,7 @@ function enviarACxCConfirm(numsStr){
   const tipo=((document.getElementById('ecx-tipo')||{}).value)||'huesped';
   const empSel=(tipo==='empresa')?(((document.getElementById('ecx-emp')||{}).value)||'').trim():'';
   const empObj=empSel?empresaPorRef(empSel):null;
+  if(!ceValidarDestinoGrupo(g.list,tipo,empObj)){alert('La empresa elegida no coincide con la asignada a la habitación, o no está identificada de forma única. No se envió la deuda.');return;}
   const venc=((document.getElementById('ecx-venc')||{}).value)||'';
   const nota=(((document.getElementById('ecx-nota')||{}).value)||'').trim();
   const ctrl=controlDeGrupoCuenta(g.list)||siguienteControl();
@@ -10955,7 +10958,7 @@ function enviarACxCConfirm(numsStr){
   const l=cxc(); const s=session();
   let _prev=[];
   if(tipo==='empresa' && empObj){ _prev=cxcPendientesDeCliente(empObj).filter(function(e){return e.tipo==='empresa';}); }
-  let _consolidado=false;
+  let _consolidado=false;var _destCxcId='';
   if(_prev.length){
     const _e=l.find(function(x){return x.id===_prev[0].id;});
     if(_e){
@@ -10972,7 +10975,7 @@ function enviarACxCConfirm(numsStr){
       g.nums.forEach(function(nn){ if(_e.habsRef.map(String).indexOf(String(nn))<0) _e.habsRef.push(String(nn)); });
       if(!Array.isArray(_e.tramosDetalle)) _e.tramosDetalle=[];
       g.porHab.forEach(function(x){ try{ tramosActivos(x.r).forEach(function(t){ _e.tramosDetalle.push({hab:Number(x.r.num), tramoHab:t.hab, tarifa:Number(t.tarifa||0), noches:Number(t.noches||0)}); }); }catch(e){} });
-      _consolidado=true;
+      _consolidado=true;_destCxcId=_e.id;
     }
   }
   if(!_consolidado){
@@ -10983,6 +10986,7 @@ function enviarACxCConfirm(numsStr){
       creadoPor:(s?s.nombre:''), origen:'cobrar', habitaciones:habitaciones, cargosDetalle:cargosDet,
       tramosDetalle:(function(){ var _t=[]; g.porHab.forEach(function(x){ try{ tramosActivos(x.r).forEach(function(z){ _t.push({hab:Number(x.r.num), tramoHab:z.hab, tarifa:Number(z.tarifa||0), noches:Number(z.noches||0)}); }); }catch(e){} }); return _t; })() });
   }
+  if(!_consolidado)_destCxcId=l[0].id;
   saveCxc(l);
   logKardex('credito', {hab:(habsControlTexto(habsDeControlGroup(g.list))||g.nums.join(', ')), huesped:nombre, clienteId:(g.tituId||r0.clienteId||''), control:ctrl,
     detalle:'Enviado a CXC · N° control '+fmtControl(ctrl)+((tipo==='empresa'&&cxNombre!==nombre)?(' · a nombre de EMPRESA '+cxNombre):'')+' · '+conceptoFinal, credUsd:g.saldo, credBs:precioBs(g.saldo), montoUsd:0, montoBs:0, metodo:(tipo==='empresa'?'Crédito empresa (CXC)':'Crédito (por cobrar)')});
@@ -10999,7 +11003,7 @@ function enviarACxCConfirm(numsStr){
   /* [CXC-UNIDA] En una cuenta unida el hospedaje va a CXC UNA sola vez. Se marca
      CADA cuarto del grupo (no solo el que manda): antes el segundo cuarto seguia
      mostrando su hospedaje por cobrar y la cuenta parecia deber doble. */
-  marcarGrupoEnCxc(_idCxcDeGrupo(g, l), ctrl, (_idsGrupoCxc(g)));
+  marcarGrupoEnCxc(_destCxcId, ctrl, (_idsGrupoCxc(g)));
   cerrarModal(); render();
   alert((_consolidado?('Se agregó a la cuenta CXC de '+cxNombre+' (una sola cuenta).'):('Cuenta enviada a CXC'+((tipo==='empresa'&&cxNombre!==nombre)?(' a nombre de '+cxNombre):'')+'.'))+'\nN° de control: '+fmtControl(ctrl)+'\nDeuda: '+fmtUSD(g.saldo)+((tipo==='empresa'&&cxNombre!==nombre)?('\nHuésped: '+nombre):'')+'\n\nEl huésped SIGUE en '+(multi?'las habitaciones':'la habitación')+' '+g.nums.join(', ')+'. La deuda quedó en la pestaña "CXC" y aparece en el corte del turno.');
 }
@@ -11015,13 +11019,11 @@ function _idsGrupoCxc(g){
   return out;
 }
 function _idCxcDeGrupo(g, lista){
-  try{
-    var ctrl=Number(controlDeGrupoCuenta((g&&g.list)||[])||0);
-    var arr=(lista||cxc()).slice();
-    if(ctrl>0){ var e0=arr.filter(function(x){ return Number(x.control)===ctrl; })[0]; if(e0) return e0.id; }
-    if(arr.length) return arr[0].id;
-  }catch(e){}
-  return '';
+ var rs=(g&&g.list)||[],ctrl=Number(controlDeGrupoCuenta(rs)||0),es=lista||cxc();
+ var ids=rs.map(function(r){return r.creditoCxcId;}).filter(Boolean);
+ if(ids.length&&ids.every(function(id){return id===ids[0];})){var exact=es.find(function(e){return !e.anulada&&e.id===ids[0]&&rs.every(function(r){var emp=ceEmpresaHab(r);return (!ceRefHab(r)||emp)&&(!emp||ceMismoCliente(e,emp));});});if(exact)return exact.id;}
+ var hits=es.filter(function(e){return !e.anulada&&rs.every(function(r){var emp=ceEmpresaHab(r);return (!ceRefHab(r)||emp)&&(!emp||ceMismoCliente(e,emp))&&ceTieneMovimiento(e,r.num,ctrl);});});
+ return hits.length===1?hits[0].id:'';
 }
 /* Marca TODOS los cuartos de la cuenta unida como "hospedaje en CXC" para que
    nadie los vuelva a cobrar. La lista de cuartos sale del propio grupo. */
@@ -12237,32 +12239,13 @@ function cxcViveEnHab(e){
 /* La cuenta CXC que le toca a esta habitacion (la del hospedaje a credito, o la del
    cliente si quedo con deuda). Devuelve null si la habitacion no esta en CXC. */
 function cxcCuentaDeHabCobro(r){
-  if(!r) return null;
-  if(habCortesia(r)&&!r.creditoCxc)return null;
-  try{
-    if(r.creditoCxc && r.creditoCxcId){
-      var e=cxc().find(function(x){ return x && x.id===r.creditoCxcId && !x.anulada; });
-      if(e) return e;
-    }
-  }catch(err){}
-  try{
-    var c=clienteDeHab(r); if(c){ var p=cxcPendientesDeCliente(c); if(p && p.length) return p[0]; }
-  }catch(err){}
-  /* Si la habitacion dice estar en CXC pero el id quedo viejo (por ejemplo al unir
-     cuentas), se busca la cuenta abierta que tenga esta habitacion anotada. */
-  try{
-    if(r && r.creditoCxc){
-      var _n=String(r.num||'');
-      var _ab=cxc().filter(function(x){ return x && !x.anulada && !cxcPagada(x) && Array.isArray(x.habsRef) && x.habsRef.map(String).indexOf(_n)>=0; });
-      if(_ab.length){
-        /* si hay varias, la que tenga el control que trae la habitacion */
-        var _cc=parseInt(r.creditoCxcControl||0)||0;
-        for(var _j=0;_j<_ab.length;_j++){ if(parseInt(_ab[_j].control||0)===_cc) return _ab[_j]; }
-        return _ab[0];
-      }
-    }
-  }catch(err){}
-  return null;
+ if(!r||(!r.creditoCxc&&!habMitadACxc(r)))return null;
+ var emp=ceEmpresaHab(r),ref=ceRefHab(r);if(ref&&!emp)return null;
+ var es=cxc().filter(function(e){return e&&!e.anulada;});
+ if(r.creditoCxcId){var fixed=es.find(function(e){return e.id===r.creditoCxcId;});if(fixed){return emp&&!ceMismoCliente(fixed,emp)?null:fixed;}}
+ var ctrl=Number(r.creditoCxcControl||r.autorizadaCxcControl||0);if(!ctrl)return null;
+ var hit=es.filter(function(e){return (!emp||ceMismoCliente(e,emp))&&ceTieneMovimiento(e,r.num,ctrl);});
+ return hit.length===1?hit[0]:null;
 }
 /* Tarifa de la noche nueva: la de la habitacion ahora; si es mitad de precio, la mitad. */
 function cxcTarifaNoche(r){ return Math.max(0,Number((r&&r.tarifa)||0)); }
@@ -12305,7 +12288,7 @@ function cxcSumarHab(num, op){
   var s=null; try{ s=session(); }catch(err){}
   var now=new Date();
   var enHab=cxcViveEnHab(e);
-  var ctrl=parseInt(e.control||0)||0;
+  var ctrl=parseInt((r&&r.creditoCxcControl)||e.control||0)||0;
   var nuevo=false;
   if(!enHab){
     /* el huesped ya se fue: el renglon nuevo lleva su propio N° de control */
@@ -12599,19 +12582,9 @@ function cxcDesgloseHabHTML(r){
 /* ====== FIN [CXC-SUMAR] ====== */
 
 function cxcPendientesDeCliente(cli, docNum2){
-  if(typeof cli==='string'){ var _id=cli; var _c=_id?(clientes().find(function(x){return x.id===_id;})):null; cli=_c||{id:_id, docNum:docNum2}; }
-  if(!cli) return [];
-  const docDigits=cxcNormDoc(cli.docNum||'');
-  const nom=(clienteNombre(cli)||'').trim().toLowerCase();
-  return cxc().filter(function(e){ return !e.anulada && !cxcPagada(e); }).filter(function(e){
-    const eDoc=cxcNormDoc(e.docRef||'');
-    const eNom=String(e.nombre||'').trim().toLowerCase();
-    let m=false;
-    if(docDigits && eDoc && docDigits.length>=5){ m = (eDoc.indexOf(docDigits)>=0 || docDigits.indexOf(eDoc)>=0); }
-    if(!m && e.clienteId && cli.id) m = (e.clienteId===cli.id);
-    if(!m && nom && eNom) m = (eNom===nom);
-    return m;
-  });
+ if(typeof cli==='string'){var id=cli;cli=clientes().find(function(x){return x.id===id;})||{id:id,docNum:docNum2};}
+ if(!cli)return [];
+ return cxc().filter(function(e){return e&&!e.anulada&&!cxcPagada(e)&&ceMismoCliente(e,cli);});
 }
 function cxcAvisoCliente(cli){
   const p=cxcPendientesDeCliente(cli); if(!p.length) return '';
@@ -12625,7 +12598,12 @@ function cxcBadgeCliente(cli){
 }
 function setCxcFiltro(v){ cxcFiltro=v; render(); }
 function setCxcBusqueda(v){ cxcBusqueda=v; const el=document.getElementById('cxc-busca'); renderCxcLista(); if(el){ const i=document.getElementById('cxc-busca'); if(i){ i.focus(); i.setSelectionRange(i.value.length,i.value.length); } } }
-function cxcCoincide(e,q){ if(!q) return true; const cli=(e.clienteId?clientes().find(x=>x.id===e.clienteId):null); const cod=(cli&&(cli.codigoEmpresa||cli.codigo))||e.codigoEmpresa||''; const blob=((e.nombre||'')+' '+(e.docRef||'')+' '+(e.control?fmtControl(e.control):'')+' '+cod+' '+(e.concepto||'')).toLowerCase(); return blob.indexOf(q)>=0; }
+function cxcCoincide(e,q){
+ if(!q)return true;var cli=e.clienteId?clientes().find(function(c){return c.id===e.clienteId;}):null;
+ var texts=[e.nombre,e.docRef,e.control?fmtControl(e.control):'',cli&&(cli.codigoEmpresa||cli.codigo),e.codigoEmpresa,e.concepto,e.hab];
+ (e.cargos||[]).forEach(function(c){texts.push(c.control?fmtControl(c.control):'',c.hab,c.concepto);});
+ return texts.filter(Boolean).join(' ').toLowerCase().indexOf(String(q).trim().toLowerCase())>=0;
+}
 function renderCxC(){
   const list=cxc().filter(e=>!e.anulada).slice().sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')));
   const anuladas=cxc().filter(e=>!!e.anulada);
@@ -12716,6 +12694,7 @@ function renderCxcListaHTML(){
     h+='<div style="font-size:12.5px;color:#55637a;margin-top:3px">'+esc(e.concepto||'Consumo a crédito')+(e.hab?(' · Hab. '+esc(String(e.hab))):'')+'</div>';
     h+='<div style="font-size:11.5px;color:#8893a5;margin-top:3px">Registrada: '+esc(fmtFechaCorta(e.fecha)||e.fecha||'')+(e.vencimiento?(' · Vence: <b style="color:'+(vnc?'#a23b3b':'#55637a')+'">'+esc(fmtFechaCorta(e.vencimiento))+(vnc?' (vencida)':'')+'</b>'):'')+(e.creadoPor?(' · por '+esc(e.creadoPor)):'')+'</div>';
     if(e.telefono) h+='<div style="font-size:11.5px;color:#8893a5;margin-top:2px">📞 '+esc(e.telefono)+'</div>';
+    if((e.correccionesEmpresa||[]).length){h+='<div style="background:#eef6ff;padding:8px;margin-top:6px;font-size:12px"><b>Correcciones de empresa (sin cobro)</b>';(e.correccionesEmpresa||[]).forEach(function(x){h+='<div>Hab. '+esc(String(x.hab))+' · Control '+fmtControl(x.control)+' · '+esc(x.origenNombre)+' → '+esc(x.destinoNombre)+' · '+fmtUSD(x.montoUsd)+'</div>';});h+='</div>';}
     if(e.notas) h+='<div style="font-size:12px;color:#44526a;background:#f6f8fc;border-radius:8px;padding:6px 9px;margin-top:6px">📝 '+esc(e.notas)+'</div>';
     if(abon>0) h+='<div style="font-size:12px;color:#1d6b38;margin-top:6px">Abonado: <b>'+fmtUSD(abon)+'</b> de '+fmtUSD(e.montoUsd)+'</div>';
     var _nc=(Array.isArray(e.cargos)?e.cargos.length:0);
@@ -12732,6 +12711,7 @@ function renderCxcListaHTML(){
     if((Array.isArray(e.cargos)?e.cargos.length:0)>0) h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcVerCargos(\''+e.id+'\')">📋 Ver cargos</button>';
     h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcImprimirDetalle(\''+e.id+'\')">🖨️ Imprimir detalle</button>';
     h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcNuevaModal(\''+e.id+'\')">✏️ Editar</button>';
+    if(cePuede())h+='<button class="btn-orange" data-ce-source="'+escA(e.id)+'">Corregir empresa de un cargo</button>';
     if(cxcPuedeDeshacer()) h+='<button class="btn-orange" style="padding:6px 12px" data-cxc-deshacer="'+escA(e.id)+'">↩ Deshacer envío a CXC</button>';
     h+='<button class="btn-ghost" style="padding:6px 12px" title="Anular" onclick="cxcEliminar(\''+e.id+'\')">🚫</button>';
     h+='</div></div>';
@@ -12822,6 +12802,7 @@ function cxcGuardar(){
   saveCxc(l); cxcEdit=null; cerrarModal(); render();
 }
 function cxcAbonarModal(id){
+ if(!ceCuentaSegura(id)){alert('Esta CXC tiene una habitación vinculada a otra empresa. Corrige la empresa del cargo antes de agregar cargos o cobrar. No se modificó nada.');return;}
   const e=cxc().find(x=>x.id===id); if(!e) return;
   const saldo=cxcSaldo(e);
   let b='<button class="close" onclick="cerrarModal()">×</button>';
@@ -12835,6 +12816,7 @@ function cxcAbonarModal(id){
   showModal(b);
 }
 function cxcAbonarConfirm(id){
+ if(!ceCuentaSegura(id)){alert('Esta CXC tiene una habitación vinculada a otra empresa. Corrige la empresa del cargo antes de agregar cargos o cobrar. No se modificó nada.');return;}
   /* [CXC-CAJA] Cobrar una cuenta por cobrar es dinero que ENTRA a la caja del turno:
      por eso pide turno abierto igual que cualquier otro cobro. */
   try{ if(typeof guardTurno==='function' && guardTurno()) return; }catch(err){}
@@ -12876,6 +12858,7 @@ function cxcAbonarConfirm(id){
   alert(_msg);
 }
 function cxcAgregarCargoModal(id){
+ if(!ceCuentaSegura(id)){alert('Esta CXC tiene una habitación vinculada a otra empresa. Corrige la empresa del cargo antes de agregar cargos o cobrar. No se modificó nada.');return;}
   const e=cxc().find(x=>x.id===id); if(!e) return;
   const saldo=cxcSaldo(e);
   let b='<button class="close" onclick="cerrarModal()">×</button>';
@@ -12889,6 +12872,7 @@ function cxcAgregarCargoModal(id){
   showModal(b);
 }
 function cxcAgregarCargoConfirm(id){
+ if(!ceCuentaSegura(id)){alert('Esta CXC tiene una habitación vinculada a otra empresa. Corrige la empresa del cargo antes de agregar cargos o cobrar. No se modificó nada.');return;}
   const l=cxc(); const e=l.find(x=>x.id===id); if(!e) return;
   const concepto=mayusculasYa(((document.getElementById('cxc-cg-concepto')||{}).value||'').trim());
   const monto=Number((document.getElementById('cxc-cg-monto')||{}).value||0);
@@ -12910,7 +12894,7 @@ function cxcVerCargos(id){
   if(cg.length===0){ b+='<div style="color:#8893a5;font-size:13px">Sin cargos agregados.</div>'; }
   else{
     b+='<div style="overflow-x:auto"><table class="users-table" style="box-shadow:none"><tr><th>Fecha</th><th>Control</th><th>Hab.</th><th>Concepto</th><th>Agregó</th><th style="text-align:right">Monto</th></tr>';
-    cg.forEach(c=>{ b+='<tr><td>'+esc(fechaHoraCorta(c.ts))+'</td><td style="font-size:12px">'+(c.control?esc(fmtControl(c.control)):'—')+'</td><td style="font-size:12px">'+(c.hab?esc(String(c.hab)):'—')+'</td><td style="font-size:12px;color:#44526a">'+esc(c.concepto||'')+'</td><td style="font-size:12px;color:#55637a">'+esc(c.usuario||'')+'</td><td style="text-align:right">+'+fmtUSD(c.montoUsd)+'<div style="font-size:11px;color:#8893a5">'+fmtBs(c.montoBs||precioBs(c.montoUsd))+'</div></td></tr>'; });
+    cg.forEach(c=>{ b+='<tr><td>'+esc(fechaHoraCorta(c.ts))+'</td><td style="font-size:12px">'+(c.control?esc(fmtControl(c.control)):'—')+'</td><td style="font-size:12px">'+(c.hab?esc(String(c.hab)):'—')+'</td><td style="font-size:12px;color:#44526a">'+esc(c.concepto||'')+(c.ceTrasladado?' · TRASLADADO A OTRA EMPRESA (historial, compensado)':'')+'</td><td style="font-size:12px;color:#55637a">'+esc(c.usuario||'')+'</td><td style="text-align:right">'+(Number(c.montoUsd)>=0?'+':'')+fmtUSD(c.montoUsd)+'<div style="font-size:11px;color:#8893a5">'+fmtBs(c.montoBs||precioBs(c.montoUsd))+'</div></td></tr>'; });
     const _tc=cg.reduce((s,c)=>s+Number(c.montoUsd||0),0);
     b+='</table></div>';
     b+='<div style="margin-top:10px;font-size:13px">Total agregado: <b>+'+fmtUSD(_tc)+'</b> · Total de la cuenta: <b>'+fmtUSD(e.montoUsd)+'</b> · Saldo: <b>'+fmtUSD(cxcSaldo(e))+'</b></div>';
@@ -12928,7 +12912,7 @@ function cxcVerCargos(id){
   /* [QUITAS] igual en el papel impreso */
 
   b+='<div class="divider"></div><div class="actions"><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
-  showModal(b);
+  showModal(b);document.getElementById('modal').classList.add('cxc-detalle-wide');
 }
 /* [CXC-DETALLE] Hoja imprimible con TODO lo que tiene la cuenta: de donde salio la
    deuda (hospedaje, consumos, noches extra) y que se agrego despues del check-out. */
@@ -13361,15 +13345,10 @@ function repararCodigosEmpresas(){
   alert('Listo ✅\n\nSe repararon '+cambiados+' empresa(s). Ahora cada una tiene su propio código único.');
 }
 function empresaPorRef(ref){
-  ref=(ref||'').trim(); if(!ref) return null;
-  const low=ref.toLowerCase();
-  const emps=clientes().filter(c=>c.tipo==='empresa');
-  let e=emps.find(x=>String(x.codigo||'').toLowerCase()===low);
-  if(!e) e=emps.find(x=>x.codigo && low.indexOf(String(x.codigo).toLowerCase())===0);
-  if(!e) e=emps.find(x=>String(x.nombre||'').toLowerCase()===low);
-  if(!e) e=emps.find(x=>x.codigo && low.indexOf(String(x.codigo).toLowerCase())>=0);
-  if(!e) e=emps.find(x=>x.nombre && low.indexOf(String(x.nombre).toLowerCase())>=0);
-  return e||null;
+ var v=String(ref||'').trim().toLowerCase();if(!v)return null;
+ var es=clientes().filter(function(c){return c.tipo==='empresa';});
+ var hit=es.filter(function(c){var code=String(c.codigo||c.codigoEmpresa||'').trim().toLowerCase(),name=String(c.nombre||'').trim().toLowerCase();return String(c.id||'').toLowerCase()===v||name===v||(code&&(v===code||v===code+' — '+name||v===code+' - '+name));});
+ return hit.length===1?hit[0]:null;
 }
 function autoLlenarEmpresa(){
   const inp=document.getElementById('cl-empresaref'); if(!inp) return;
@@ -16547,6 +16526,8 @@ function cxcCuentaPara(op){
       return (k && k===clave);
     }) || null;
   }
+  if(op.empresaRef&&!emp)return null;
+  if(e&&emp&&!ceMismoCliente(e,emp))e=null;
   if(!e && emp){
     try{ var prev=cxcPendientesDeCliente(emp).filter(function(x){ return !x.anulada && x.tipo==='empresa'; }); if(prev.length) e=l.find(function(x){ return x.id===prev[0].id; })||null; }catch(err){}
   }
@@ -18105,8 +18086,8 @@ function csPuede(){var s=session();return !!(s&&['recepcion','supervisor','super
 function csLink(c){
  if(!c||!c.id)return null;
  var es=cxc();for(var e of es){if(!e||e.anulada)continue;
-  var cargo=(e.cargos||[]).find(function(x){return x&&Array.isArray(x.cargosIds)&&x.cargosIds.map(String).indexOf(String(c.id))>=0;});
-  if(cargo&&!(e.cargos||[]).some(function(x){return x.anulaConsumoId===String(c.id);}))return {e:e,cargo:cargo};
+  var cargo=(e.cargos||[]).find(function(x){return x&&!x.ceTrasladado&&!x.ceSalida&&Number(x.montoUsd)>0&&Array.isArray(x.cargosIds)&&x.cargosIds.map(String).indexOf(String(c.id))>=0;});
+  if(cargo&&(!c.cxcId||e.id===c.cxcId)&&!(e.cargos||[]).some(function(x){return x.anulaConsumoId===String(c.id);}))return {e:e,cargo:cargo};
  }return null;
 }
 function csEnCxc(c){return !!(c&&(c.enCxc||csLink(c)));}
@@ -18143,6 +18124,7 @@ function csElegirGuest(num){if(!csPuede()||guardTurno())return;var r=findRoom(Nu
 function csPagoModal(num,id){
  if(!csPuede()||guardTurno())return;var r=findRoom(Number(num)),c=r&&cargosDe(r).find(function(c){return String(c.id)===String(id);});
  if(!r||r.estado!=='ocupada'||!c||c.cubiertoPorCortesia||c.pagado){alert('Ese consumo no está disponible para cobrar.');return;}
+ var _ceEmp=ceEmpresaHab(r);if(csEnCxc(c)&&((ceRefHab(r)&&!_ceEmp)||(_ceEmp&&(!csLink(c)||!ceMismoCliente(csLink(c).e,_ceEmp))))){alert('El consumo está vinculado a una empresa distinta. Corrige el vínculo de CXC antes de cobrar. No se cambió la deuda.');return;}
  var info=csEnCxc(c)?csMontoCxc(c):null;
  if(csEnCxc(c)&&(!info||info.revision)){alert('Esta CXC tiene pagos generales o un vínculo antiguo sin detalle suficiente. Requiere revisión para asignar el pago sin descontar hospedaje por error. No se modificó nada.');return;}
  var saldo=info?info.pendiente:csSaldoCargo(c);if(!(saldo>0.009)){alert('El consumo ya está pagado.');return;}
@@ -18199,6 +18181,7 @@ function guardarCargo(num){
 }
 function csFormaAlta(){return JSON.stringify(['cg-tipo','cg-rest','cg-desc','cg-monto','cg-acomp','cg-destino'].map(function(id){var e=document.getElementById(id);return e?e.value:null;}));}
 function csGuardarConfirm(num){var p=CS_ALTA;if(!csPuede()||guardTurno()||!p)return;
+ if(p.destino==='cxc'&&!cxcCuentaDeHabCobro(findRoom(Number(num)))){alert('El vínculo de CXC no coincide con la empresa de la habitación. Revisa y corrige la empresa antes de agregar consumos.');return;}
  if(p.rooms!==JSON.stringify(DB.get('rooms',[]))||p.cuentas!==JSON.stringify(cxc())||p.forma!==csFormaAlta()){CS_ALTA=null;alert('La cuenta cambió. No se agregó el consumo.');return;}
  try{localStorage.setItem(tenKey('__respaldoAltaConsumos198'),JSON.stringify({fecha:new Date().toISOString(),rooms:DB.get('rooms',[]),cxc:cxc()}));}catch(e){alert('No se pudo guardar el respaldo. No se agregó el consumo.');return;}
  csGuardarBase(Number(num));
@@ -18244,6 +18227,92 @@ function csAnularPago(p,btn){
   procesoListo(btn);cerrarModal();render();alert('Pago anulado. Se restauró solamente el saldo de ese consumo. El registro original queda en el historial; el hospedaje no cambió.');
  }catch(err){procesoListo(btn);alert(err.message);}
 }
+
+/* Empresa CXC: identidad exacta, destinos explícitos y correcciones auditadas. */
+var CE_PLAN=null;
+function cePuede(){return csPuede();}
+function ceMismoCliente(e,c){
+ if(!e||!c)return false;if(c.tipo==='empresa'&&e.tipo!=='empresa')return false;
+ if(e.clienteId&&c.id)return String(e.clienteId)===String(c.id);
+ var a=cxcNormDoc(e.docRef||''),b=cxcNormDoc(c.docNum||'');if(a&&b)return a===b;
+ var ca=String(e.codigoEmpresa||'').trim().toLowerCase(),cb=String(c.codigo||c.codigoEmpresa||'').trim().toLowerCase();if(ca&&cb)return ca===cb;
+ return String(e.nombre||'').trim().toLowerCase()===String(clienteNombre(c)||c.nombre||'').trim().toLowerCase();
+}
+function ceRefHab(r){if(!r)return '';var c=clienteDeHab(r);return String(r.empresaRef||(c&&c.empresaRef)||'').trim();}
+function ceEmpresaHab(r){if(!r)return null;var ref=ceRefHab(r);if(ref)return empresaPorRef(ref);var c=clienteDeHab(r);return c&&c.tipo==='empresa'?c:null;}
+function ceTieneMovimiento(e,num,ctrl){return (e.cargos||[]).some(function(c){return !c.ceTrasladado&&!c.ceSalida&&Number(c.montoUsd)>0&&Number(c.control)===Number(ctrl)&&String(c.hab).trim()===String(num);});}
+function ceValidarDestinoGrupo(rs,tipo,emp){return rs.every(function(r){var ref=ceRefHab(r),x=ceEmpresaHab(r);if(ref&&!x)return false;return !x||(tipo==='empresa'&&emp&&String(emp.id)===String(x.id));});}
+function ceAvisoHab(r){
+ if(!r||!r.creditoCxc)return '';var emp=ceEmpresaHab(r),cu=cxc().find(function(e){return e.id===r.creditoCxcId;});
+ if((!ceRefHab(r)||emp)&&(!emp||!cu||ceMismoCliente(cu,emp))&&cxcCuentaDeHabCobro(r))return '';
+ return '<div style="background:#fff1e8;border:1px solid #edaa79;padding:12px;border-radius:9px;margin:10px 0"><b>⚠ Revisar empresa de CXC</b><p>Empresa asignada: '+esc(emp?emp.nombre:ceRefHab(r)||'Sin identificar')+'<br>CXC vinculada: '+esc(cu?cu.nombre:'No identificada')+'<br>Control CXC: '+fmtControl(r.creditoCxcControl||0)+'</p><p>No agregues cargos ni cobres esa CXC hasta corregir el vínculo. No se ha cambiado la deuda.</p>'+(cePuede()?'<button class="btn-orange" data-ce-room="'+r.num+'">Revisar / corregir empresa de CXC</button>':'')+'</div>';
+}
+function ceModal(source,num){
+ if(!cePuede()||guardTurno())return;CE_PLAN=null;var r=num?findRoom(Number(num)):null;
+ var es=cxc().filter(function(e){return !e.anulada;});var emp=r?ceEmpresaHab(r):null;
+ var h='<h2>Corregir empresa de un cargo CXC</h2><p>Se mueve únicamente el control y la habitación elegidos. No se cobra dinero ni se borra el historial.</p><label>CXC de origen</label><select id="ce-source"><option value="">Selecciona la cuenta equivocada</option>';
+ es.forEach(function(e){h+='<option value="'+escA(e.id)+'"'+(e.id===(source||(r&&r.creditoCxcId))?' selected':'')+'>'+esc(e.nombre)+' · '+fmtControl(e.control||0)+'</option>';});h+='</select><label>Habitación del movimiento</label><input id="ce-room" type="number" min="1" value="'+(r?r.num:'')+'"><label>Control del movimiento (no el encabezado de la CXC)</label><input id="ce-control" inputmode="numeric" value="'+(r?fmtControl(r.creditoCxcControl||0):'')+'"><label>Empresa correcta</label><select id="ce-company"><option value="">Selecciona la empresa</option>';
+ clientes().filter(function(c){return c.tipo==='empresa';}).forEach(function(c){h+='<option value="'+escA(c.id)+'"'+(emp&&emp.id===c.id?' selected':'')+'>'+esc(c.nombre)+(c.codigo?' · '+esc(c.codigo):'')+'</option>';});
+ h+='</select><label>Motivo obligatorio</label><input id="ce-reason" maxlength="200" placeholder="Cargo registrado en otra empresa"><div class="actions"><button class="btn-orange" data-ce-review="1">Revisar corrección</button><button class="btn-gray" data-ce-close="1">Cancelar</button></div>';showModal(h);
+}
+function cePlan(source,num,ctrl,company,reason){
+ if(!cePuede())throw Error('La corrección corresponde a Recepción o Supervisión con edición.');
+ if(!Number.isInteger(Number(num))||Number(num)<=0||!Number.isInteger(Number(ctrl))||Number(ctrl)<=0)throw Error('Indica la habitación y el control del movimiento.');
+ if(String(reason||'').trim().length<4)throw Error('Escribe el motivo (al menos 4 letras).');
+ var es=cxc(),e=es.find(function(x){return x.id===source&&!x.anulada&&!x.unidaAId;}),emp=clientes().find(function(c){return c.id===company&&c.tipo==='empresa';});
+ if(!e||!emp)throw Error('No se identificó la cuenta o la empresa correcta.');if(ceMismoCliente(e,emp))throw Error('El cargo ya pertenece a esa empresa.');
+ if(cxcAbon(e)>0.009||(e.abonos||[]).some(function(a){return Number(a.montoUsd)>0;}))throw Error('La CXC de origen tiene pagos o abonos. Requiere revisar su distribución; no se moverá automáticamente.');
+ var candidates=(e.cargos||[]).filter(function(c){return !c.ceTrasladado&&!c.ceSalida&&Number(c.montoUsd)>0&&Number(c.control)===Number(ctrl)&&String(c.hab).trim()===String(Number(num));});
+ if(!candidates.length)throw Error('No existe un cargo activo con esa habitación y control. No se cambió nada.');
+ if((e.cargos||[]).some(function(c){return !c.ceTrasladado&&!c.ceSalida&&Number(c.montoUsd)>0&&String(c.hab).trim()===String(Number(num))&&Number(c.control)!==Number(ctrl);}))throw Error('Hay otros controles activos de esa habitación en la cuenta de origen. Requiere revisión para no trasladar detalles de otra estadía.');
+ if((e.cargos||[]).some(function(c){return Number(c.montoUsd)<0&&!c.ceSalida&&String(c.hab).trim()===String(Number(num));}))throw Error('Esta habitación tiene correcciones previas. Requiere revisión.');
+ var monto=Math.round(candidates.reduce(function(s,c){return s+Number(c.montoUsd);},0)*100)/100;
+ if(monto>Number(e.montoUsd)+0.009)throw Error('El detalle no coincide con el total de origen. Requiere revisión.');
+ var r=findRoom(Number(num));if(r&&r.estado==='ocupada'&&Number(r.creditoCxcControl)===Number(ctrl)){
+  var expected=ceEmpresaHab(r);if((ceRefHab(r)&&!expected)||(expected&&expected.id!==emp.id))throw Error('La empresa elegida no coincide con la asignada a la habitación.');
+ }
+ var targets=es.filter(function(x){return !x.anulada&&!x.unidaAId&&!cxcPagada(x)&&ceMismoCliente(x,emp);});
+ if(targets.length>1)throw Error('La empresa tiene varias CXC pendientes. Requiere revisar cuál es la cuenta de destino.');
+ var target=targets[0]||null;
+ if(target&&ceTieneMovimiento(target,num,ctrl))throw Error('El destino ya tiene ese control y habitación. Requiere revisar para evitar duplicados.');
+ return {source:source,num:Number(num),ctrl:Number(ctrl),company:company,reason:String(reason).trim(),monto:monto,target:target?target.id:null,originName:e.nombre,destName:emp.nombre,candidates:candidates,rooms:JSON.stringify(rooms()),cuentas:JSON.stringify(es),clientes:JSON.stringify(clientes()),pagos:JSON.stringify(DB.get('pagos',[]))};
+}
+function ceReview(){
+ if(!cePuede()||guardTurno())return;
+ try{CE_PLAN=cePlan(document.getElementById('ce-source').value,document.getElementById('ce-room').value,document.getElementById('ce-control').value,document.getElementById('ce-company').value,document.getElementById('ce-reason').value);
+ var p=CE_PLAN;var h='<h2>Confirma la corrección de empresa</h2><p>Habitación <b>'+p.num+'</b> · Control <b>'+fmtControl(p.ctrl)+'</b></p><p>Se restan <b>'+fmtUSD(p.monto)+'</b> de <b>'+esc(p.originName)+'</b> y se suman exactamente a <b>'+esc(p.destName)+'</b>.</p><ul>';
+ p.candidates.forEach(function(c){h+='<li>'+esc(c.concepto||'Cargo')+' · '+fmtUSD(c.montoUsd)+'</li>';});
+ h+='</ul><p>No se tocan otros controles ni se registra dinero recibido. Los originales quedan en el historial.</p><p>Motivo: '+esc(p.reason)+'</p><label><input id="ce-ok" type="checkbox"> Confirmo origen, destino, habitación, control y monto.</label><div class="actions"><button class="btn-orange" data-ce-confirm="1">Confirmar corrección</button><button class="btn-gray" data-ce-close="1">Cancelar</button></div>';showModal(h);
+ }catch(err){CE_PLAN=null;alert(err.message);}
+}
+function ceConfirm(){
+ if(!cePuede()||guardTurno())return;var p=CE_PLAN;if(!p)return;
+ try{
+  if(!document.getElementById('ce-ok').checked)throw Error('Marca la confirmación después de revisar los datos.');
+  if(p.rooms!==JSON.stringify(rooms())||p.cuentas!==JSON.stringify(cxc())||p.clientes!==JSON.stringify(clientes())||p.pagos!==JSON.stringify(DB.get('pagos',[])))throw Error('Los datos cambiaron. Revisa la corrección nuevamente; no se modificó nada.');
+  cePlan(p.source,p.num,p.ctrl,p.company,p.reason);
+  var es=cxc(),rs=rooms(),source=es.find(function(e){return e.id===p.source;}),emp=clientes().find(function(c){return c.id===p.company;}),target=p.target?es.find(function(e){return e.id===p.target;}):null;
+  var ts=new Date().toISOString(),id='ce'+Date.now()+Math.random().toString(36).slice(2,8);
+  if(!target){target={id:'cx'+Date.now()+Math.random().toString(36).slice(2,8),control:p.ctrl,tipo:'empresa',nombre:emp.nombre,clienteId:emp.id,codigoEmpresa:emp.codigo||'',docRef:emp.docNum?docLabel(emp.docTipo)+' '+emp.docNum:'',telefono:emp.telefono||'',montoUsd:0,hab:String(p.num),habsRef:[],fecha:hoyISO(),concepto:'Cargo trasladado por corrección de empresa',origen:'correccion-empresa',creadoPor:session().nombre,cargos:[],abonos:[]};es.unshift(target);}
+  var originals=(source.cargos||[]).filter(function(c){return !c.ceTrasladado&&!c.ceSalida&&Number(c.montoUsd)>0&&Number(c.control)===p.ctrl&&String(c.hab).trim()===String(p.num);});
+  var ids=[];originals.forEach(function(c){ids=ids.concat(c.cargosIds||[]);var copy=cxcCopia(c);copy.ceEntrada=id;copy.ceOrigen=source.id;target.cargos=target.cargos||[];target.cargos.push(copy);c.ceTrasladado=id;c.ceDestino=target.id;source.cargos.push({ts:ts,control:p.ctrl,hab:String(p.num),concepto:'CORRECCIÓN EMPRESA → '+target.nombre+' · '+p.reason,montoUsd:-Number(c.montoUsd),montoBs:-Number(c.montoBs||0),tipo2:c.tipo2||'correccion-empresa',ceSalida:id,usuario:session().nombre});});
+  var details={};[['habitaciones','num'],['cargosDetalle','hab'],['tramosDetalle','hab']].forEach(function(pair){var key=pair[0],field=pair[1],sel=(source[key]||[]).filter(function(x){return String(x[field])===String(p.num);});details[key]=cxcCopia(sel);source[key]=(source[key]||[]).filter(function(x){return String(x[field])!==String(p.num);});target[key]=(target[key]||[]).concat(sel.map(function(x){return Object.assign({},x,{ceEntrada:id});}));});
+  var added=(source.agregadoDespues||[]).filter(function(x){return String(x.hab)===String(p.num)&&Number(x.control)===p.ctrl;});details.agregadoDespues=cxcCopia(added);source.agregadoDespues=(source.agregadoDespues||[]).filter(function(x){return !(String(x.hab)===String(p.num)&&Number(x.control)===p.ctrl);});target.agregadoDespues=(target.agregadoDespues||[]).concat(added);
+  source.montoUsd=Math.round((Number(source.montoUsd)-p.monto)*100)/100;target.montoUsd=Math.round((Number(target.montoUsd)+p.monto)*100)/100;
+  source.habsRef=(source.habsRef||[]).filter(function(h){return String(h)!==String(p.num);});target.habsRef=target.habsRef||[];if(!target.habsRef.some(function(h){return String(h)===String(p.num);}))target.habsRef.push(String(p.num));
+  if(String(source.hab||'').split(/[,;]/).map(function(h){return h.trim();}).indexOf(String(p.num))>=0)source.hab=String(source.hab).split(/[,;]/).map(function(h){return h.trim();}).filter(function(h){return h!==String(p.num);}).join(', ');
+  var r=rs.find(function(r){return Number(r.num)===p.num;});if(r&&r.estado==='ocupada'&&Number(r.creditoCxcControl)===p.ctrl&&r.creditoCxcId===source.id){r.creditoCxcId=target.id;(r.cargos||[]).forEach(function(c){if(ids.map(String).indexOf(String(c.id))>=0&&c.cxcId===source.id)c.cxcId=target.id;});}
+  var event={id:id,fecha:ts,control:p.ctrl,hab:p.num,montoUsd:p.monto,origen:source.id,destino:target.id,origenNombre:source.nombre,destinoNombre:target.nombre,motivo:p.reason,usuario:session().nombre,rol:session().rol,originales:cxcCopia(p.candidates),detalleOriginal:details};
+  source.correccionesEmpresa=(source.correccionesEmpresa||[]).concat([event]);target.correccionesEmpresa=(target.correccionesEmpresa||[]).concat([event]);
+  try{localStorage.setItem(tenKey('__respaldoEmpresa199'),JSON.stringify({fecha:ts,rooms:JSON.parse(p.rooms),cxc:JSON.parse(p.cuentas),pagos:JSON.parse(p.pagos)}));}catch(err){throw Error('No se pudo guardar el respaldo. No se hizo la corrección.');}
+  CE_PLAN=null;saveCxc(es);saveRooms(rs);
+  logKardex('correccion',{hab:p.num,control:p.ctrl,detalle:'CORRECCIÓN EMPRESA CXC · '+source.nombre+' → '+target.nombre+' · '+fmtUSD(p.monto)+' · '+p.reason+' · sin ingreso de caja',montoUsd:0,montoBs:0,metodo:'Corrección de empresa',correccionEmpresaId:id});
+  cerrarModal();render();alert('Corregido: control '+fmtControl(p.ctrl)+' de la habitación '+p.num+' → '+target.nombre+'. No se registró dinero recibido ni se alteraron otros controles.');
+ }catch(err){alert(err.message);}
+}
+document.addEventListener('click',function(ev){var b=ev.target.closest('[data-ce-room],[data-ce-source],[data-ce-review],[data-ce-confirm],[data-ce-close]');if(!b)return;if(b.hasAttribute('data-ce-room'))ceModal('',b.getAttribute('data-ce-room'));else if(b.hasAttribute('data-ce-source'))ceModal(b.getAttribute('data-ce-source'));else if(b.hasAttribute('data-ce-review'))ceReview();else if(b.hasAttribute('data-ce-confirm'))ceConfirm();else{CE_PLAN=null;cerrarModal();}});
+
+function ceCuentaSegura(id){var e=cxc().find(function(e){return e.id===id;});if(!e)return false;return rooms().every(function(r){if(r.estado!=='ocupada'||!r.creditoCxc)return true;var involves=r.creditoCxcId===id||ceTieneMovimiento(e,r.num,r.creditoCxcControl);if(!involves)return true;var emp=ceEmpresaHab(r);return (!ceRefHab(r)||emp)&&(!emp||ceMismoCliente(e,emp));});}
 
 </script>
 </body>
