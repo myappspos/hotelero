@@ -349,7 +349,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.97 · 25/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v1.98 · 25/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -406,7 +406,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v1.97 · 25/11/2026';
+const APP_VERSION = 'v1.98 · 25/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -2491,7 +2491,7 @@ function saldoDeHab(r){
   if(!D){
     /* respaldo a mano (solo si el detalle fallara) */
     var nn=nochesHab(r); var hh=brutoHab(r); var dd=descUsd(r);
-    var cc=cargosDe(r).filter(function(c){ return !c.pagado; }).reduce(function(s,c){ return s+Number(c.montoUsd||0); },0);
+    var cc=cargosDe(r).filter(function(c){ return csPendiente(c); }).reduce(function(s,c){ return s+csSaldoCargo(c); },0);
     var aa=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0);
     return Math.max(0,(hh-dd+cc)-aa);
   }
@@ -2524,8 +2524,9 @@ function saldoHospDeHab(r){
      (esos ya quedaron pagados en su propio consumo y no deben descontarse dos veces). */
 function abonoCuentaUsd(a, r){
   if(!a) return 0;
+  if(r&&r.creditoCxc&&cargosDe(r).some(function(c){return c.destinoConsumo==='huesped';}))return 0;
   var m=Number(a.montoUsd||0); if(!(m>0)) return 0;
-  if(a.soloConsumo) return 0;
+  if(a.soloConsumo || (r&&r.creditoCxc&&a.cxc)) return 0;
   /* [CONTROL-1] El control que manda es UNO solo para toda la cuenta: el numero mas alto
      del grupo (la principal). Antes, si la secundaria no dejaba su control, se tomaba el
      control propio del cuarto y un abono legitimo del grupo se descartaba. */
@@ -2658,7 +2659,7 @@ function habSinPagar(r){
   try{ return !cuentaCerrada(r); }catch(e){}
   if(habCortesia(r)) return saldoDeHab(r)>0.009;
   if(habHospEnCxc(r)){
-    var _cons=cargosDe(r).filter(function(c){return !c.pagado;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0);
+    var _cons=cargosDe(r).filter(function(c){return csPendiente(c);}).reduce(function(s,c){return s+csSaldoCargo(c);},0);
     var _ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0);
     return (_cons-_ab)>0.009;
   }
@@ -3610,7 +3611,7 @@ function chQuitarSimular(tipo,r){
 function chQuitarImportes(tipo,r){
  var normal=chQuitarSimular(tipo,r);if(!normal)return null;
  if(tipo==='reserva'){return {normal:normal,antes:resTotalReserva(r),despues:resTotalReserva(normal),pagos:resAnticipoUsd(r),saldoAntes:Math.max(0,resTotalReserva(r)-resAnticipoUsd(r)),saldoDespues:Math.max(0,resTotalReserva(normal)-resAnticipoUsd(r))};}
- var antes=brutoHab(r)-descUsd(r),despues=brutoHab(normal)-descUsd(normal),cons=cargosDe(normal).filter(function(c){return !c.pagado;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0),pagos=(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0);
+ var antes=brutoHab(r)-descUsd(r),despues=brutoHab(normal)-descUsd(normal),cons=cargosDe(normal).filter(function(c){return csPendiente(c);}).reduce(function(s,c){return s+csSaldoCargo(c);},0),pagos=(r.abonos||[]).reduce(function(s,a){return s+abonoCuentaUsd(a,r);},0);
  return {normal:normal,antes:Math.round(antes*100)/100,despues:Math.round(despues*100)/100,pagos:pagos,cons:cons,saldoAntes:Math.max(0,antes+cons-pagos),saldoDespues:Math.max(0,despues+cons-pagos)};
 }
 function chQuitarModal(tipo,id){
@@ -4388,6 +4389,7 @@ function abrirHab(num){
         body += '<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:12.5px;color:#2a4a73">🔄 <b>Estuvo en la habitación '+esc(x.hab)+'</b> y pasó a la '+r.num+(x.motivo?' · '+esc(x.motivo):'')+'<div style="color:#667;margin-top:2px">Cambio hecho por '+esc(x.por||'—')+(f?' · '+esc(f):'')+'</div></div>';
       });
     }
+    body += csResumen(r);
     body += cobroHoyAvisoHTML(r);
     body += cuentaCerradaBannerHTML(r);
     body += pagadoPorReservaHTML(r);
@@ -4452,17 +4454,17 @@ function abrirHab(num){
     }catch(e){}
     /* fin comidas */
     const cgs = cargosDe(r);
-    var _cms=[]; try{ _cms=cargosACuenta(r).filter(function(x){ return Number(x.hab||0)!==Number(num) && !x.pagado; }); }catch(e){ _cms=[]; }
+    var _cms=[]; try{ _cms=cargosACuenta(r).filter(function(x){ return Number(x.hab||0)!==Number(num) && csPendiente(x); }); }catch(e){ _cms=[]; }
     if(_cms.length){
       body += '<div class="section-title" style="font-size:14px;margin-top:8px">Consumos de otros cuartos en esta cuenta</div>';
       body += '<table class="users-table"><tr><th>De la habitacion</th><th>Tipo</th><th>Detalle</th><th>Monto</th></tr>';
-      _cms.forEach(function(cg){ body += '<tr><td><b>Hab. '+esc(String(cg.habOriginal||cg.hab||'-'))+'</b></td><td>'+esc(cg.tipo||'')+'</td><td>'+esc(cg.desc||'-')+'</td><td>'+fmtUSD(cg.montoUsd)+'</td></tr>'; });
+      _cms.forEach(function(cg){ body += '<tr><td><b>Hab. '+esc(String(cg.habOriginal||cg.hab||'-'))+'</b></td><td>'+esc(cg.tipo||'')+'</td><td>'+esc(cg.desc||'-')+'</td><td>'+fmtUSD(csSaldoCargo(cg))+'</td></tr>'; });
       body += '</table><div style="text-align:right;font-size:13px;color:#55637a;margin:6px 0">Compartidos: <b>'+fmtUSD(_cms.reduce(function(a,x){ return a+Number(x.montoUsd||0); },0))+'</b></div>';
     }
     if(cgs.length){
       body += '<div class="section-title" style="font-size:14px;margin-top:8px">Consumos en la cuenta</div>';
       body += '<table class="users-table"><tr><th>Tipo</th><th>Detalle</th><th>N° Control</th><th>Monto</th><th>Estado</th><th></th></tr>';
-      cgs.forEach(cg=>{ var _ctl=controlDeCargo(cg); body += '<tr><td>'+esc(cg.tipo)+'</td><td>'+esc(cg.desc||'—')+'</td><td>'+(_ctl?('<b>'+fmtControl(_ctl)+'</b>'):'<span style="color:#8893a5">Al cobrar</span>')+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+(cg.pagado?'<span style="color:var(--verde)">Cobrado</span>':'<span style="color:#b5651d">Pendiente</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:4px 8px" onclick="quitarCargoModal('+num+',\''+cg.id+'\',\'hab\')">Quitar</button>')+'</td></tr>'; });
+      cgs.forEach(cg=>{ var _ctl=controlDeCargo(cg); body += '<tr><td>'+esc(cg.tipo)+'</td><td>'+esc(cg.desc||'—')+'</td><td>'+(_ctl?('<b>'+fmtControl(_ctl)+'</b>'):'<span style="color:#8893a5">Al cobrar</span>')+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+('<span>'+esc(csEstado(cg))+'</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:4px 8px" onclick="quitarCargoModal('+num+',\''+cg.id+'\',\'hab\')">Quitar</button>')+'</td></tr>'; });
       body += '</table><div style="text-align:right;font-size:13px;color:#55637a;margin:6px 0">Consumos pendientes: <b>'+fmtUSD(totalCargosPend(r))+'</b></div>';
     }
     const abs = Array.isArray(r.abonos)?r.abonos:[];
@@ -5377,8 +5379,8 @@ function pedirCheckout(num){
   const _cort = habCortesia(r);
   const _mitCxc = habMitadACxc(r);
   const enCxc = !!r.creditoCxc; const hospCobro = (_cort||enCxc||_mitCxc)?0:hosp;
-  const pend = cargosDe(r).filter(c=>!c.pagado);
-  const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
+  const pend = cargosDe(r).filter(c=>csPendiente(c));
+  const consUsd = pend.reduce((s,c)=>s+csSaldoCargo(c),0);
   const desc = (enCxc||_cort||_mitCxc)?0:descUsd(r); const totUsd = hospCobro - desc + consUsd;
   /* [CORTESIA-CERO] en cortesia el recibo no puede mostrar el hospedaje de lista:
      si no, el papel dice que debe y la pantalla dice que esta pagada. */
@@ -5407,7 +5409,7 @@ function pedirCheckout(num){
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Tarifa × noches</span><span>'+(enCxc?('a crédito en CXC (Control '+fmtControl(r.creditoCxcControl)+')'):(_mitCxc?('mitad de precio: la mitad que paga está en CXC'+(r.autorizadaCxcControl?(' N° '+fmtControl(r.autorizadaCxcControl)):'')+' (aquí no se cobra) '):(_cort?'cortesía autorizada (no se cobra)':(fmtUSD(r.tarifa)+' × '+noches+' = '+fmtUSD(hosp)))))+'</span></div>';
   if(r.promoTitulo) body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Promoción</span><span>'+esc(r.promoTitulo)+'</span></div>';
   if(desc>0.009) body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px;color:var(--verde)"><span>Descuento '+promoPct(r)+'%</span><span>- '+fmtUSD(desc)+'</span></div>';
-  pend.forEach(cg=>{ body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</span><span>'+fmtUSD(cg.montoUsd)+'</span></div>'; });
+  pend.forEach(cg=>{ body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</span><span>'+fmtUSD(csSaldoCargo(cg))+'</span></div>'; });
   body += '<div class="divider"></div>';
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Total de la cuenta</span><span>'+fmtUSD(totUsd)+'</span></div>';
   abonos.forEach(a=>{ body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px;color:var(--verde)"><span>Adelanto · '+esc(a.concepto||'Adelanto')+'</span><span>- '+fmtUSD(a.montoUsd)+'</span></div>'; });
@@ -5518,8 +5520,8 @@ function cobrarYCheckout(num, btn){
   const noches = nochesHab(r); const hosp = brutoHab(r);
   const _mitCxc = habMitadACxc(r);
   const enCxc = !!r.creditoCxc; const hospCobro = (enCxc||_mitCxc)?0:hosp;
-  const pend = cargosDe(r).filter(c=>!c.pagado);
-  const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
+  const pend = cargosDe(r).filter(c=>csPendiente(c));
+  const consUsd = pend.reduce((s,c)=>s+csSaldoCargo(c),0);
   const desc = (enCxc||_mitCxc)?0:descUsd(r); const totUsd = (hospCobro - desc) + consUsd;
   const abonos = Array.isArray(r.abonos)?r.abonos.slice():[];
   const abonoUsd = abonos.reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
@@ -5713,9 +5715,9 @@ function datosCuentaHab(r){
     const noches=nochesHab(q), hosp=brutoHab(q), d=descUsd(q);
     /* [CORTESIA-CERO] cortesia: el hospedaje vale 0 */
     const _cortQ=(q&&q.autorizada&&q.autorizadaModo==='gratis');
-    const _hospQ=_cortQ?0:hosp; const _dQ=_cortQ?0:d;
-    const cons=cgs.filter(x=>!x.pagado && Number(x.hab||0)===Number(q.num)).reduce((a,x)=>a+Number(x.montoUsd||0),0);
-    const ab=(Array.isArray(q.abonos)?q.abonos:[]).reduce((a,x)=>a+abonoCuentaUsd(x,q),0);
+    const _hospQ=(_cortQ||q.creditoCxc||habMitadACxc(q))?0:hosp; const _dQ=(_cortQ||q.creditoCxc||habMitadACxc(q))?0:d;
+    const cons=cgs.filter(x=>csPendiente(x) && Number(x.hab||0)===Number(q.num)).reduce((a,x)=>a+csSaldoCargo(x),0);
+    const ab=(q.creditoCxc&&cargosDe(q).some(function(c){return c.destinoConsumo==='huesped';}))?0:(Array.isArray(q.abonos)?q.abonos:[]).reduce((a,x)=>a+abonoCuentaUsd(x,q),0);
     /* En una cuenta unida, el abono que puso cada cuarto sale del detalle de la cuenta
        (el mismo numero que usa el corte). Asi la ficha de la 204 y la de la 219 dicen lo mismo. */
     var _abQ=ab;
@@ -5724,7 +5726,7 @@ function datosCuentaHab(r){
     porHab.push({r:q, noches:noches, hosp:_hospQ, d:_dQ, cons:cons, ab:_abQ, neto:Math.max(0,(_hospQ-_dQ)+cons-_abQ)});
   });
   if(_listaG && _listaG.length>1){ try{ var _dgg=detalleCuentaHab(r); if(_dgg){ hospT=Number(_dgg.hosp||0)+Number(_dgg.cons||0); consT=Number(_dgg.cons||0); habT=Number(_dgg.abo||0); } }catch(e){} }
-  const compartidos=cgs.filter(x=>!x.pagado && Number(x.hab||0)!==Number(r.num));
+  const compartidos=cgs.filter(x=>csPendiente(x) && Number(x.hab||0)!==Number(r.num));
   /* [CUENTA-MANDA] La cuenta es UNA: el total, el adelanto y el saldo salen SIEMPRE del
      detalle completo (el mismo que usa Cobrar y el corte). Asi la ficha de la que manda y
      la de la que se le une dicen exactamente lo mismo, con consumos o sin ellos. */
@@ -5787,12 +5789,12 @@ function detalleCuentaHab(r){
     /* Cortesía antigua: hospedaje gratis; consumos y pagos se conservan. */
     var _cortP=false;
     try{ _cortP=habCortesia(q); }catch(e){ _cortP=false; }
-    if(_cortP){ hosp=0; d=0; }
+    if(_cortP||q.creditoCxc||habMitadACxc(q)){ hosp=0; d=0; }
     /* [CUENTA-UNIDA] El consumo es de la habitacion donde esta ANOTADO (habOriginal si ya
        se paso a la cuenta del grupo). Antes en una cuenta unida los consumos de la otra
        habitacion se iban al cuarto principal… o se perdian. Ahora no. */
     var _suyo=function(c){ var h=(c.habOriginal!=null?c.habOriginal:c.hab); return Number(h||q.num)===Number(q.num); };
-    var cons=cgs.filter(function(c){ return c && !c.pagado && _suyo(c); }).reduce(function(a,c){ return a+Number(c.montoUsd||0); },0);
+    var cons=cgs.filter(function(c){ return c && csPendiente(c) && _suyo(c); }).reduce(function(a,c){ return a+csSaldoCargo(c); },0);
     /* [CXC-UNIDA] Los abonos de la cuenta unida (enviados a CXC, cobros del grupo) se
        reparten por cuarto segun lo PAGADO a cada uno, y recien el sobrante se aplica
        al hospedaje pendiente. Antes todo caia en la principal y la secundaria
@@ -5803,7 +5805,8 @@ function detalleCuentaHab(r){
        volvia a pedir todo otra vez ("abone completo y sigue debiendo 55 cada una"). */
     var abs=(Array.isArray(q.abonos)?q.abonos:[]).filter(function(a){
       if(!a) return false;
-      if(a.controlOtroGrupo || a.soloConsumo) return false;
+      if(a.controlOtroGrupo || a.soloConsumo || (q.creditoCxc&&a.cxc)) return false;
+      if(q.creditoCxc&&cargosDe(q).some(function(c){return c.destinoConsumo==='huesped';}))return false;
       if(!(Number(a.montoUsd||0)>0)) return false;
       var habA=(a.hab!=null && String(a.hab)!=='')?Number(a.hab):null;
       if(habA!=null && habA!==Number(q.num)){
@@ -5862,7 +5865,7 @@ function cuentaCerrada(r){
   if(habCortesia(r)){var _dc=detalleCuentaHab(r);return _cerca0(_dc.saldo);}
   if(habHospEnCxc(r)){
     var c=0; try{ c=detalleCuentaHab(r).cons; }catch(e){}
-    return _cerca0(c);
+    return _cerca0(detalleCuentaHab(r).saldo);
   }
   var d=null; try{ d=detalleCuentaHab(r); }catch(e){ d=null; }
   if(!d) return true;                  /* si no se pudo leer, NO se reclama plata */
@@ -6041,7 +6044,7 @@ function cargosDe(r){ return Array.isArray(r.cargos)?r.cargos:[]; }
 function restaurantes(){ const r=DB.get('restaurantes',null); return (Array.isArray(r)&&r.filter(x=>String(x).trim()).length)?r.filter(x=>String(x).trim()):['Restaurante 1','Restaurante 2']; }
 function saveRestaurantes(a){ DB.save('restaurantes', (a||[]).map(x=>String(x).trim()).filter(Boolean)); }
 function controlDeCargo(cg){ if(cg&&cg.control) return cg.control; if(cg&&cg.id){ var m=kardexAll().find(function(k){ return k.tipo==='cargo' && k.cargoId===cg.id && k.control; }); if(m) return m.control; } return null; }
-function totalCargosPend(r){ return cargosDe(r).filter(c=>!c.pagado).reduce((s,c)=>s+Number(c.montoUsd||0),0); }
+function totalCargosPend(r){ return cargosDe(r).filter(c=>csPendiente(c)).reduce((s,c)=>s+csSaldoCargo(c),0); }
 function totalConsumosCuenta(r){ var D=null; try{ D=datosCuentaHab(r); }catch(e){} return D?D.cons:totalCargosPend(r); }
 /* [CUENTA] Cuadre sencillo de la cuenta de la habitacion: lo que debe y lo que ya pago.
    Sale el mismo numero que en el tablero y en Cobrar (saldoDeHab). */
@@ -6069,7 +6072,7 @@ function cuentaHabBox(r){
 }
 function agregarCargoModal(num){
   var _rb=findRoom(num);
-  if(_rb && _rb.autorizada&&!habCortesia(_rb)){ var _bh='<button class="close" onclick="abrirHab('+num+')">×</button><h2>Hab. '+num+' · autorizada</h2>'+bloqueoAutorizadaHTML(_rb,'cargo')+'<div class="actions"><button class="btn-gray" onclick="extenderEstadiaModal('+num+')">Extender estadía</button><button class="btn-ghost" onclick="abrirHab('+num+')">Volver</button></div>'; showModal(_bh); return; }
+  if(_rb && _rb.autorizada&&!habCortesia(_rb)&&!_rb.creditoCxc){ var _bh='<button class="close" onclick="abrirHab('+num+')">×</button><h2>Hab. '+num+' · autorizada</h2>'+bloqueoAutorizadaHTML(_rb,'cargo')+'<div class="actions"><button class="btn-gray" onclick="extenderEstadiaModal('+num+')">Extender estadía</button><button class="btn-ghost" onclick="abrirHab('+num+')">Volver</button></div>'; showModal(_bh); return; }
   let body='<button class="close" onclick="abrirHab('+num+')">×</button>';
   body+='<h2>Agregar consumo · Hab. '+num+'</h2>';
   body+='<div class="rstate" style="color:#55637a">Comida, lavandería u otros cargos a la cuenta</div>';
@@ -6085,13 +6088,16 @@ function agregarCargoModal(num){
       body+='</select><div style="font-size:12px;color:#8893a5;margin-top:3px">Si el que consumio carga a la cuenta de otro cuarto, el cargo entra en la cuenta de ese cuarto.</div></div>';
     }
   }catch(e){}
+  var _cxAlta=_rb&&(_rb.creditoCxc||habMitadACxc(_rb))?cxcCuentaDeHabCobro(_rb):null;
+  if(_cxAlta)body+='<div class="field"><label>¿Quién paga este consumo? (obligatorio)</label><select id="cg-destino"><option value="">Elegir…</option><option value="huesped">Lo paga el huésped por separado</option><option value="cxc">Cargar a la cuenta CXC</option></select><div>CXC N° '+fmtControl(_cxAlta.control||0)+' · '+esc(_cxAlta.nombre||'')+'</div><div>Guardar un consumo no registra dinero recibido.</div></div>';
+  CS_ALTA={num:num,cxcId:_cxAlta?_cxAlta.id:'',rooms:JSON.stringify(DB.get('rooms',[])),cuentas:JSON.stringify(cxc())};
   body+='<div id="cg-prev" style="font-size:13px;color:#55637a;margin-top:-4px">Equivale a '+fmtBs(0)+'</div>';
   body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="guardarCargo('+num+')">Agregar a la cuenta</button><button class="btn-ghost" onclick="abrirHab('+num+')">Cancelar</button></div>';
   showModal(body);
 }
 function cgPrev(){ const m=parseFloat(document.getElementById('cg-monto').value)||0; const e=document.getElementById('cg-prev'); if(e) e.innerText='Equivale a '+fmtBs(precioBs(m)); }
 function cgTipoCambio(){ const t=document.getElementById('cg-tipo'); const box=document.getElementById('cg-rest-box'); if(box) box.style.display=(t&&(t.value==='Comida'||t.value==='Minibar'))?'block':'none'; }
-function guardarCargo(num){
+function csGuardarBase(num){
   const tipo=document.getElementById('cg-tipo').value;
   const desc=document.getElementById('cg-desc').value.trim();
   const monto=parseFloat(document.getElementById('cg-monto').value)||0;
@@ -6099,26 +6105,30 @@ function guardarCargo(num){
   const esComida=(tipo==='Comida'||tipo==='Minibar');
   const restEl=document.getElementById('cg-rest'); const rest=(esComida&&restEl)?restEl.value:'';
   const r=findRoom(num);
-  if(r && r.autorizada&&!habCortesia(r)){ alert('Esta habitación está autorizada por '+autorizaTexto()+'.\n\nEn una habitación autorizada solo se maneja el hospedaje: no se le cargan consumos.\n\nLo único que se puede hacer es extender la estadía.'); return; }
+  if(r && r.autorizada&&!habCortesia(r)&&!r.creditoCxc){ alert('Esta habitación está autorizada por '+autorizaTexto()+'.\n\nEn una habitación autorizada solo se maneja el hospedaje: no se le cargan consumos.\n\nLo único que se puede hacer es extender la estadía.'); return; }
+  var _cgCuActual=r&&(r.creditoCxc||habMitadACxc(r))?cxcCuentaDeHabCobro(r):null;
   const cargos=cargosDe(r).map(function(x){ return (x&&!x.hab)?Object.assign({},x,{hab:num,habOriginal:num}):x; });
-  const _cgId='cg'+Date.now();
+  const _cgId='cg'+Date.now()+Math.random().toString(36).slice(2,7);
   var _acompId=''; try{ var _ae=document.getElementById('cg-acomp'); if(_ae) _acompId=_ae.value||''; }catch(e){}
   var _acNom=''; if(_acompId){ var _aa=(Array.isArray(r.acompanantes)?r.acompanantes:[]).find(function(x){ return x && x.id===_acompId; }); if(_aa) _acNom=_aa.nombre||''; }
   /* [CXC-CONTROL] Si el hospedaje de esta habitacion ya esta a credito en CXC, el consumo
      entra a ESA cuenta y lleva SU N° de control (no se gasta un numero nuevo por gusto).
      Si la habitacion no esta en CXC, el consumo lleva su propio numero, como siempre. */
-  var _cgEnCxc=false; try{ _cgEnCxc=!!cxcCuentaDeHabCobro(findRoom(num)); }catch(e){ _cgEnCxc=false; }
+  var _cgEnCxc=false; try{ _cgEnCxc=!!(CS_ALTA&&CS_ALTA.destino==='cxc'&&cxcCuentaDeHabCobro(findRoom(num))); }catch(e){ _cgEnCxc=false; }
   var _cgCtrl=0;
   if(_cgEnCxc){ try{ var _cgCu=cxcCuentaDeHabCobro(findRoom(num)); _cgCtrl=parseInt((_cgCu&&_cgCu.control)||0)||0; }catch(e){} }
   if(!_cgCtrl) _cgCtrl=siguienteControl();
   function _ligaCargosCtrl(_ids,_c){ if(!_ids||!_ids.length||!_c) return; const _l=cargosDe(findRoom(num)).map(function(x){ return _ids.indexOf(x.id)>=0?Object.assign({},x,{control:(x.control||_c),controlPago:_c}):x; }); updateRoom(num,{cargos:_l}); }
-  cargos.push({id:_cgId, tipo:tipo, desc:(_acNom?('['+_acNom+'] '+(desc||'')):desc), montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false, control:_cgCtrl, acompId:_acompId, hab:num, habOriginal:num});
+  cargos.push({id:_cgId, tipo:tipo, desc:(_acNom?('['+_acNom+'] '+(desc||'')):desc), montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false,destinoConsumo:CS_ALTA&&CS_ALTA.destino||'huesped',enCxc:false, control:_cgCtrl, acompId:_acompId, hab:num, habOriginal:num});
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
   /* [CXC-SUMAR] si el hospedaje ya esta a credito en CXC, el consumo va a esa MISMA cuenta */
   var _sumCxc=null;
-  try{ if(!habCortesia(findRoom(num))&&!cargosDe(findRoom(num)).find(function(c){return c.id===_cgId&&c.cubiertoPorCortesia;}))_sumCxc=cxcSumarHab(num,{concepto:'Consumo · '+tipo+(rest?(' · '+rest):'')+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]}); }catch(e){}
-  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, control:_cgCtrl, detalle:(cargosDe(findRoom(num)).some(function(c){return c.id===_cgId&&c.cubiertoPorCortesia;})?'Consumo incluido en cortesía (sin ingreso) · ':'')+tipo+(rest?(' · '+rest):'')+(desc?' · '+desc:'')+' · '+fmtUSD(monto)+' · N° control '+fmtControl(_cgCtrl), restaurante:rest, cargoTipo:tipo, cargoUsd:monto, cargoBs:precioBs(monto), montoUsd:0, montoBs:0, metodo:''});
+  try{ if(_cgEnCxc&&!cargosDe(findRoom(num)).find(function(c){return c.id===_cgId&&c.cubiertoPorCortesia;}))_sumCxc=cxcSumarHab(num,{concepto:'Consumo · '+tipo+(rest?(' · '+rest):'')+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]}); }catch(e){}
+  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId,destinoConsumo:CS_ALTA&&CS_ALTA.destino||'huesped',cxcId:_sumCxc?_sumCxc.id:'', control:_cgCtrl, detalle:(cargosDe(findRoom(num)).some(function(c){return c.id===_cgId&&c.cubiertoPorCortesia;})?'Consumo incluido en cortesía (sin ingreso) · ':'')+tipo+(rest?(' · '+rest):'')+(desc?' · '+desc:'')+' · '+fmtUSD(monto)+' · N° control '+fmtControl(_cgCtrl), restaurante:rest, cargoTipo:tipo, cargoUsd:monto, cargoBs:precioBs(monto), montoUsd:0, montoBs:0, metodo:''});
+  if(_sumCxc){var _csNew=cargosDe(findRoom(num)).map(function(c){return c.id===_cgId?Object.assign({},c,{enCxc:true,cxcId:_sumCxc.id}):c;});updateRoom(num,{cargos:_csNew});}
+  var _csDestino=CS_ALTA&&CS_ALTA.destino;CS_ALTA=null;
   abrirHab(num);
+  if(_csDestino==='huesped'&&_cgCuActual)csDespuesAlta(num,_cgId);
   if(_sumCxc){ setTimeout(function(){ alert('Sumado a la cuenta CXC N° '+fmtControl(_sumCxc.control||0)+' de '+cxcNombreDe(_sumCxc)+'.\nAhora debe '+fmtUSD(cxcSaldo(_sumCxc))+(cxcViveEnHab(_sumCxc)?'':'.\n\nEl huesped ya hizo check-out: este consumo lleva su propio N° de control dentro de la misma cuenta.')); },80); }
 }
 function ligarCargosControl(ids, ctrl){
@@ -6155,18 +6165,19 @@ function quitarCargoConfirm(num,id,desde){
   var r=findRoom(num)||findRoomAny(num); if(!r) return;
   var cargos=cargosDe(r);
   var cg=cargos.find(function(x){ return x && x.id===id; }); if(!cg) return;
-  if(cg.pagado){ alert('Ese consumo ya fue cobrado, no se puede quitar.'); return; }
+  if(cg.pagado||Number(cg.pagoDirectoUsd||0)>0||(cg.pagosConsumo||[]).length){ alert('Ese consumo tiene pagos o abonos. No se puede quitar; requiere revisión.'); return; }
   var mot=((document.getElementById('qc-motivo')||{}).value)||'';
   var nota=(((document.getElementById('qc-nota')||{}).value)||'').trim();
   if(nota && typeof mayusculasYa==='function'){ nota=mayusculasYa(nota); }
   if(!mot && !nota){ alert('Escribe el motivo.'); return; }
   var motivo=(mot||'Otro')+(nota?(' · '+nota):'');
   var monto=Number(cg.montoUsd||0);
+  if(csEnCxc(cg)){var _infoQ=csMontoCxc(cg);if(!_infoQ||_infoQ.revision||_infoQ.pendiente<monto-0.009){alert('El consumo en CXC tiene pagos o no puede identificarse con seguridad. No se quitó; requiere revisión.');return;}}
   /* 1) se quita de la habitacion (esto baja el mapa, la ficha y Cobrar) */
   updateRoom(num,{cargos:cargos.filter(function(x){ return x.id!==id; })});
   /* 2) si estaba sumado en CXC, se descuenta alla (opcion A: automatico) */
   var restado=0;
-  try{ restado=cxcRestarHab(num, monto, motivo); }catch(e){ restado=0; }
+  try{ if(csEnCxc(cg))restado=csRestarExacto(cg,num,motivo); }catch(e){ restado=0; }
   /* 3) queda en el Kardex lo que paso */
   try{
     logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:id,
@@ -6182,6 +6193,7 @@ function cobrarSinCheckout(num){
   if(guardTurno()) return;
   const r=findRoom(num); const ids=[]; let tot=0;
   document.querySelectorAll('.cob-chk').forEach(ch=>{ if(ch.checked){ ids.push(ch.value); tot+=Number(ch.getAttribute('data-m'))||0; } });
+  if(ids.some(function(id){return csEnCxc(cargosDe(r).find(function(c){return c.id===id;}));})){alert('Este consumo está en CXC. Usa Pagar este consumo de CXC en la habitación para aplicarlo sin cobrar dos veces.');return;}
   const _cobC=document.getElementById('cob-concepto');
   const _cobO=document.getElementById('cob-otro');
   const concepto=(_cobC&&_cobC.value?_cobC.value:'').trim();
@@ -6342,8 +6354,8 @@ function hotelLinePrint(){ const h=hotel(); const c=impConfig(); const bits=[]; 
 function imprimirRecibo(num){
   const r = findRoom(num);
   const noches = nochesHab(r); const hosp = brutoHab(r);
-  const pend = cargosDe(r).filter(c=>!c.pagado);
-  const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
+  const pend = cargosDe(r).filter(c=>csPendiente(c));
+  const consUsd = pend.reduce((s,c)=>s+csSaldoCargo(c),0);
   const desc = descUsd(r); const _detalleRec=detalleCuentaHab(r); const totUsd = _detalleRec.saldo;
   const c = clienteDeHab(r); const cr = c?clienteResumen(c):null;
   let metodo=''; try{ const _pm=pmLeer('co'); if(_pm.ok) metodo=_pm.metodoStr; }catch(e){}
@@ -9433,10 +9445,10 @@ function saldoGrupo(list){
       if(_D && _D.list && _D.list.length>1) return Math.max(0,Number(_D.saldo||0));
     }
   }catch(e){}
-  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
+  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>csPendiente(x)).reduce((s,x)=>s+csSaldoCargo(x),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
     try{ const D=detalleCuentaHab(r); cons=D.cons; ab=D.abo; }catch(e){}
     /* [CORTESIA-CERO] cortesia: no se cobra nada (ni hospedaje ni consumos) */
-    const _c=(r&&r.autorizada&&r.autorizadaModo==='gratis');
+    const _c=(r&&r.autorizada&&r.autorizadaModo==='gratis')||r.creditoCxc||habMitadACxc(r);
     /* Cortesía: hospedaje cero, consumos cobrables y abonos conservados. */
     gCost+=((_c?0:(hosp-d))+cons); gAb+=ab; });
   return Math.max(0,gCost-gAb);
@@ -9632,9 +9644,9 @@ function cobrarPintar(){
       }
     }catch(e){}
     if(!(gCost>0) && !(gAb>0)){
-      list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
+      list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>csPendiente(x)).reduce((s,x)=>s+csSaldoCargo(x),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
         try{ const D=detalleCuentaHab(r); cons=D.cons; ab=D.abo; }catch(e){}
-        const _c2=(r&&r.autorizada&&r.autorizadaModo==='gratis');
+        const _c2=(r&&r.autorizada&&r.autorizadaModo==='gratis')||r.creditoCxc||habMitadACxc(r);
         /* Cortesía: hospedaje cero, consumos cobrables y abonos conservados. */
         gCost+=((_c2?0:(hosp-d))+cons); gAb+=ab; });
     }
@@ -9691,7 +9703,7 @@ function cobrarPintar(){
       if(cgs.length){
         h+='<div style="margin-top:8px;font-size:12.5px;color:#55637a;font-weight:600">Consumos / cargos</div>';
         h+='<table class="users-table" style="margin-top:4px"><tr><th>Concepto</th><th>Monto</th><th>Estado</th><th></th></tr>';
-        cgs.forEach(cg=>{ h+='<tr><td>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+(cg.pagado?'<span style="color:var(--verde)">Cobrado</span>':'<span style="color:#b5651d">Pendiente</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:3px 8px;font-size:12px" onclick="quitarCargoModal('+r.num+',\''+cg.id+'\',\'cobrar\')">Quitar</button>')+'</td></tr>'; });
+        cgs.forEach(cg=>{ h+='<tr><td>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+('<span>'+esc(csEstado(cg))+'</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:3px 8px;font-size:12px" onclick="quitarCargoModal('+r.num+',\''+cg.id+'\',\'cobrar\')">Quitar</button>')+'</td></tr>'; });
         h+='</table>';
       }
       h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
@@ -9708,7 +9720,7 @@ function cobrarPintar(){
         _descTotal+=Number(descUsd(rx)||0);
         _extT+=extNochesTotal(rx);
         if(tramosActivos(rx).length) _tramosSi=true;
-        try{ cargosDe(rx).forEach(function(cg){ if(!cg.pagado) _consTotal+=Number(cg.montoUsd||0); }); }catch(e){}
+        try{ cargosDe(rx).forEach(function(cg){ if(csPendiente(cg)) _consTotal+=Number(cg.montoUsd||0); }); }catch(e){}
       });
       if(_hospTotal>0.009 || _consTotal>0.009){
         var _nochesTot=0; list.forEach(function(rx){ _nochesTot+=Number(nochesHab(rx)||0); });
@@ -10004,13 +10016,13 @@ function cobroGrupoDatos(numsStr){
     }
   }catch(e){}
   let tot=0, abo=0, nochesTot=0; const porHab=[]; const _vistos={};
-  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
+  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>csPendiente(x)).reduce((s,x)=>s+csSaldoCargo(x),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
     try{ if(cuentaDeHab(r)==='yo'){ const D=datosCuentaHab(r); cons=D.cons; ab=D.abo;
     } }catch(e){}
     /* [CORTESIA-CERO] cortesia: el hospedaje no se cobra */
-    const _c3=(r&&r.autorizada&&r.autorizadaModo==='gratis');
+    const _c3=(r&&r.autorizada&&r.autorizadaModo==='gratis')||r.creditoCxc||habMitadACxc(r);
     /* Cortesía: hospedaje cero, consumos cobrables y abonos conservados. */
-    const neto=(_c3?0:(hosp-d))+cons; tot+=neto; abo+=ab; nochesTot+=noches; porHab.push({r:r, noches:noches, hosp:hosp, d:d, cons:cons, ab:ab, neto:Math.max(0,neto-ab)}); });
+    const neto=(_c3?0:(hosp-d))+cons; tot+=neto; abo+=ab; nochesTot+=noches; porHab.push({r:r, noches:noches, hosp:_c3?0:hosp, d:_c3?0:d, cons:cons, ab:ab, neto:Math.max(0,neto-ab)}); });
   let _tituId=''; list.forEach(function(r){ if(r.tituId) _tituId=r.tituId; }); if(!_tituId) _tituId=(list[0]||{}).clienteId||'';
   const _titu=_tituId?clientes().find(function(x){return x.id===_tituId;}):null;
   const _tituNombre=_titu?(((_titu.nombre||'')+' '+(_titu.apellido||'')).trim()):((list[0]||{}).huesped||'');
@@ -10074,7 +10086,7 @@ function unirCuentaModal(numOrigen){
   otras.forEach(function(x){
     var extra='';
     try{
-      var pr=cargosPropios(x).filter(function(c){ return !c.pagado; });
+      var pr=cargosPropios(x).filter(function(c){ return csPendiente(c); });
       var prUsd=pr.reduce(function(s,c){ return s+Number(c.montoUsd||0); },0);
       if(prUsd>0.009) extra=' · <span style="color:#b5651d">tiene consumos propios '+fmtUSD(prUsd)+'</span>';
     }catch(e){}
@@ -10116,7 +10128,7 @@ function ucRefrescarBotones(){
 function sumaConsumo(num){
   try{
     var r=findRoom(num); if(!r) return 0;
-    return cargosPropios(r).filter(function(c){ return c && !c.pagado; })
+    return cargosPropios(r).filter(function(c){ return c && csPendiente(c); })
       .reduce(function(x,c){ return x+Number(c.montoUsd||0); },0);
   }catch(e){ return 0; }
 }
@@ -10180,7 +10192,7 @@ function unirCuentas(numOrigen, numOtra, modo){
     updateRoomAny(numOrigen, Object.assign({cuentaCon:Number(numOtra), cuentaModo:'compartida'}, sello));
   } else {
     /* quien paga no debe tener ya consumos propios, o tendria dos bloques de cuenta */
-    const propios=cargosPropios(_b0).filter(c=>!c.pagado);
+    const propios=cargosPropios(_b0).filter(c=>csPendiente(c));
     if(propios.length) return {ok:false, msg:'La Hab. '+numOtra+' tiene consumos propios en su cuenta ('+fmtUSD(propios.reduce((x,c)=>x+Number(c.montoUsd||0),0))+').\n\nHazlo al revés: elige que la Hab. '+numOtra+' pague todo, o mueve esos consumos. Así no se cobra ni se pierde nada dos veces.'};
     updateRoomAny(numOtra, Object.assign({cuentaCon:Number(numOrigen), cuentaModo:'paga'}, sello));
   }
@@ -10252,7 +10264,7 @@ function cuentaUnidaBox(r){
   if(D.list.length>1){
     h+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:10px 12px;margin:8px 0;font-size:12.6px;color:#2a4a73">';
     h+='<div style="font-weight:800;margin-bottom:4px">🔗 Cuenta unida</div>';
-    D.list.forEach(x=>{ h+='<div>Hab. '+esc(String(x.num))+' · '+esc(x.huesped||'—')+' · debe '+fmtUSD(Math.max(0,(brutoHab(x)-descUsd(x))+D.cargos.filter(function(c){ return !c.pagado && Number(c.hab||0)===Number(x.num); }).reduce(function(a,c){ return a+Number(c.montoUsd||0); },0)-(Array.isArray(x.abonos)?x.abonos:[]).reduce(function(a,y){ return a+abonoCuentaUsd(y,x); },0)))+'</div>'; });
+    D.list.forEach(x=>{ h+='<div>Hab. '+esc(String(x.num))+' · '+esc(x.huesped||'—')+' · debe '+fmtUSD(Math.max(0,(brutoHab(x)-descUsd(x))+D.cargos.filter(function(c){ return csPendiente(c) && Number(c.hab||0)===Number(x.num); }).reduce(function(a,c){ return a+csSaldoCargo(c); },0)-(Array.isArray(x.abonos)?x.abonos:[]).reduce(function(a,y){ return a+abonoCuentaUsd(y,x); },0)))+'</div>'; });
     h+='<div style="margin-top:6px;font-weight:800">Total de la cuenta: '+fmtUSD(D.saldo)+'</div>';
     if(r.cuentaPor) h+='<div style="color:#667;margin-top:3px">Unida por '+esc(r.cuentaPor)+(r.cuentaFecha?(' · '+esc(String(r.cuentaFecha).slice(0,10))):'')+'</div>';
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
@@ -10505,6 +10517,7 @@ function crpImprimirRecibo(){var r=CRP_RECIBO;if(!r)return;var w=window.open('',
 
 function cobrarCuentaModal(numsStr){
   if(guardTurno()) return;
+  var _csR=findRoom(parseInt(String(numsStr).split(',')[0],10));if(_csR&&_csR.creditoCxc&&cargosDe(_csR).some(function(c){return c.destinoConsumo==='huesped'&&csPendiente(c);})){csElegirGuest(_csR.num);return;}
   let g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
   let _uni=false;
   if(g.list.length===1){ try{ g=datosCobroCuentaHab(g.list[0]); _uni=true; }catch(e){ _uni=false; } }
@@ -10634,15 +10647,15 @@ function _aplicarPagoCuenta(g, monto, ctrl, metodo, now){
       var _conc=conceptoPago(naturalezaRoom(q),!saldada);
       if(_uni && _manda && Number(q.num)!==Number(_manda.num)) _conc+=' (junto con Hab. '+_manda.num+')';
       if(!saldada) _conc+=' (abono)';
-      ab.push({id:'ab'+Date.now()+q.num, concepto:_conc, montoUsd:pp.parte, fecha:now.toISOString(), metodo:metodo, control:ctrl, hab:Number(q.num), enCaja:true,consumoCortesiaAntigua:habCortesia(q)?true:undefined});
+      ab.push({id:'ab'+Date.now()+q.num, concepto:_conc, montoUsd:pp.parte, fecha:now.toISOString(), metodo:metodo, control:ctrl, hab:Number(q.num), enCaja:true,consumoCortesiaAntigua:(habCortesia(q)||q.creditoCxc)?true:undefined});
     }
     var patch={abonos:ab, control:ctrl};
     if(saldada){
-      var pend=[]; try{ pend=cargosDe(q).filter(function(cg){ return cg && !cg.pagado; }).map(function(cg){ return cg.id; }); }catch(e){ pend=[]; }
+      var pend=[]; try{ pend=cargosDe(q).filter(function(cg){ return cg && csPendiente(cg); }).map(function(cg){ return cg.id; }); }catch(e){ pend=[]; }
       try{ ligarCargosControl(pend, ctrl); }catch(e){}
-      var cargos=[]; try{ cargos=cargosDe(q).map(function(cg){ return cg.pagado?cg:Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}); }); }catch(e){ cargos=cargosDe(q); }
+      var cargos=[]; try{ cargos=cargosDe(q).map(function(cg){ return !csPendiente(cg)?cg:Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}); }); }catch(e){ cargos=cargosDe(q); }
       patch.cargos=cargos;
-      if(habCortesia(q)){patch.abonos=ab.map(function(a){return a.consumoCortesiaAntigua?Object.assign({},a,{soloConsumo:true}):a;});}
+      if(habCortesia(q)||q.creditoCxc){patch.abonos=ab.map(function(a){return a.consumoCortesiaAntigua?Object.assign({},a,{soloConsumo:true}):a;});}
     }
     updateRoom(q.num, patch);
   });
@@ -10927,7 +10940,7 @@ function enviarACxCConfirm(numsStr){
   g.porHab.forEach(x=>{ const r=x.r; const noches=nochesHab(r);
     habitaciones.push({num:(habsControlTexto([r.num].concat(tramosActivos(r).map(function(t){return t.hab;})))||r.num), tipo:r.tipo||'', noches:noches, hosp:x.hosp, desc:x.d, cons:x.cons, neto:x.neto, tramos:tramosActivos(r).map(function(t){return {hab:t.hab,tarifa:t.tarifa,noches:t.noches};})});
     partes.push('Hab. '+r.num+' ('+noches+' noche(s))');
-    cargosDe(r).filter(cg=>!cg.pagado).forEach(cg=>{ cargosDet.push({hab:r.num, tipo:cg.tipo, desc:cg.desc||'', montoUsd:Number(cg.montoUsd||0)}); });
+    cargosDe(r).filter(cg=>csPendiente(cg)).forEach(cg=>{ cargosDet.push({hab:r.num, tipo:cg.tipo, desc:cg.desc||'', montoUsd:csSaldoCargo(cg)}); });
   });
   const concepto=conceptoCredito(naturalezaCuenta(g))+' · '+partes.join(', ')+(cargosDet.length?(' + '+cargosDet.length+' consumo(s)'):'');
   const conceptoFinal=(tipo==='empresa')?(concepto+' · Huésped: '+nombre):concepto;
@@ -10975,7 +10988,7 @@ function enviarACxCConfirm(numsStr){
     detalle:'Enviado a CXC · N° control '+fmtControl(ctrl)+((tipo==='empresa'&&cxNombre!==nombre)?(' · a nombre de EMPRESA '+cxNombre):'')+' · '+conceptoFinal, credUsd:g.saldo, credBs:precioBs(g.saldo), montoUsd:0, montoBs:0, metodo:(tipo==='empresa'?'Crédito empresa (CXC)':'Crédito (por cobrar)')});
   g.porHab.forEach(x=>{ const r=x.r; const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r);
     const abPrev=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
-    const pendIds=cargosDe(r).filter(cg=>!cg.pagado).map(cg=>cg.id);
+    const pendIds=cargosDe(r).filter(cg=>csPendiente(cg)).map(cg=>cg.id);
     ligarCargosControl(pendIds, ctrl);
     const cargos=cargosDe(r).map(cg=> cg.pagado?cg:Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}));
     const faltaHosp=Math.max(0,(hosp-d)-abPrev);
@@ -11488,6 +11501,7 @@ function confirmarAnularPago(id, btn){
   if(!(session().rol==='admin'||puedeSup('anularPagos'))){ alert('No tienes permiso para anular cobros.'); cerrarModal(); return; }
   const pagos=DB.get('pagos',[]); const p=pagos.find(x=>x.id===id);
   if(!p){ alert('No se encontró el cobro.'); cerrarModal(); return; }
+  if((p.consumoIds||[]).length){csAnularPago(p,btn);return;}
   const motivo=mayusculasYa((document.getElementById('anul-motivo')||{}).value||'');
   if(!motivo.trim()){ alert('Escribe el motivo de la anulación.'); return; }
   const s=session();
@@ -12550,13 +12564,10 @@ function cxcHospedajeEnCuenta(num, monto, ctrl, txt){
 }
 /* Lo que ESTA cuenta ya tiene sumado por los consumos de una habitacion
    (para no repetir el mismo consumo cuando se vuelve a enviar la cuenta). */
-function cxcSumaHabConsumos(e, num){
-  var out=0;
-  if(!e) return 0;
-  var hs=String(num==null?'':num);
-  var arr=Array.isArray(e.agregadoDespues)?e.agregadoDespues:[];
-  arr.forEach(function(x){ if(!x) return; if(x.tipo2!=='consumo') return; if(hs===''|| String(x.hab)!==hs) return; out+=Number(x.montoUsd||0); });
-  return Math.round(out*100)/100;
+function cxcSumaHabConsumos(e,num){
+ if(!e)return 0;var hs=String(num),out=0;
+ (e.cargos||[]).forEach(function(x){if(x.tipo2==='consumo'&&String(x.hab)===hs&&!Array.isArray(x.cargosIds)&&!x.anulaConsumoId)out+=Number(x.montoUsd||0);});
+ return Math.max(0,Math.round(out*100)/100);
 }
 /* Cuanto se sumo despues del enviado (para el desglose de la ficha) */
 function cxcAgregadoDeCuenta(e, num){
@@ -14236,7 +14247,7 @@ function aplicarCargoComida(num, plan, noches){
   /* [COMIDAS-POR-NOCHE] El plan se lleva por noche, en renglones chiquitos: "☕ Desayuno · 1 noche".
      Asi se puede quitar o corregir UNA comida sin tocar las demas, y cuando se extiende la
      estadia se agregan SOLO las noches nuevas (no se duplica lo de antes). */
-  var _plActual=cargos.filter(function(c){ return c.origen==='comidaPlan' && (c.cxc || (!c.pagado && !c.control)); });
+  var _plActual=cargos.filter(function(c){ return c.origen==='comidaPlan' && (c.cxc || (csPendiente(c) && !c.control)); });
   var _ok=true;
   meals.forEach(function(m){
     var cnt=0, tot=0;
@@ -14536,7 +14547,7 @@ function asigEmpAplicar(btn){
       g.porHab.forEach(function(x){
         const r=x.r; const noches=nochesHab(r);
         partes.push('Hab. '+r.num+' ('+noches+' noche(s))');
-        cargosDe(r).filter(function(c){return !c.pagado;}).forEach(function(cg){ cargosDet.push({hab:r.num, tipo:cg.tipo, desc:cg.desc||'', montoUsd:Number(cg.montoUsd||0)}); });
+        cargosDe(r).filter(function(c){return csPendiente(c);}).forEach(function(cg){ cargosDet.push({hab:r.num, tipo:cg.tipo, desc:cg.desc||'', montoUsd:csSaldoCargo(cg)}); });
       });
       const concepto=conceptoCredito(naturalezaCuenta(g))+' · '+partes.join(', ')+(cargosDet.length?(' + '+cargosDet.length+' consumo(s)'):'')+(pers?(' · Huésped: '+pers):'');
       const l=cxc();
@@ -14668,7 +14679,7 @@ function salidaRegistrarAnticipada(numsStr){
   if(!habs.length){ alert('Esas habitaciones ya no están ocupadas.'); return; }
   const prev=habs.map(function(r){
     const a=salidaAjusteNoches(r);
-    return {r:r, a:a, debe:Math.max(0, Math.round((costoNochesCobrar(r,a.cobrar)-descUsd(r)+cargosDe(r).filter(function(c){return !c.pagado;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0)-(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,x){return s+Number(x.montoUsd||0);},0))*100)/100)};
+    return {r:r, a:a, debe:Math.max(0, Math.round((costoNochesCobrar(r,a.cobrar)-descUsd(r)+cargosDe(r).filter(function(c){return csPendiente(c);}).reduce(function(s,c){return s+csSaldoCargo(c);},0)-(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,x){return s+csSaldoCargo(x);},0))*100)/100)};
   });
   const conDeuda=prev.filter(function(x){ return x.debe>0.009; });
   var resumen='';
@@ -14703,7 +14714,7 @@ function salidaConfirmar(numsStr, btn){
   salidaAjustarHabs(nums);
   const habs=nums.map(function(n){ return parseInt(n); }).filter(function(n){ return !isNaN(n); });
   const conSaldo=habs.map(findRoom).filter(function(r){ return r && r.estado==='ocupada'; }).filter(function(r){
-    const p=Math.max(0, Math.round((costoNochesCobrar(r,r.noches||1)-descUsd(r)+cargosDe(r).filter(function(c){return !c.pagado;}).reduce(function(s,c){return s+Number(c.montoUsd||0);},0)-(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,x){return s+Number(x.montoUsd||0);},0))*100)/100);
+    const p=Math.max(0, Math.round((costoNochesCobrar(r,r.noches||1)-descUsd(r)+cargosDe(r).filter(function(c){return csPendiente(c);}).reduce(function(s,c){return s+csSaldoCargo(c);},0)-(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,x){return s+csSaldoCargo(x);},0))*100)/100);
     return p>0.009;
   });
   if(conSaldo.length){
@@ -16319,7 +16330,7 @@ function detalleMapaHab(r){
       try{ noches=nochesHab(r); }catch(e){}
       try{ hosp=brutoHab(r); }catch(e){}
       try{ d=descUsd(r); }catch(e){}
-      try{ cons=cargosDe(r).filter(function(c){return c && !c.pagado;}).reduce(function(a,c){return a+Number(c.montoUsd||0);},0); }catch(e){}
+      try{ cons=cargosDe(r).filter(function(c){return c && csPendiente(c);}).reduce(function(a,c){return a+csSaldoCargo(c);},0); }catch(e){}
       try{ ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(a,x){return a+abonoCuentaUsd(x,r);},0); }catch(e){}
       o.hosp=hosp-d; o.cons=cons; o.abo=ab; o.tot=o.hosp+o.cons; o.saldo=Math.max(0,o.tot-ab);
       o.filas.push({r:r,noches:noches,hosp:hosp,d:d,cons:cons,ab:ab,neto:o.saldo});
@@ -16612,7 +16623,7 @@ function pasarGrupoACxc(numsStr, motivo){
   var esEmp=!!(manda.empresaRef || (c&&c.tipo==='empresa'));
   var habsTxt=habs.map(function(q){ return q.num; }).join(', ');
   var cargosDet=[];
-  try{ cargosDe(manda).filter(function(x){ return !x.pagado; }).forEach(function(x){ cargosDet.push({hab:manda.num, tipo:x.tipo, desc:x.desc||'', montoUsd:Number(x.montoUsd||0)}); }); }catch(e){}
+  try{ cargosDe(manda).filter(function(x){ return csPendiente(x); }).forEach(function(x){ cargosDet.push({hab:manda.num, tipo:x.tipo, desc:x.desc||'', montoUsd:Number(x.montoUsd||0)}); }); }catch(e){}
   var e=cxcCuentaPara({
     clave:clave, control:ctrl, montoUsd:saldo, tipo:(esEmp?'empresa':'huesped'), empresaRef:manda.empresaRef||'',
     nombre:nom, doc:doc, tel:(c&&c.telefono)||'', clienteId:(c&&c.id)||manda.clienteId||'', huespedNombre:nom,
@@ -16630,7 +16641,7 @@ function pasarGrupoACxc(numsStr, motivo){
     var parte=(i===ord.length-1)?Math.round((saldo-acc)*100)/100:Math.round(Number(f.neto||0)*100)/100;
     if(!(parte>0)) parte=0;
     acc=Math.round((acc+parte)*100)/100;
-    var ids=[]; try{ ids=cargosDe(q).filter(function(x){ return !x.pagado; }).map(function(x){ return x.id; }); }catch(e2){}
+    var ids=[]; try{ ids=cargosDe(q).filter(function(x){ return csPendiente(x); }).map(function(x){ return x.id; }); }catch(e2){}
     try{ ligarCargosControl(ids, ctrl); }catch(e2){}
     var cargos=[]; try{ cargos=cargosDe(q).map(function(x){ return x.pagado?x:Object.assign({},x,{pagado:true,control:(x.control||ctrl),controlPago:ctrl}); }); }catch(e2){ cargos=cargosDe(q); }
     var ab=(Array.isArray(q.abonos)?q.abonos.slice():[]);
@@ -16654,7 +16665,7 @@ function pasarHabACxc(r, motivo){
   var clave=String((c&&c.id)||c&&c.docNum||nom).trim().toLowerCase();
   var esEmp=!!(r.empresaRef || (c&&c.tipo==='empresa'));
   var cargosDet=[];
-  try{ cargosDe(r).filter(function(x){ return !x.pagado; }).forEach(function(x){ cargosDet.push({hab:r.num, tipo:x.tipo, desc:x.desc||'', montoUsd:Number(x.montoUsd||0)}); }); }catch(e){}
+  try{ cargosDe(r).filter(function(x){ return csPendiente(x); }).forEach(function(x){ cargosDet.push({hab:r.num, tipo:x.tipo, desc:x.desc||'', montoUsd:Number(x.montoUsd||0)}); }); }catch(e){}
   var e=cxcCuentaPara({
     clave:clave, control:ctrl, montoUsd:saldo, tipo:(esEmp?'empresa':'huesped'), empresaRef:r.empresaRef||'',
     nombre:nom, doc:doc, tel:(c&&c.telefono)||'', clienteId:(c&&c.id)||r.clienteId||'', huespedNombre:nom,
@@ -16673,7 +16684,7 @@ function pasarHabACxc(r, motivo){
     D.filas.forEach(function(f){ if(Number(f.r.num)===Number(r.num)){ hosp=Math.max(0,Number(f.hosp||0)-Number(f.d||0)); } });
     var abPrev=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0);
     var faltaHosp=Math.max(0,hosp-abPrev);
-    var ids=cargosDe(r).filter(function(x){ return !x.pagado; }).map(function(x){ return x.id; });
+    var ids=cargosDe(r).filter(function(x){ return csPendiente(x); }).map(function(x){ return x.id; });
     try{ ligarCargosControl(ids, ctrl); }catch(e){}
     var cargos=cargosDe(r).map(function(x){ return x.pagado?x:Object.assign({},x,{pagado:true,control:(x.control||ctrl),controlPago:ctrl}); });
     var ab=(Array.isArray(r.abonos)?r.abonos.slice():[]);
@@ -16795,7 +16806,7 @@ function _saldoPropioHab(r){
   if(!r) return 0;
   var hosp=0; try{ hosp=brutoHab(r)-descUsd(r); }catch(e){ hosp=0; }
   var cons=0;
-  try{ cons=cargosPropios(r).filter(function(c){ return !c.pagado; }).reduce(function(a,c){ return a+Number(c.montoUsd||0); },0); }catch(e){}
+  try{ cons=cargosPropios(r).filter(function(c){ return csPendiente(c); }).reduce(function(a,c){ return a+csSaldoCargo(c); },0); }catch(e){}
   var ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0);
   return Math.round(Math.max(0, hosp+cons-ab)*100)/100;
 }
@@ -16871,7 +16882,7 @@ function unirCuentasV2(numOrigen, numOtra, modo){
        se negaba (y la pantalla no avisaba nada). Ahora si se puede: el consumo se cobra
        dentro de la misma cuenta unida, sin duplicarse, y el corte lo cuenta una sola vez. */
     var propios=[], _consProp=0;
-    try{ propios=cargosPropios(otra).filter(function(c){ return !c.pagado; }); _consProp=propios.reduce(function(x,c){ return x+Number(c.montoUsd||0); },0); }catch(e){ propios=[]; _consProp=0; }
+    try{ propios=cargosPropios(otra).filter(function(c){ return csPendiente(c); }); _consProp=propios.reduce(function(x,c){ return x+csSaldoCargo(c); },0); }catch(e){ propios=[]; _consProp=0; }
     updateRoomAny(otra.num, Object.assign({cuentaCon:Number(principal.num), cuentaModo:'paga'}, sello));
   }
   /* Referencias frescas despues de grabar */
@@ -18087,6 +18098,152 @@ document.addEventListener('click',function(ev){var b=ev.target.closest('[data-cx
   else if(b.hasAttribute('data-cxc-confirmar'))cxcDeshacerConfirm(b.getAttribute('data-cxc-confirmar'),b.getAttribute('data-cxc-envio-id'));
   else cerrarModal();
 });
+
+/* Consumos: destino explícito, registro original intacto y pagos vinculados. */
+var CS_PLAN=null,CS_ALTA=null;
+function csPuede(){var s=session();return !!(s&&['recepcion','supervisor','supervisora'].indexOf(s.rol)>=0&&!window.__consulta);}
+function csLink(c){
+ if(!c||!c.id)return null;
+ var es=cxc();for(var e of es){if(!e||e.anulada)continue;
+  var cargo=(e.cargos||[]).find(function(x){return x&&Array.isArray(x.cargosIds)&&x.cargosIds.map(String).indexOf(String(c.id))>=0;});
+  if(cargo&&!(e.cargos||[]).some(function(x){return x.anulaConsumoId===String(c.id);}))return {e:e,cargo:cargo};
+ }return null;
+}
+function csEnCxc(c){return !!(c&&(c.enCxc||csLink(c)));}
+function csPendiente(c){return !!(c&&!c.pagado&&!csEnCxc(c));}
+function csSaldoCargo(c){return Math.max(0,Math.round((Number(c&&c.montoUsd||0)-Number(c&&c.pagoDirectoUsd||0))*100)/100);}
+function csEstado(c){return c.cubiertoPorCortesia?'Incluido en cortesía':(csEnCxc(c)?(c.pagado?'CXC · pagado':'En CXC'):(c.pagado?'Cobrado':(c.pagoDirectoUsd?'Pendiente · abono recibido':'Pendiente del huésped')));}
+function csMontoCxc(c){var l=csLink(c);if(!l)return null;
+ if((l.cargo.cargosIds||[]).length!==1||Math.abs(Number(l.cargo.montoUsd||0)-Number(c.montoUsd||0))>0.009)return {link:l,revision:true};
+ var generales=(l.e.abonos||[]).some(function(a){return Number(a.montoUsd||0)>0&&!a.consumoIds;});
+ if(generales)return {link:l,revision:true};
+ var abon=(l.e.abonos||[]).filter(function(a){return (a.consumoIds||[]).map(String).indexOf(String(c.id))>=0;}).reduce(function(s,a){return s+Number(a.montoUsd||0);},0);
+ return {link:l,pendiente:Math.min(Math.max(0,Number(c.montoUsd||0)-abon),Math.max(0,cxcSaldo(l.e)))};
+}
+function csResumen(r){
+ if(!r||r.estado!=='ocupada')return '';if(!r.creditoCxc&&!habMitadACxc(r))return '';var e=cxcCuentaDeHabCobro(r);if(!e)return '';
+ var total=0; (e.cargos||[]).forEach(function(c){if(c.tipo2==='consumo')total+=Number(c.montoUsd||0);});
+ var abCons=(e.abonos||[]).filter(function(a){return a.consumoIds;}).reduce(function(s,a){return s+Number(a.montoUsd||0);},0);
+ var generales=(e.abonos||[]).filter(function(a){return !a.consumoIds;}).reduce(function(s,a){return s+Number(a.montoUsd||0);},0);
+ var guest=cargosDe(r).filter(csPendiente).reduce(function(s,c){return s+csSaldoCargo(c);},0);
+ var h='<div style="background:#eef6ff;padding:12px;border-radius:9px;margin:10px 0"><b>Hospedaje y consumos separados</b><div>CXC N° '+fmtControl(e.control||0)+' · '+esc(e.nombre||'')+'</div>';
+ h+='<div>Hospedaje / otros cargos en CXC: '+fmtUSD(Math.max(0,Number(e.montoUsd||0)-total))+'</div><div>Consumos en CXC: '+fmtUSD(Math.max(0,total-abCons))+'</div>';
+ if(generales>0)h+='<div>Abonos generales en CXC: '+fmtUSD(generales)+' · no se asignan automáticamente a un consumo.</div>';
+ h+='<div><b>Deuda total CXC: '+fmtUSD(cxcSaldo(e))+'</b></div><div><b>Consumos pendientes del huésped: '+fmtUSD(guest)+'</b></div>';
+ if(csPuede()&&guest>0.009)h+='<button class="btn-green" data-cs-guest="'+r.num+'">Cobrar consumos del huésped</button>';
+ cargosDe(r).forEach(function(c){if(!csEnCxc(c)||c.pagado||!c.id)return;var info=csMontoCxc(c);h+='<div style="margin-top:6px">'+esc(c.tipo||'Consumo')+' · '+fmtUSD(c.montoUsd)+' · En CXC '+(csPuede()&&info?'<button class="btn-blue" data-cs-pay="'+r.num+'" data-cs-id="'+escA(c.id)+'">Pagar este consumo de CXC</button>':'')+'</div>';});
+ return h+'</div>';
+}
+function csElegirGuest(num){if(!csPuede()||guardTurno())return;var r=findRoom(Number(num));if(!r)return;
+ var cs=cargosDe(r).filter(csPendiente);if(!cs.length){alert('No hay consumos pendientes del huésped.');return;}
+ var h='<h2>Cobrar consumos del huésped</h2><p>El hospedaje en CXC no se cobra aquí.</p>';
+ cs.forEach(function(c){h+='<div>'+esc(c.tipo||'Consumo')+' · '+esc(c.desc||'')+' · pendiente '+fmtUSD(csSaldoCargo(c))+' <button class="btn-green" data-cs-pay="'+r.num+'" data-cs-id="'+escA(c.id)+'">Cobrar</button></div>';});
+ h+='<button class="btn-gray" data-cs-close="1">Cancelar</button>';showModal(h);
+}
+function csPagoModal(num,id){
+ if(!csPuede()||guardTurno())return;var r=findRoom(Number(num)),c=r&&cargosDe(r).find(function(c){return String(c.id)===String(id);});
+ if(!r||r.estado!=='ocupada'||!c||c.cubiertoPorCortesia||c.pagado){alert('Ese consumo no está disponible para cobrar.');return;}
+ var info=csEnCxc(c)?csMontoCxc(c):null;
+ if(csEnCxc(c)&&(!info||info.revision)){alert('Esta CXC tiene pagos generales o un vínculo antiguo sin detalle suficiente. Requiere revisión para asignar el pago sin descontar hospedaje por error. No se modificó nada.');return;}
+ var saldo=info?info.pendiente:csSaldoCargo(c);if(!(saldo>0.009)){alert('El consumo ya está pagado.');return;}
+ CS_PLAN={num:r.num,id:String(id),saldo:saldo,cxc:info?info.link.e.id:'',rooms:JSON.stringify(DB.get('rooms',[])),cuentas:JSON.stringify(cxc()),pagos:JSON.stringify(DB.get('pagos',[]))};
+ var h='<h2>'+(info?'Pagar consumo de CXC':'Cobrar consumo del huésped')+'</h2><p>'+esc(c.tipo||'Consumo')+' · '+esc(c.desc||'')+'</p><p>Pendiente: <b>'+fmtUSD(saldo)+'</b></p><p>'+(info?'El pago se aplica únicamente a este consumo en CXC. El hospedaje no cambia.':'Este consumo no se suma a CXC. El hospedaje no cambia.')+'</p>';
+ h+='<label>Monto a pagar (USD)</label><input id="cs-monto" type="number" min="0.01" step="0.01" max="'+saldo+'" value="'+saldo+'">'+pmWidget('cs','Forma de pago del consumo');
+ h+='<div class="actions"><button class="btn-green" data-cs-confirm="1">Revisar y confirmar pago</button> <button class="btn-gray" data-cs-close="1">Cancelar</button></div>';showModal(h);pmReset('cs',saldo);
+}
+function csPagoConfirm(btn){
+ if(!csPuede()||guardTurno())return;var p=CS_PLAN;if(!p)return;
+ var monto=Math.round(Number(document.getElementById('cs-monto').value)*100)/100;
+ if(!(monto>0.009)||monto>p.saldo+0.001){alert('El monto debe ser mayor a cero y no superar el pendiente.');return;}
+ PM_STATE.cs.total=monto;var pm=pmLeer('cs');if(!pm.ok){alert(pm.msg);return;}
+ function igual(){return p===CS_PLAN&&p.rooms===JSON.stringify(DB.get('rooms',[]))&&p.cuentas===JSON.stringify(cxc())&&p.pagos===JSON.stringify(DB.get('pagos',[]));}
+ if(!igual()){CS_PLAN=null;alert('Los datos cambiaron. Abre el consumo nuevamente.');return;}
+ if(procesoDoble(btn))return;
+ pagoConfirmarEnPanel('Se recibirán '+fmtUSD(monto)+' · '+pm.metodoStr+' por este consumo.\n'+(p.cxc?'Se descontará de su consumo en CXC, no del hospedaje.':'Se paga por separado; la deuda CXC no cambia.')+'\n¿Confirmar?',function(){
+  if(!csPuede()||guardTurno()||!igual()){procesoListo(btn);CS_PLAN=null;alert('Los datos cambiaron o no tienes permiso. No se registró el pago.');return;}
+  var rs=rooms(),r=rs.find(function(r){return Number(r.num)===Number(p.num);}),c=r.cargos.find(function(c){return String(c.id)===p.id;}),es=cxc(),e=p.cxc?es.find(function(e){return e.id===p.cxc;}):null;
+  var now=new Date(),ctrl=e?parseInt(e.control||0):parseInt(c.control||0);if(!ctrl)ctrl=siguienteControl();
+  var pagos=DB.get('pagos',[]),resta=Math.round((p.saldo-monto)*100)/100,id=now.getTime()+Math.floor(Math.random()*900),usuario=session().nombre||'';
+  try{localStorage.setItem(tenKey('__respaldoConsumos198'),JSON.stringify({fecha:now.toISOString(),rooms:DB.get('rooms',[]),cxc:es,pagos:pagos}));}catch(err){procesoListo(btn);alert('No se pudo guardar el respaldo. No se registró el pago.');return;}
+  while(pagos.some(function(x){return x.id===id;}))id++;
+  var concepto=conceptoPago('consumo',resta>0.009)+(e?' de CXC':' del huésped');
+  var pago={id:id,ts:now.getTime(),dia:diaKey(now),fechaStr:now.toLocaleString('es-VE'),control:ctrl,hab:r.num,huesped:r.huesped||'',clienteId:r.clienteId||'',usuario:usuario,concepto:concepto,naturalezaCobro:'consumo',tipoPago:resta>0.009?'abono':'cobro',abonoParcial:resta>0.009,montoUsd:monto,montoBs:precioBs(monto),tasa:tasa(),metodo:pm.metodoStr,metodos:pm.metodos,consumoIds:[p.id],cxcId:p.cxc||undefined,saldoAntes:p.saldo,saldoDespues:resta};
+  if(e){if(!Array.isArray(e.abonos))e.abonos=[];e.abonos.push({ts:now.toISOString(),montoUsd:monto,montoBs:precioBs(monto),control:ctrl,usuario:usuario,metodo:pm.metodoStr,consumoIds:[p.id],pagoId:id,nota:'Pago aplicado a consumo, no hospedaje'});}
+  else c.pagoDirectoUsd=Math.round((Number(c.pagoDirectoUsd||0)+monto)*100)/100;
+  c.pagosConsumo=(c.pagosConsumo||[]).concat([{pagoId:id,montoUsd:monto,fecha:now.toISOString(),usuario:usuario,cxcId:p.cxc||''}]);
+  if(resta<=0.009){c.pagado=true;c.controlPago=ctrl;}pagos.unshift(pago);
+  DB.save('pagos',pagos);if(e)saveCxc(es);saveRooms(rs);confirmarControl(ctrl);
+  logKardex('pago',{hab:r.num,clienteId:r.clienteId||'',huesped:r.huesped||'',cargoId:p.id,pagoId:id,control:ctrl,detalle:concepto+' · '+esc(c.tipo||'Consumo')+' · restante '+fmtUSD(resta)+' · hospedaje CXC sin cambios',montoUsd:monto,montoBs:precioBs(monto),metodo:pm.metodoStr});
+  CS_PLAN=null;cerrarModal();render();mostrarResultadoCobro({titulo:resta>0.009?'Abono de consumo registrado':'Consumo pagado',sub:'El hospedaje en CXC no cambió.',lineas:[{txt:concepto},{txt:'Recibido: '+fmtUSD(monto)},{txt:'Pendiente del consumo: '+fmtUSD(resta)}]});
+ },btn);
+}
+document.addEventListener('click',function(ev){var b=ev.target.closest('[data-cs-guest],[data-cs-pay],[data-cs-confirm],[data-cs-close],[data-cs-save]');if(!b)return;
+ if(b.hasAttribute('data-cs-guest'))csElegirGuest(b.getAttribute('data-cs-guest'));
+ else if(b.hasAttribute('data-cs-pay'))csPagoModal(b.getAttribute('data-cs-pay'),b.getAttribute('data-cs-id'));
+ else if(b.hasAttribute('data-cs-confirm'))csPagoConfirm(b);
+ else if(b.hasAttribute('data-cs-save'))csGuardarConfirm(b.getAttribute('data-cs-save'));
+ else {CS_PLAN=null;cerrarModal();}
+});
+
+function guardarCargo(num){
+ if(!csPuede()||guardTurno())return;var p=CS_ALTA,r=findRoom(num);if(!r||r.estado!=='ocupada')return;
+ if(!p||p.num!==num||p.rooms!==JSON.stringify(DB.get('rooms',[]))||p.cuentas!==JSON.stringify(cxc())){alert('La cuenta cambió. Abre Agregar consumo otra vez.');return;}
+ var el=document.getElementById('cg-destino'),destino=el?el.value:'huesped';
+ if(['huesped','cxc'].indexOf(destino)<0){alert('Elige quién paga: huésped por separado o CXC.');return;}
+ var monto=Number(document.getElementById('cg-monto').value);if(!Number.isFinite(monto)||monto<=0){alert('Escribe un monto válido mayor a cero.');return;}
+ p.destino=destino;p.forma=csFormaAlta();
+ if(destino==='cxc'){
+  var e=cxc().find(function(e){return e.id===p.cxcId&&!e.anulada;});if(!e){alert('La CXC ya no está disponible.');return;}
+  pagoConfirmarEnPanel('Se agregarán '+fmtUSD(monto)+' a CXC N° '+fmtControl(e.control||0)+' de '+e.nombre+'. No entra dinero en caja. ¿Confirmar?',function(){csGuardarConfirm(num);});var _csBar=document.querySelector('#modal .actions .btn-green');if(_csBar)_csBar.textContent='Confirmar cargo a CXC (sin cobro)';
+ }else csGuardarConfirm(num);
+}
+function csFormaAlta(){return JSON.stringify(['cg-tipo','cg-rest','cg-desc','cg-monto','cg-acomp','cg-destino'].map(function(id){var e=document.getElementById(id);return e?e.value:null;}));}
+function csGuardarConfirm(num){var p=CS_ALTA;if(!csPuede()||guardTurno()||!p)return;
+ if(p.rooms!==JSON.stringify(DB.get('rooms',[]))||p.cuentas!==JSON.stringify(cxc())||p.forma!==csFormaAlta()){CS_ALTA=null;alert('La cuenta cambió. No se agregó el consumo.');return;}
+ try{localStorage.setItem(tenKey('__respaldoAltaConsumos198'),JSON.stringify({fecha:new Date().toISOString(),rooms:DB.get('rooms',[]),cxc:cxc()}));}catch(e){alert('No se pudo guardar el respaldo. No se agregó el consumo.');return;}
+ csGuardarBase(Number(num));
+}
+function csDespuesAlta(num,id){showModal('<h2>Consumo registrado por separado</h2><p>Queda pendiente del huésped. No se sumó a CXC ni se registró dinero recibido.</p><button class="btn-green" data-cs-pay="'+num+'" data-cs-id="'+escA(id)+'">Cobrar ahora</button> <button class="btn-gray" data-cs-close="1">Dejar pendiente</button>');}
+
+function csRestarExacto(c,num,motivo){
+ var l=csLink(c);if(!l)return 0;var lista=cxc(),e=lista.find(function(e){return e.id===l.e.id;}),m=Number(c.montoUsd||0);if(!e||!(m>0))return 0;
+ e.montoUsd=Math.round((Number(e.montoUsd||0)-m)*100)/100;
+ e.cargos.push({ts:new Date().toISOString(),tipo2:'consumo',hab:String(num),montoUsd:-m,concepto:'Corrección: consumo retirado · '+motivo,anulaConsumoId:String(c.id),usuario:session().nombre||''});
+ saveCxc(lista);return m;
+}
+
+function csAnularPago(p,btn){
+ try{
+  var motivo=mayusculasYa((document.getElementById('anul-motivo')||{}).value||'').trim();if(motivo.length<4)throw Error('Escribe el motivo de la anulación (al menos 4 letras).');
+  if(p.anulado||String(p.metodo||'').toUpperCase().indexOf('ANUL')>=0)throw Error('Este pago ya está anulado.');
+  if(p.consumoIds.length!==1)throw Error('Este pago no corresponde a un consumo único. Requiere revisión.');
+  var rs=rooms(),r=rs.find(function(x){return x.estado==='ocupada'&&(x.cargos||[]).some(function(c){return String(c.id)===String(p.consumoIds[0]);});});
+  if(!r)throw Error('La estadía ya terminó o el consumo cambió. Requiere revisión; no se anuló el pago.');
+  var c=r.cargos.find(function(x){return String(x.id)===String(p.consumoIds[0]);}),ps=c.pagosConsumo||[],ap=ps.filter(function(x){return String(x.pagoId)===String(p.id);});
+  if(ap.length!==1||Math.abs(Number(ap[0].montoUsd)-Number(p.montoUsd))>0.009)throw Error('No coincide el pago con el consumo. Requiere revisión.');
+  var es=cxc(),e=null,ab=null;
+  if(p.cxcId){
+   var info=csMontoCxc(c);e=es.find(function(x){return x.id===p.cxcId&&!x.anulada;});
+   if(!e||!info||info.revision||info.link.e.id!==p.cxcId)throw Error('La CXC cambió o tiene pagos generales. Requiere revisión.');
+   ab=(e.abonos||[]).filter(function(a){return String(a.pagoId)===String(p.id);});
+   if(ab.length!==1||Math.abs(Number(ab[0].montoUsd)-Number(p.montoUsd))>0.009)throw Error('No coincide el abono de CXC. Requiere revisión.');
+   e.abonos=e.abonos.filter(function(a){return String(a.pagoId)!==String(p.id);});
+   e.correccionesConsumo=(e.correccionesConsumo||[]).concat([{fecha:new Date().toISOString(),usuario:session().nombre,motivo:motivo,pagoOriginal:p,abonoOriginal:ab[0]}]);
+  }else{
+   if(csEnCxc(c)||Number(c.pagoDirectoUsd||0)+0.009<Number(p.montoUsd)||(c.pagado&&Number(c.pagoDirectoUsd||0)<Number(c.montoUsd)-0.009))throw Error('El consumo cambió de destino o tiene otros cobros. Requiere revisión.');
+   c.pagoDirectoUsd=Math.round((Number(c.pagoDirectoUsd||0)-Number(p.montoUsd))*100)/100;
+  }
+  c.pagosConsumo=ps.filter(function(x){return String(x.pagoId)!==String(p.id);});
+  c.pagado=e?((e.abonos||[]).filter(function(a){return (a.consumoIds||[]).map(String).indexOf(String(c.id))>=0;}).reduce(function(s,a){return s+Number(a.montoUsd||0);},0)>=Number(c.montoUsd)-0.009):csSaldoCargo(c)<=0.009;
+  if(!c.pagado)delete c.controlPago;
+  var pagos=DB.get('pagos',[]),a=pagos.find(function(x){return String(x.id)===String(p.id);});
+  try{localStorage.setItem(tenKey('__respaldoAnularConsumos198'),JSON.stringify({fecha:new Date().toISOString(),rooms:DB.get('rooms',[]),cxc:cxc(),pagos:pagos}));}catch(err){throw Error('No se pudo guardar el respaldo. No se anuló el pago.');}
+  a.metodoOriginal=a.metodo;a.metodo='Anulado';a.anulado=true;a.anuladoMotivo=motivo;a.anuladoPor=session().nombre;a.anuladoEn=new Date().toISOString();
+  saveRooms(rs);if(e)saveCxc(es);DB.save('pagos',pagos);
+  logKardex('anulacion',{hab:r.num,cargoId:c.id,pagoId:p.id,control:p.control,detalle:'Pago de consumo ANULADO · '+motivo+' · saldo del consumo restaurado; hospedaje sin cambios',montoUsd:p.montoUsd,montoBs:p.montoBs,metodo:p.metodo,motivo:motivo,anuladoPor:session().nombre,anuladoRol:session().rol});
+  procesoListo(btn);cerrarModal();render();alert('Pago anulado. Se restauró solamente el saldo de ese consumo. El registro original queda en el historial; el hospedaje no cambió.');
+ }catch(err){procesoListo(btn);alert(err.message);}
+}
 
 </script>
 </body>
