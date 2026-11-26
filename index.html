@@ -350,7 +350,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v2.02 · 26/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v2.04 · 26/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -407,7 +407,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v2.02 · 26/11/2026';
+const APP_VERSION = 'v2.04 · 26/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -2204,14 +2204,24 @@ function pmLeer(prefix){
 /* [ESTADIA-201] Limpiar vínculos únicamente al iniciar/cerrar una estadía.
    Nunca altera deudas históricas ni ejecuta una migración al abrir la app. */
 function estadiaSinCredito(){return {creditoCxc:false,creditoCxcId:'',creditoCxcControl:0,autorizadaCxcId:'',autorizadaCxcControl:0};}
-function estadiaInicio(){return Object.assign(estadiaSinCredito(),{cargos:[],abonos:[],plan:'solo',planRest:{},comidaincTotal:0,tramos:[],tramosCobro:undefined,cuentaCon:0,cuentaModo:'',cuentaPor:'',cuentaFecha:'',ocultarCobrar:false,salidaReal:'',tituId:'',habEstuvo:[],controlDesde:0,extensiones:[],quitarNochesLog:[],cortesiaHosp:null,cortesiaConsumos:null,cortesiaRevisionAdmin:false});}
+function estadiaInicio(){return Object.assign(estadiaSinCredito(),{cargos:[],abonos:[],plan:'solo',planRest:{},comidaincTotal:0,tramos:[],tramosCobro:undefined,cuentaCon:0,cuentaModo:'',cuentaPor:'',cuentaFecha:'',ocultarCobrar:false,salidaReal:'',tituId:'',habEstuvo:[],controlDesde:0,controlMovido:0,controlMovidoA:0,controlMovidoFecha:'',controlMovidoPor:'',extensiones:[],quitarNochesLog:[],cortesiaHosp:null,cortesiaConsumos:null,cortesiaRevisionAdmin:false});}
 function estadiaPatch(antes,patch){
  var p=Object.assign({},patch);
  if(antes&&antes.estado!=='ocupada'&&p.estado==='ocupada')p=Object.assign(estadiaInicio(),p);
  if(p.estado&&p.estado!=='ocupada'&&p.huesped===''&&p.checkin==='')p=Object.assign(p,estadiaSinCredito(),{empresaRef:''});
  return p;
 }
-function updateRoom(num, patch){ const r=rooms(); const i=r.findIndex(x=>Number(x.num)===Number(num)); if(i<0) return; r[i]=Object.assign(r[i],estadiaPatch(r[i],patch)); saveRooms(r); }
+function updateRoom(num, patch){
+ const old=findRoomAny(num);
+ if(old&&old.estado==='ocupada'&&Array.isArray(patch.abonos)){
+  var conocidos={};(old.abonos||[]).forEach(function(a){if(a&&a.id)conocidos[String(a.id)]=true;});
+  var evs=kardexAll().filter(function(k){return k.tipo==='checkin'&&Number(k.hab)===Number(num);}).sort(function(x,y){return Date.parse(y.ts)-Date.parse(x.ts);});
+  patch=Object.assign({},patch,{abonos:patch.abonos.map(function(a){
+   if(!a||!a.id||conocidos[String(a.id)]||a.cxc||a.origen==='reserva'||a.soloConsumo)return a;
+   return Object.assign({},a,{hab:Number(num),controlEstadiaCliente:old.clienteId||'',estadiaEntrada204:old.checkin||'',estadiaEvento204:evs[0]&&evs[0].id||''});
+  })});
+ }
+ const r=rooms(); const i=r.findIndex(x=>Number(x.num)===Number(num)); if(i<0) return; r[i]=Object.assign(r[i],estadiaPatch(r[i],patch)); saveRooms(r); }
 /* [UNIR-BUG] updateRoom solo acepta el numero EXACTO (r.num===num). Al unir cuentas el
    numero venia como texto desde el selector y la union se perdia en silencio.
    Esta version busca por numero aunque venga en texto, para no perder nada. */
@@ -2452,7 +2462,7 @@ function migrarAbonosControl(r){
         const ac=parseInt(a.control||0)||0;
         if(!ac){ a.control=cc; chg=true; }
         const ac2=parseInt(a.control||0)||0;
-        if(!a.soloConsumo && !esAnt && ac2 && ac2!==cc && !(parseInt(a.controlMigrado||0))){ a.controlMigrado=ac2; chg=true; }
+        if(!abonoPropioEstadia204(a,r) && !a.soloConsumo && !esAnt && ac2 && ac2!==cc && !(parseInt(a.controlMigrado||0))){ a.controlMigrado=ac2; chg=true; }
       });
       if(chg){ const l=rooms(); const i=l.findIndex(x=>x.num===r.num); if(i>=0){ l[i]=Object.assign({},l[i],{abonos:r.abonos}); try{ saveRooms(l); }catch(e){} } }
     }
@@ -2533,8 +2543,46 @@ function saldoHospDeHab(r){
    - Los anticipos de reserva que ya se cobraron en la caja (con su N° de control) SIEMPRE descuentan.
    - Los adelantos normales descuentan, EXCEPTO los que se marcaron como "solo consumo"
      (esos ya quedaron pagados en su propio consumo y no deben descontarse dos veces). */
+/* [RESERVA-PROPIA-203] El anticipo pertenece a su estadía, no al control temporal del grupo.
+   La compatibilidad antigua exige evidencia de la reserva y su check-in. No escribe datos. */
+function anticipoPropioEstadia203(a,r){
+  if(!a||!r||a.controlOtroGrupo||a.soloConsumo||a.anulado||a.anulada)return false;
+  if(a.hab!=null&&String(a.hab)!==''&&Number(a.hab)!==Number(r.num))return false;
+  var loc=a.reservaLoc||((/^Anticipo reserva (\S+)/.exec(String(a.concepto||''))||[])[1]);
+  if(!loc||a.origen!=='reserva')return false;
+  var guardados=(r.abonos||[]).filter(function(x){return x&&String(x.id)===String(a.id);});
+  if(!a.id||!guardados.length||guardados[0]!==a)return false;
+  var res=reservas().find(function(x){return x.loc===loc;});
+  if(!res||res.estado!=='ingresada'||Number(res.control||0)!==Number(a.controlEstadia||a.controlOriginal||a.control||0))return false;
+  var rc=Number(r.control||0),sc=Number(res.control||0);
+  if(rc!==sc&&Number(r.controlMovido||0)!==sc)return false;
+  var eventos=kardexAll().filter(function(k){return k.tipo==='checkin'&&Number(k.hab)===Number(r.num);}).sort(function(x,y){return Date.parse(y.ts)-Date.parse(x.ts);});
+  var e=eventos[0];
+  return !!(e&&e.clienteId===r.clienteId&&Number(e.ctrlEntrada||e.control||0)===sc&&String(e.detalle||'').indexOf('Reserva '+loc+' ·')===0&&Math.abs(Date.parse(a.fecha)-Date.parse(e.ts))<60000);
+}
+/* [PAGO-ESTADIA-204] Propiedad del abono independiente del control temporal de una unión.
+   Solo el objeto guardado en la habitación dueña, una vez por id, y en su estadía. */
+function abonoPropioEstadia204(a,r){
+ if(!a||!r||r.estado!=='ocupada'||a.anulado||a.anulada||a.controlOtroGrupo||a.soloConsumo||a.cxc)return false;
+ if(anticipoPropioEstadia203(a,r))return true;
+ if(a.origen==='reserva')return false;
+ if(a.hab==null||Number(a.hab)!==Number(r.num)||!a.id)return false;
+ var first=(r.abonos||[]).find(function(x){return x&&String(x.id)===String(a.id);});
+ if(first!==a)return false;
+ if(a.controlEstadiaCliente&&a.controlEstadiaCliente!==r.clienteId)return false;
+ if(a.estadiaEntrada204){
+   if(a.estadiaEntrada204!==r.checkin)return false;
+   if(a.estadiaEvento204){var ks=kardexAll().filter(function(k){return k.tipo==='checkin'&&Number(k.hab)===Number(r.num);}).sort(function(x,y){return Date.parse(y.ts)-Date.parse(x.ts);});if(!ks.length||ks[0].id!==a.estadiaEvento204||ks[0].clienteId!==r.clienteId)return false;}
+   return true;
+ }
+ var propio=Number(a.controlEstadia||a.controlOriginal||a.control||0);
+ if(!propio||propio!==Number(r.control||0)&&propio!==Number(r.controlMovido||0))return false;
+ var es=kardexAll().filter(function(k){return k.tipo==='checkin'&&Number(k.hab)===Number(r.num);}).sort(function(x,y){return Date.parse(y.ts)-Date.parse(x.ts);});
+ if(es.length){var e=es[0];if(e.clienteId!==r.clienteId||Number(e.ctrlEntrada||e.control||0)!==propio||Date.parse(a.fecha)<Date.parse(e.ts))return false;}
+ return true;
+}
 function abonoCuentaUsd(a, r){
-  if(!a) return 0;
+  if(!a || a.anulado || a.anulada) return 0;
   if(r&&r.creditoCxc&&cargosDe(r).some(function(c){return c.destinoConsumo==='huesped';}))return 0;
   var m=Number(a.montoUsd||0); if(!(m>0)) return 0;
   if(a.soloConsumo || (r&&r.creditoCxc&&a.cxc)) return 0;
@@ -2549,6 +2597,9 @@ function abonoCuentaUsd(a, r){
      aunque el adelanto estuviera pagado. Ahora ese abono tambien cuenta; solo se descarta
      un control de OTRA cuenta que no tenga nada que ver con este grupo. */
   if(a.controlOtroGrupo) return 0;
+  if(a.id && r){ var _primerAnt=(r.abonos||[]).find(function(x){return x&&String(x.id)===String(a.id);}); if(_primerAnt && _primerAnt!==a) return 0; }
+  if(abonoPropioEstadia204(a,r)) return m;
+  if(a.origen==='reserva' && a.controlEstadia && r && Number(a.controlEstadia)!==Number(r.control) && Number(a.controlEstadia)!==Number(r.controlMovido||0)) return 0;
   if(cc && ac && ac!==cc){
     /* [VER-SECUNDARIA] En una cuenta unida el control que manda es el del GRUPO:
        el abono se apunta en el cuarto que cobra pero puede llevar el control de la
@@ -4072,7 +4123,7 @@ function confirmarCheckinReserva(loc){
     try{ (r.anticipos||[]).forEach(function(a){ a.controlCuenta=_resCtrl; }); }catch(_e0){}
   } else { r.controlEstado='abierto'; }
   var _antUsd=resAnticipoUsd(r);
-  var _repartoAnt=repartirAnticipoReserva(r, asign.map(function(a){ return {tarifa:a.tarifa, noches:noches}; }));
+  var _repartoAnt=repartirAnticipoReserva(r, asign.map(function(a){ return {num:a.num, tarifa:a.tarifa, noches:noches}; }));
   var primerNum=asign[0].num;
   var _chTs=new Date().toISOString(),_chFecha=revisionFechaCaracas(_chTs);
   asign.forEach(function(a,k){
@@ -4288,7 +4339,7 @@ function repartirAnticipoReserva(r, habs){
   out.forEach(function(arr,i){
     var m = (i===out.length-1)? (total-acum) : Math.round(total*bases[i]/suma*100)/100;
     acum+=m;
-    if(m>0.009) arr.push({id:'abR'+Date.now()+'i'+i, concepto:'Anticipo reserva '+(r?r.loc:''), montoUsd:m, montoBs:precioBs(m), fecha:new Date().toISOString(), control:k0, origen:'reserva'});
+    if(m>0.009) arr.push({id:'abR'+Date.now()+'i'+i, concepto:'Anticipo reserva '+(r?r.loc:''), montoUsd:m, montoBs:precioBs(m), fecha:new Date().toISOString(), control:k0, controlEstadia:k0, reservaLoc:r.loc, hab:Number(habs[i].num||habs[i].hab)||undefined, origen:'reserva'});
   });
   return out;
 }
@@ -5817,7 +5868,8 @@ function detalleCuentaHab(r){
        volvia a pedir todo otra vez ("abone completo y sigue debiendo 55 cada una"). */
     var abs=(Array.isArray(q.abonos)?q.abonos:[]).filter(function(a){
       if(!a) return false;
-      if(a.controlOtroGrupo || a.soloConsumo || (q.creditoCxc&&a.cxc)) return false;
+      if(a.anulado || a.anulada || a.controlOtroGrupo || a.soloConsumo || (q.creditoCxc&&a.cxc)) return false;
+      if(a.id && (q.abonos||[]).find(function(x){return x&&String(x.id)===String(a.id);})!==a) return false;
       if(q.creditoCxc&&cargosDe(q).some(function(c){return c.destinoConsumo==='huesped';}))return false;
       if(!(Number(a.montoUsd||0)>0)) return false;
       var habA=(a.hab!=null && String(a.hab)!=='')?Number(a.hab):null;
@@ -5827,7 +5879,7 @@ function detalleCuentaHab(r){
         if(enGrupo) return false;            /* se cuenta en el cuarto que dice 'hab' */
         return true;                          /* 'hab' de un cuarto que ya no esta: cuenta aqui */
       }
-      if(habA!=null) return true;             /* guardado en este cuarto: cuenta aqui */
+      if(habA!=null) return abonoCuentaUsd(a,q)>0; /* misma regla que cobro y saldo */
       return abonoCuentaUsd(a,q)>0;           /* abonos viejos sin 'hab' */
     });
     var abGen=0;
@@ -16942,6 +16994,10 @@ function unirCuentasV2(numOrigen, numOtra, modo){
         try{ [principal,otra].forEach(function(q){ var _c=parseInt(q&&q.control||0)||0; if(_c) _ctrlsGrupo[_c]=1; }); }catch(e){}
         _fres.abonos=_fres.abonos.map(function(x){
           if(!x) return x;
+          if(abonoPropioEstadia204(x,_fres)){
+            if(!x.controlEstadia || !x.controlEstadiaCliente){_cambios++;return Object.assign({},x,{controlEstadia:Number(x.controlEstadia||x.controlOriginal||x.control),controlEstadiaCliente:_fres.clienteId||'',hab:Number(_fres.num)});}
+            return x;
+          }
           var _ac0=parseInt(x.control||0)||0;
           var _otroG=!!(_ac0 && _ac0!==_sello && !_ctrlsGrupo[_ac0]);
           if(_ac0 && _ac0!==_sello&& !(x.controlOriginal)){ _cambios++; return Object.assign({},x,{control:_sello, controlOriginal:_ac0, controlGrupoFecha:new Date().toISOString(), controlOtroGrupo:(_otroG?true:undefined)}); }
