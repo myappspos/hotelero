@@ -350,7 +350,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v2.01 · 26/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v2.02 · 26/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -407,7 +407,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v2.01 · 26/11/2026';
+const APP_VERSION = 'v2.02 · 26/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -440,7 +440,7 @@ function filtroTen(){ return TEN ? ('clave=like.'+encodeURIComponent(TEN+'|*')) 
 
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion','comidasPrecios','objetosOlvidados','policialDestino','parking'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion','comidasPrecios','objetosOlvidados','policialDestino','parking','devoluciones'];
 
 /* ====== AHORRO DE DATOS (egreso) ======
    Varias cajas casi nunca cambian (tipos de habitacion, metodos de pago,
@@ -2007,7 +2007,7 @@ function precioBs(usd){ return Number(usd||0)*tasa(); }
 function precioLinea(usd){ return fmtUSD(usd)+' <span style="color:#8893a5">· '+fmtBs(precioBs(usd))+'</span>'; }
 /* ---- Pagos y arqueo ---- */
 const METODOS = ['Efectivo Bs','Efectivo USD','Pago Móvil','Transferencia','Punto de venta','Zelle'];
-function diaKey(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function diaKey(d){return revisionFechaCaracas((d||new Date()).toISOString());}
 function metodoOptions(sel){ return getMetodos().map(m=>'<option'+(m===sel?' selected':'')+'>'+esc(m)+'</option>').join(''); }
 function getMetodos(){ const m=DB.get('metodosPago', null); return (Array.isArray(m)&&m.length)?m.slice():METODOS.slice(); }
 function saveMetodos(a){ DB.save('metodosPago', a); }
@@ -2204,7 +2204,7 @@ function pmLeer(prefix){
 /* [ESTADIA-201] Limpiar vínculos únicamente al iniciar/cerrar una estadía.
    Nunca altera deudas históricas ni ejecuta una migración al abrir la app. */
 function estadiaSinCredito(){return {creditoCxc:false,creditoCxcId:'',creditoCxcControl:0,autorizadaCxcId:'',autorizadaCxcControl:0};}
-function estadiaInicio(){return Object.assign(estadiaSinCredito(),{cargos:[],abonos:[],plan:'solo',planRest:{},comidaincTotal:0,tramos:[],tramosCobro:undefined,cuentaCon:0,cuentaModo:'',cuentaPor:'',cuentaFecha:'',ocultarCobrar:false,salidaReal:'',tituId:'',habEstuvo:[],controlDesde:0});}
+function estadiaInicio(){return Object.assign(estadiaSinCredito(),{cargos:[],abonos:[],plan:'solo',planRest:{},comidaincTotal:0,tramos:[],tramosCobro:undefined,cuentaCon:0,cuentaModo:'',cuentaPor:'',cuentaFecha:'',ocultarCobrar:false,salidaReal:'',tituId:'',habEstuvo:[],controlDesde:0,extensiones:[],quitarNochesLog:[],cortesiaHosp:null,cortesiaConsumos:null,cortesiaRevisionAdmin:false});}
 function estadiaPatch(antes,patch){
  var p=Object.assign({},patch);
  if(antes&&antes.estado!=='ocupada'&&p.estado==='ocupada')p=Object.assign(estadiaInicio(),p);
@@ -2263,7 +2263,7 @@ function filtroTipoBar(){
   return h;
 }
 function recepTab(id,label){ return '<div class="tab '+(recepView===id?'active':'')+'" onclick="recepView=\''+id+'\';render();try{subirArriba()}catch(e){}">'+label+'</div>'; }
-function hoyISO(){ const d=new Date(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return d.getFullYear()+'-'+m+'-'+dd; }
+function hoyISO(){return fechaISODeHoy();}
 function avisoLlegadasPendientes(){
   const hoy=hoyISO();
   const pend=reservas().filter(r=>r.estado==='pendiente');
@@ -4354,7 +4354,7 @@ function cobrarAnticipoConfirm(loc){
   if(!ctrl){ ctrl=siguienteControl(); r.control=ctrl; r.controlEstado='abierto'; r.controlAbierto=nowISO(); } else { r.controlEstado='abierto'; }
   const s=session();
   const pagos=DB.get('pagos',[]);
-  pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+  pagos.unshift({ id:pfNuevoPagoId(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
     hab:0, reservaLoc:r.loc, esAnticipo:true, huesped:nom, concepto:'Anticipo reserva '+r.loc+(nota?(' · '+nota):''), metodo:metodo,
     metodos:[{metodo:metodo, montoUsd:totalUsd, montoBs:totalBs}],
     clienteId:'', clienteDoc:(r.docNum||''), clienteCiudad:'',
@@ -5226,7 +5226,7 @@ function pintarDesglose(id, tarifa, noches, pct){
   document.getElementById('d-'+id+'-usd').innerText = fmtUSD(tot);
   document.getElementById('d-'+id+'-bs').innerText = fmtBs(precioBs(tot));
 }
-function fechaSalidaAuto(noches){ var d=new Date(); d.setDate(d.getDate()+(parseInt(noches)||1)); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fechaSalidaAuto(noches){return sumarDiasISO(fechaISODeHoy(),parseInt(noches)||1);}
 /* [SALIDA-NOCHES] La salida prevista SIEMPRE es entrada + noches.
    Si el huesped sube las noches, la fecha corre hacia adelante; si las baja,
    se devuelve. Se calcula desde la ENTRADA del huesped (no desde hoy), asi una
@@ -5589,7 +5589,7 @@ function cobrarYCheckout(num, btn){
   const metodo = pm.metodoStr;
   const ctrl = (parseInt(r.control)||0) || siguienteControl();
   const pagos = DB.get('pagos',[]);
-  pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+  pagos.unshift({ id:pfNuevoPagoId(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
     hab:num, huesped:r.huesped||'', tipo:r.tipo||'', noches:noches, metodo:metodo, metodos:pm.metodos,
     clienteId:r.clienteId||'', clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
     concepto:conceptoPago(_naturalezaCo,false)+' · al hacer check-out',naturalezaCobro:_naturalezaCo,tipoPago:'cobro',montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), tasa:tasa(), usuario:session().nombre });
@@ -6219,7 +6219,7 @@ function cobrarSinCheckout(num){
   const detParts=[]; if(ids.length) detParts.push(ids.length+' consumo(s)'); if(otro>0) detParts.push(concepto||'Otro cobro');
   const ctrl = (parseInt(r.control)||0) || siguienteControl();
   const pagos=DB.get('pagos',[]);
-  pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+  pagos.unshift({ id:pfNuevoPagoId(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
     hab:num, huesped:r.huesped||'', tipo:r.tipo||'', noches:0, metodo:metodo, metodos:pm.metodos,
     naturalezaCobro:_natSel,tipoPago:(!ids.length&&otro>0?'abono':'cobro'),concepto:ids.length?('Cobro de consumos'+(otro>0?' y adelanto de la cuenta':'')):'Abono de la cuenta', clienteId:r.clienteId||'', clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
     montoUsd:tot, montoBs:precioBs(tot), tasa:tasa(), usuario:session().nombre });
@@ -8544,7 +8544,7 @@ function importarRespaldo(ev){
     const info=(paquete._fecha?('\n\nFecha del respaldo: '+new Date(paquete._fecha).toLocaleString('es-VE')):'')+(paquete.hotel?('\nHotel: '+paquete.hotel):'');
     if(!confirm('Vas a RESTAURAR el respaldo. Esto REEMPLAZA los datos actuales (habitaciones, clientes, pagos, usuarios, etc.) por los del archivo, en este equipo y en la nube.'+info+'\n\n¿Continuar?')){ ev.target.value=''; return; }
     /* Restaurar SIEMPRE sube tal cual (aunque quede igual) para no dejar dudas. */
-    claves.forEach(k=>{ _huellasSet({}); DB.set(k, datos[k]); });
+    window.__pfImport=true;try{claves.forEach(k=>{ _huellasSet({}); DB.set(k, datos[k]); });}finally{window.__pfImport=false;}
     ev.target.value='';
     alert('Respaldo restaurado correctamente. La aplicación se va a recargar.');
     setTimeout(()=>{ location.reload(); }, 700);
@@ -9952,7 +9952,7 @@ function quitarNochesConfirm(num, btn){
     if(forma==='caja'){
       /* [SALIDA-DE-CAJA] Queda registrado como devolucion del turno (sale el efectivo) */
       try{
-        var dev={ id:'dev'+Date.now(), tipo:'devolucion', dia:diaKey(new Date()), fechaStr:new Date().toLocaleString('es-VE'),
+        var dev={ id:'dev'+Date.now()+Math.random().toString(36).slice(2,7), ts:Date.now(), tasa:tasa(), abonosOrigen:(r.abonos||[]).map(function(a){return {id:a.id||'',control:a.control||0,montoUsd:a.montoUsd||0};}), pagosOrigen:DB.get('pagos',[]).filter(function(p){return Number(p.control)===Number(controlDeHab(r))&&corteNumerosHab(p.hab).indexOf(String(num))>=0;}).map(function(p){return p.id;}), tipo:'devolucion', dia:diaKey(new Date()), fechaStr:new Date().toLocaleString('es-VE'),
           hab:Number(num), huesped:r.huesped||'', control:parseInt(controlDeHab(r)||0)||0,
           concepto:'Devolución por noches quitadas (Hab. '+num+')', montoUsd:sobra, montoBs:precioBs(sobra),
           metodo:'Efectivo USD', usuario:(session&&session().nombre)||'', turnoId:(typeof turnoActivo==='function'&&turnoActivo()?turnoActivo().id:null) };
@@ -10743,7 +10743,7 @@ function cobrarCuentaConfirm(numsStr, btn){
   pagoConfirmarEnPanel(_msgFinal, function(){
     const ctrl=controlDeGrupoCuenta(g.list)||siguienteControl(); const pagos=DB.get('pagos',[]);
     const _habsCtrl=habsDeControlGroup(g.list); const _habsCtrlTxt=habsControlTexto(_habsCtrl); const _conTramos=_habsCtrl.length>g.list.length;
-    pagos.unshift({ id:Date.now(), ts:now.getTime(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+    pagos.unshift({ id:pfNuevoPagoId(), ts:now.getTime(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
       hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), habsTramo:(_conTramos?_habsCtrl:null), huesped:_hNom, tipo:multi?'Varias habitaciones':(r0.tipo||''), noches:g.nochesTot, metodo:metodo, metodos:pm.metodos,
       naturalezaCobro:_naturaleza,tipoPago:(_resta>0.009?'abono':'cobro'),concepto:_conceptoCobro+(multi?(' · '+g.nums.length+' habitaciones'):'')+(_conTramos?(' · Hab. '+_habsCtrlTxt):''), clienteId:_hCid, clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
       montoUsd:_montoAhora, montoBs:precioBs(_montoAhora), tasa:tasa(), usuario:session().nombre,
@@ -11461,7 +11461,7 @@ function guardarPagoManual(btn){
   const now = new Date();
   const ctrl = siguienteControl();
   const pagos = DB.get('pagos',[]);
-  pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+  pagos.unshift({ id:pfNuevoPagoId(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
     hab:0, huesped:clienteNom, concepto:concepto||'Cobro suelto', metodo:pm.metodoStr, metodos:pm.metodos,
     clienteId:clienteId, clienteDoc:clienteDoc, clienteCiudad:clienteCiudad,
     montoUsd:montoUsd, montoBs:montoBs, tasa:tasa(), usuario:session().nombre });
@@ -11560,15 +11560,9 @@ function cajaLineasDePago(p){
    Asi un cobro viejo guardado con monto 0 pero repartido en lineas no sale en cero. */
 /* [DEVOLUCIONES] Dinero que salio de caja (ej: se devolvio al quitar noches) */
 function devolucionesDe(alcance){
-  var l=DB.get('devoluciones',[])||[];
-  if(!alcance) return l;
-  if(alcance.tipo==='turno'){
-    return l.filter(function(d){
-      if(d.turnoId!=null && alcance.id!=null) return String(d.turnoId)===String(alcance.id);
-      return d.dia===alcance.dia;
-    });
-  }
-  return l.filter(function(d){ return d.dia===alcance.dia; });
+ var l=DB.get('devoluciones',[])||[];if(!alcance)return l;
+ if(alcance.tipo==='turno'){var t=turnos().find(function(x){return String(x.id)===String(alcance.id);});return t?l.filter(function(d){return pfEnTurno(d,t);}):[];}
+ return l.filter(function(d){return d.dia===alcance.dia;});
 }
 function devolucionesTotales(alcance){
   var bs=0, usd=0;
@@ -11668,13 +11662,14 @@ function imprimirArqueo(turnoArg){
   html += 'h2{font-size:14px;color:#0d3b66;margin:16px 0 8px}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   html += (hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('arqueo',(_tObj?'Arqueo de Caja del Turno':'Arqueo de Caja Diario')))+'</h1>'+hotelLinePrint()+'<div class="sub">'+(_tObj?('Turno de '+esc(_tObj.nombre||_tObj.usuario||'')+' · Empezó '+fechaHoraCorta(_tObj.inicio)+(_tObj.fin?(' · Terminó '+fechaHoraCorta(_tObj.fin)):' · abierto')):fechaLarga(cajaFecha))+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
   html += '<div class="cards"><div class="card"><div class="l">'+(_tObj?'Total del turno (Bs)':'Total del día (Bs)')+'</div><div class="n">'+fmtBs(R.totBs)+'</div></div>';
-  if(_tObj) html += '<div class="card"><div class="l">Efectivo en caja (Bs / USD)</div><div class="n">'+fmtBs(R.efBs||0)+' · '+fmtUSD(R.efUsd||0)+'</div></div>';
+  if(_tObj) html += '<div class="card"><div class="l">Efectivo recibido bruto (Bs / USD)</div><div class="n">'+fmtBs(R.efBs||0)+' · '+fmtUSD(R.efUsd||0)+'</div></div>';
   if(_tObj && R.personas && R.personas.length) html += '<div class="card"><div class="l">Cobró</div><div class="n" style="font-size:14px">'+esc(R.personas.join(', '))+'</div></div>';
   if(_tObj && R.anulados && R.anulados.length){ var _ab=0,_au=0; R.anulados.forEach(function(p){ var _t=pagoTotal(p); _ab+=Number(_t.bs)||0; _au+=Number(_t.usd)||0; }); html += '<div style="font-size:12px;color:#8a2f2f;margin:-8px 0 12px">🚫 '+R.anulados.length+' cobro(s) anulado(s) en este turno ('+fmtBs(_ab)+' / '+fmtUSD(_au)+') · no se suman al total.</div>'; }
   html += '<div class="card"><div class="l">Equivalente USD</div><div class="n">'+fmtUSD(R.totUsd)+'</div></div>';
   html += '<div class="card"><div class="l">Transacciones</div><div class="n">'+R.pagos.length+'</div></div></div>';
   html += '<h2>Desglose por forma de pago</h2><table><tr><th>Forma de pago</th><th class="c">N°</th><th class="r">Total Bs</th><th class="r">Total USD</th></tr>'+filasM;
   html += '<tr class="tot"><td>TOTAL</td><td class="c">'+R.pagos.length+'</td><td class="r">'+fmtBs(R.totBs)+'</td><td class="r">'+fmtUSD(R.totUsd)+'</td></tr></table>';
+  html += pfCuadreHTML(_tObj?pfCuadre(_tObj):pfCuadreDia(cajaFecha));
   html += '<h2>Detalle de movimientos</h2><table><tr><th>Control</th><th>Ubicación</th><th>Huésped / Concepto</th><th>Método</th><th>Fecha y hora</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasMov+'</table>';
   if(impConfig().mostrarFirmas) html += '<div class="firmas"><div class="firma">Entregado por<br>('+(_tObj?('Recepcionista: '+esc(_tObj.nombre||_tObj.usuario||'')):'Recepción')+')</div><div class="firma">Recibido por<br>(Administración)</div></div>';
   html += piePaginaHTML()+'</body></html>';
@@ -11698,12 +11693,8 @@ function mismoDiaLocal(ts, dia){
   try{ if(!dia) return false; return diaKey(new Date(ts))===dia; }catch(e){ return false; }
 }
 function pagosDelTurno(turnoId){
-  if(!turnoId) return [];
-  return DB.get('pagos',[]).filter(function(p){
-    if(p.turnoId!=null) return String(p.turnoId)===String(turnoId);
-    var t=turnoPorPago(p);
-    return t?String(t.id)===String(turnoId):false;
-  });
+ var t=turnos().find(function(x){return String(x.id)===String(turnoId);});if(!t)return [];
+ return DB.get('pagos',[]).filter(function(p){return pfEnTurno(p,t);}).sort(function(a,b){return pfTs(a)-pfTs(b);});
 }
 function cajaAlcanceBloque(_tCaja){
   var esT=!!_tCaja;
@@ -11772,8 +11763,8 @@ function corteDatos(fecha, turno){
   /* [CORTE-TURNOS] Los turnos son los de RECEPCION (se abren uno por uno y quedan
      con el nombre de quien los trabajo), no franjas de reloj fijas. Si se pide un
      turno, se filtra por ese turno cerrado/abierto. */
-  const _todos = DB.get('pagos',[]).filter(p=>p.dia===fecha);
-  const _todasF = function(tipo){ return kardexAll().filter(k=>k.tipo===tipo && diaKey(new Date(k.ts))===fecha); };
+  const _todos = turno&&turno!=='todos'?pagosDelTurno(turno):DB.get('pagos',[]).filter(p=>p.dia===fecha);
+  const _todasF = function(tipo){ return kardexAll().filter(k=>k.tipo===tipo && ((turno&&turno!=='todos')||diaKey(new Date(k.ts))===fecha)); };
   const _turnoId = (turno && turno!=='todos') ? String(turno) : null;
   const _enTurnoPago = function(p){ if(!_turnoId) return true; if(p.turnoId!=null) return String(p.turnoId)===_turnoId; var t=turnoPorPago(p); return t?String(t.id)===_turnoId:false; };
   const _enTurnoK = function(k){ if(!_turnoId) return true; if(k.turnoId!=null) return String(k.turnoId)===_turnoId; var t=turnoPorTs(k.ts); return t?String(t.id)===_turnoId:false; };
@@ -11781,7 +11772,7 @@ function corteDatos(fecha, turno){
   let pagos = _todos.filter(_enTurnoPago);
   let cargos = _fil(_todasF('cargo'));
   let anul = _fil(_todasF('anulacion'));
-  let cred = _fil(_todasF('credito'));
+  let cred = _fil(_todasF('credito')).map(pfCredito);
   let autoriz = _fil(_todasF('autorizada'));
   let listaMan = _fil(_todasF('listamanual'));
   let hkRep = _todasF('limpieza').filter(k=>k.hkReporte).filter(_enTurnoK);
@@ -11809,18 +11800,15 @@ function corteDatos(fecha, turno){
 }
 /* Busca a que turno de recepcion pertenece un pago (por id del turno o por la hora). */
 function turnoPorTs(ts){
-  try{
-    const d=new Date(ts); if(isNaN(d)) return null;
-    const list=turnos().filter(function(t){ var ini=new Date(t.inicio); var fin=t.fin?new Date(t.fin):null; return d>=ini && (!fin || d<=fin); });
-    return list.length?list[list.length-1]:null;
-  }catch(e){ return null; }
+ var ms=new Date(ts).getTime();if(!Number.isFinite(ms))return null;
+ var list=turnos().filter(function(t){return ms>=Date.parse(t.inicio)&&(!t.fin||ms<=Date.parse(t.fin));}).sort(function(a,b){return Date.parse(b.inicio)-Date.parse(a.inicio);});
+ return list.length?list[0]:null;
 }
+
 function turnoPorPago(p){
-  if(!p) return null;
-  if(p.turnoId!=null){ const t=turnos().find(function(x){ return String(x.id)===String(p.turnoId); }); if(t) return t; }
-  const ms=Number(p.id); if(ms>1e12){ return turnoPorTs(ms); }
-  if(p.fechaStr) return turnoPorTs(p.fechaStr);
-  return null;
+ if(!p)return null;
+ if(p.turnoId!=null){var t=turnos().find(function(x){return String(x.id)===String(p.turnoId);});if(t)return t;}
+ var ms=pfTs(p);return ms?turnoPorTs(ms):null;
 }
 function turnoEtiqueta(t){
   if(!t) return 'Sin turno';
@@ -11883,7 +11871,7 @@ function imprimirCorte(turnoArg, _modo){
   html+='<div class="card"><div class="l">Transacciones</div><div class="n">'+D.pagos.length+'</div></div>';
   if(D.anuBs>0.004) html+='<div class="card" style="border-color:#f0b8b8;background:#fff8f8"><div class="l">Anulado (no suma)</div><div class="n" style="color:#b23b3b">'+fmtBs(D.anuBs)+'</div><div class="l">'+fmtUSD(D.anuUsd)+' · '+D.anulPagos.length+' cobro(s)</div></div>';
   if(D.adeBs>0.004) html+='<div class="card" style="border-color:#bfe6cd;background:#f5fdf8"><div class="l">Adelantos recibidos</div><div class="n" style="color:#1d6b38">'+fmtBs(D.adeBs)+'</div><div class="l">'+fmtUSD(D.adeUsd)+' · '+D.adelan.length+' adelanto(s)</div></div>';
-  if(D.credUsd>0.009) html+='<div class="card" style="border-color:#f0d58a;background:#fffdf5"><div class="l">A crédito (por cobrar)</div><div class="n" style="color:#b36b00">'+fmtUSD(D.credUsd)+'</div><div class="l">'+fmtBs(D.credBs)+' · '+D.cred.length+' cuenta(s)</div></div>';
+  if(Math.abs(D.credUsd)>0.009) html+='<div class="card" style="border-color:#f0d58a;background:#fffdf5"><div class="l">A crédito (por cobrar)</div><div class="n" style="color:#b36b00">'+fmtUSD(D.credUsd)+'</div><div class="l">'+fmtBs(D.credBs)+' · '+D.cred.length+' cuenta(s)</div></div>';
   html+='<div class="card"><div class="l">Ocupación ahora</div><div class="n">'+pct+'%</div><div class="l">'+ocup+' ocup. · '+libres+' libres · '+totalHab+' total</div></div></div>';
   // CUADRE contra el arqueo
   let _arq=0; try{ _arq=(_tObj? arqueoTurnoDatos(String(_tObj.id)) : resumenCaja(cajaFecha)).totBs||0; }catch(e){ _arq=0; }
@@ -12326,7 +12314,7 @@ function cxcSumarHab(num, op){
   var renglon={ ts:now.toISOString(), concepto:(op.concepto||'Consumo'), montoUsd:monto, montoBs:precioBs(monto),
     control:ctrl, hab:String(op.hab||num||''), usuario:(s?s.nombre:''),
     motivo:(nuevo?'agregado-despues-checkout':'durante-estadia'), tipo2:tipo2,
-    detalle:op.detalle||'' };
+    detalle:op.detalle||'', estadias:[{hab:Number(num),control:Number(r.control)||0,checkin:r.checkin||'',clienteId:r.clienteId||'',huesped:r.huesped||''}] };
   if(Array.isArray(op.cargosIds) && op.cargosIds.length) renglon.cargosIds=op.cargosIds.slice();
   if(op.nochesExtra) renglon.nochesExtra=parseInt(op.nochesExtra,10)||0;
   if(op.tarifaNoche!=null) renglon.tarifaNoche=Number(op.tarifaNoche)||0;
@@ -12343,7 +12331,7 @@ function cxcSumarHab(num, op){
   try{
     logKardex('credito',{hab:Number(op.hab||num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
       detalle:(nuevo?'Agregado DESPUES del check-out':'Sumado durante la estadia')+' a la cuenta CXC N° '+fmtControl(e.control||0)+' · '+renglon.concepto+' · +'+fmtUSD(monto)+' · deuda ahora '+fmtUSD(cxcSaldo(e)),
-      montoUsd:0, montoBs:0, metodo:''});
+      credUsd:monto, credBs:precioBs(monto), cxcId:e.id, montoUsd:0, montoBs:0, metodo:''});
   }catch(err){}
   /* la habitacion queda enterada de que su hospedaje sigue en CXC */
   try{ if(r && r.estado==='ocupada' && !r.creditoCxc){ updateRoom(r.num,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:Number(e.control||ctrl)}); } }catch(err){}
@@ -12361,24 +12349,10 @@ function cxcRestarHab(num, monto, motivo){
   var lista=cxc(); if(!Array.isArray(lista)) lista=[];
   var e=null;
   if(ref){ for(var _i=0;_i<lista.length;_i++){ if(lista[_i] && lista[_i].id===ref.id){ e=lista[_i]; break; } } }
-  if(!e){
-    var _n=String(num||'');
-    var _cands=lista.filter(function(x){ return x && !x.anulada && !cxcPagada(x) && Array.isArray(x.habsRef) && x.habsRef.map(String).indexOf(_n)>=0; });
-    if(_cands.length){
-      /* la que tenga mas rastro de consumos de esta habitacion */
-      var _mejor=null, _peso=-1;
-      _cands.forEach(function(x){
-        var p=0;
-        (Array.isArray(x.agregadoDespues)?x.agregadoDespues:[]).forEach(function(a){ if(a && String(a.hab)===_n) p+=Math.abs(Number(a.montoUsd||0)); });
-        if(p>_peso){ _peso=p; _mejor=x; }
-      });
-      e=_mejor||_cands[0];
-    }
-  }
   if(!e) return 0;
   if(e.anulada) return 0;
   var total=Math.round(Number(e.montoUsd||0)*100)/100;
-  var resta=Math.min(m,total);
+  var resta=Math.min(m,Math.max(0,total-cxcAbon(e)));
   if(!(resta>0.009)) return 0;
   var s=null; try{ s=session(); }catch(err){}
   var now=new Date();
@@ -12451,7 +12425,7 @@ function cxcRestarHab(num, monto, motivo){
   try{
     logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
       detalle:'DESCUENTO en la cuenta CXC N° '+fmtControl(e.control||0)+' · se quito un consumo de la Hab. '+num+' · -'+fmtUSD(resta)+' · motivo: '+(motivo||'consumo quitado')+' · deuda ahora '+fmtUSD(cxcSaldo(e)),
-      montoUsd:0, montoBs:0, metodo:''});
+      credUsd:-resta, credBs:-precioBs(resta), cxcId:e.id, montoUsd:0, montoBs:0, metodo:''});
   }catch(err){}
   return resta;
 }
@@ -12521,7 +12495,7 @@ function cxcComidaQuitar(num, monto, motivo){
   if(!Array.isArray(e.quitas)) e.quitas=[];
   e.quitas.push({ts:new Date().toISOString(), hab:hs, montoUsd:resta, control:ctrl, usuario:(s?s.nombre:''), motivo:('Plan de comidas: '+(motivo||'cambio de plan')), deudaDespues:Math.round((total-resta)*100)/100});
   try{ saveCxc(lista); }catch(err){}
-  try{ logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl, detalle:'AJUSTE en la cuenta CXC N° '+fmtControl(e.control||0)+' · plan de comidas de la Hab. '+num+' · -'+fmtUSD(resta)+' · '+(motivo||'cambio de plan')+' · deuda ahora '+fmtUSD(cxcSaldo(e)), montoUsd:0, montoBs:0, metodo:''}); }catch(err){}
+  try{ logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl, detalle:'AJUSTE en la cuenta CXC N° '+fmtControl(e.control||0)+' · plan de comidas de la Hab. '+num+' · -'+fmtUSD(resta)+' · '+(motivo||'cambio de plan')+' · deuda ahora '+fmtUSD(cxcSaldo(e)), credUsd:-resta, credBs:-precioBs(resta), cxcId:e.id, montoUsd:0, montoBs:0, metodo:''}); }catch(err){}
   return resta;
 }
 /* Pone la cuenta CXC igual al plan de comidas que tiene la habitacion AHORA.
@@ -12868,7 +12842,7 @@ function cxcAbonarConfirm(id){
      del turno y en el arqueo, con su N° de control. */
   try{
     const pagos=DB.get('pagos',[]);
-    pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+    pagos.unshift({ id:pfNuevoPagoId(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
       hab:0, habsTramo:null, huesped:(e.nombre||''), tipo:'Credito (CXC)', noches:0,
       metodo:metodo, metodos:null,
       tipoPago:resta>0.009?'abono':'cobro',concepto:(resta>0.009?'Abono a cuenta por cobrar (CXC)':'Cobro de cuenta por cobrar (CXC)')+(nota?(' · '+nota):''),
@@ -14457,6 +14431,7 @@ function renderComidasAdmin(){
 function kardexAll(){ return DB.get('kardex', []); }
 function kardexDeTurno(id){ return kardexAll().filter(k=>k.turnoId===id); }
 function logKardex(tipo, data){
+  data=Object.assign({},data||{});if(tipo==='credito'){if(data.credUsd==null)data.credUsd=Number(data.montoUsd)||0;if(data.credBs==null)data.credBs=Number(data.montoBs)||0;data.montoUsd=0;data.montoBs=0;}
   const k = kardexAll();
   const act = turnoActivo();
   const s = session();
@@ -14811,9 +14786,10 @@ function cerrarTurno(){
   const t=turnos(); const a=t.find(x=>x.abierto); if(!a){ alert('No hay ningún turno abierto.'); return; }
   try{ var _iniT=new Date(a.inicio); var _trRec=turnoRecepDe(_iniT.getHours()); if(_trRec){ var _cierreT=new Date(_iniT); _cierreT.setHours(Number(_trRec.hasta),0,0,0); if(_cierreT<=_iniT) _cierreT.setDate(_cierreT.getDate()+1); if(new Date()<_cierreT){ if(!confirm('⚠️ TODAVÍA no es la hora de cerrar tu turno.\n\nTu turno '+(_trRec.nombre||'')+' cierra a las '+fmtHora12(_trRec.hasta)+'.\n\nSi lo cierras ahora, el corte se hará antes de tiempo.\n\n¿Cerrar de todas formas?')) return; } } }catch(_){}
   if(!confirm('¿Cerrar el turno de '+a.nombre+'?\n\nSe hará el CORTE completo: todo lo que se cobró en este turno y las habitaciones que quedan sin cobrar (pasan como pendientes para el siguiente turno).')) return;
-  a.fin=new Date().toISOString(); a.abierto=false; saveTurnos(t);
+  var _pf=pfCuadre(a);if(_pf.errores.length){alert('No se puede cerrar: el cuadre tiene inconsistencias.\n\n'+_pf.errores.join('\n')+'\n\nRevisa los pagos en Caja. No se modificó ningún cobro.');return;}
+  a.fin=new Date().toISOString(); a.abierto=false; a.cuadreVersion=APP_VERSION; a.cuadreGuardado={fecha:a.fin,brutoUsd:_pf.usd,brutoBs:_pf.bs,devUsd:_pf.devUsd,devBs:_pf.devBs,netoUsd:_pf.netoUsd,netoBs:_pf.netoBs,nRegistros:_pf.pagos.length,nOperaciones:_pf.nOperaciones,pagosIds:_pf.pagos.map(function(p){return p.id;})};saveTurnos(t);
   // Al cerrar el turno se envía automáticamente el corte a la bandeja de Administración
-  let _envioCorteOk=false; try{ t.pagos=pagosDeRango(a.inicio, new Date().toISOString()); _envioNota='Corte del turno de '+(a.nombre||'')+' enviado automáticamente a Administración.'; _envioCorteOk=imprimirCortePorTurno(a.id,'enviar'); }catch(_){} _envioNota='';
+  let _envioCorteOk=false; try{ _envioNota='Corte del turno de '+(a.nombre||'')+' enviado automáticamente a Administración.'; _envioCorteOk=imprimirCortePorTurno(a.id,'enviar'); }catch(_){} _envioNota='';
   const _q=ocultarPagadosCobrar();
   // Guardamos el resumen del turno cerrado para mostrarlo al final
   const movs=kardexDeTurno(a.id);
@@ -14821,11 +14797,12 @@ function cerrarTurno(){
   movs.forEach(m=>{ cobrUsd+=Number(m.montoUsd||0); cobrBs+=Number(m.montoBs||0);
     if(m.tipo==='pago') nPagos++; else if(m.tipo==='checkin') nCheckin++; else if(m.tipo==='checkout') nCheckout++;
     else if(m.tipo==='cargo') nCargos++; else if(m.tipo==='anulacion') nAnul++; });
+  cobrUsd=_pf.usd;cobrBs=_pf.bs;nPagos=_pf.pagos.length;
   const sinPagar=habsSinPagarLista();
   let deuda=deudaListaSinPagar(sinPagar);
   const resumen = { id:a.id, nombre:a.nombre, inicio:a.inicio, fin:a.fin, cobrUsd:cobrUsd, cobrBs:cobrBs,
     nMov:movs.length, nPagos:nPagos, nCheckin:nCheckin, nCheckout:nCheckout, nCargos:nCargos, nAnul:nAnul,
-    sinPagar:sinPagar.map(r=>({num:r.num, huesped:r.huesped||'', debe:saldoDeHab(r)})), deuda:deuda, quitadas:_q, envioOk:_envioCorteOk };
+    sinPagar:sinPagar.map(r=>({num:r.num, huesped:r.huesped||'', debe:saldoDeHab(r)})), deuda:deuda, quitadas:_q, envioOk:_envioCorteOk, devolucionesUsd:_pf.devUsd,netoUsd:_pf.netoUsd,nOperaciones:_pf.nOperaciones };
   try{ sessionStorage.setItem('hotel_ultimoCorte', JSON.stringify(resumen)); }catch(e){}
   render();
   setTimeout(function(){ mostrarResumenCierre(resumen); }, 60);
@@ -14838,6 +14815,7 @@ function mostrarResumenCierre(R){
   body+='<div style="background:#eef6ff;border:1px solid #cfe0f5;border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#6b7a92">COBRADO EN EL TURNO</div><div style="font-size:19px;font-weight:800;color:#0d3b66">'+fmtBs(R.cobrBs)+'</div><div style="font-size:12px;color:#55637a">'+fmtUSD(R.cobrUsd)+'</div></div>';
   body+='<div style="background:#f3f6fb;border:1px solid #dbe3ef;border-radius:10px;padding:10px 12px"><div style="font-size:11px;color:#6b7a92">MOVIMIENTOS</div><div style="font-size:19px;font-weight:800;color:#0d3b66">'+R.nMov+'</div><div style="font-size:12px;color:#55637a">'+R.nPagos+' cobros · '+R.nCheckin+' entradas · '+R.nCheckout+' salidas</div></div>';
   body+='</div>';
+  body+='<div style="font-size:13px;margin-bottom:12px">Operaciones: '+R.nOperaciones+' · Devoluciones: '+fmtUSD(R.devolucionesUsd||0)+' · <b>Neto: '+fmtUSD(R.netoUsd==null?R.cobrUsd:R.netoUsd)+'</b></div>';
   if(R.nCargos||R.nAnul) body+='<div style="font-size:12.5px;color:#55637a;margin:-6px 0 12px">📝 '+R.nCargos+' consumo(s) registrado(s)'+(R.nAnul?(' · '+R.nAnul+' cobro(s) anulado(s)'):'')+'</div>';
   body+='<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:12px 14px;margin-bottom:12px"><div style="font-weight:700;color:#7a5b00;font-size:13.5px;margin-bottom:6px">🔁 Queda pendiente para el siguiente turno</div>';
   if(R.sinPagar.length===0){ body+='<div style="font-size:13px;color:#1d6b38">✅ Ninguna habitación quedó sin cobrar. Todo al día.</div>'; }
@@ -14894,10 +14872,11 @@ function turnoBloque(t){
   /* [KARDEX-COBRO] Se comparan los movimiento del kardex con los cobros REALES del turno.
      Si un cobro no quedo anotado en el kardex (versiones viejas), el total del bloque
      se toma igual de los cobros, para que no salga en cero. */
-  let _cobros=[]; try{ _cobros=(Array.isArray(t.pagos)&&t.pagos.length)?t.pagos.slice():pagosDeRango(t.inicio, t.fin||null); }catch(e){ _cobros=[]; }
+  let _cobros=[]; try{ _cobros=pagosDelTurno(t.id); }catch(e){ _cobros=[]; }
   _cobros=_cobros.filter(function(p){ return String(p.metodo||'').toUpperCase().indexOf('ANUL')<0; });
   let _realBs=0,_realUsd=0; _cobros.forEach(function(p){ const _x=pagoTotal(p); _realBs+=Number(_x.bs)||0; _realUsd+=Number(_x.usd)||0; });
-  const _usaReal=(_realUsd>Math.abs(cobrUsd)+0.009 || _realBs>Math.abs(cobrBs)+0.009);
+  const _usaReal=(Math.abs(_realUsd-cobrUsd)>0.009 || Math.abs(_realBs-cobrBs)>0.009);
+  cobrUsd=_realUsd;cobrBs=_realBs;
   if(_usaReal){ cobrUsd=_realUsd; cobrBs=_realBs; }
   const _nPagos=_cobros.length||movs.filter(function(m){ return m.tipo==='pago'; }).length;
   const _avisoKx=(_usaReal && _cobros.length? '<div style="font-size:11px;color:#b36b00;text-align:right">'+_cobros.length+' cobro(s) · el detalle de abajo no los ten&iacute;a anotados</div>':'');
@@ -14943,21 +14922,22 @@ function cobradoPorOtros(p, t){
   var r=rolDeUsuario(u);
   return (r==='supervisor' || r==='supervisora' || r==='master' || r==='admin' || r==='administracion');
 }
-function pagosDeRango(ini, fin){
-  const i=new Date(ini).getTime(), f=fin?new Date(fin).getTime():Date.now()+60000;
-  return DB.get('pagos',[]).filter(p=>{ if(p.dia){ var d=new Date(p.dia+'T12:00:00').getTime(); if(d < i-86400000 || d > f+86400000) return false; } var ms=Number(p.id); if(ms>1e12){ return ms>=i && ms<=f; } if(p.fechaStr){ var t2=new Date(p.fechaStr).getTime(); if(!isNaN(t2)) return t2>=i && t2<=f; } return false; }).sort((a,b)=>(Number(a.id)||0)-(Number(b.id)||0));
+function pagosDeRango(ini,fin){
+ var i=new Date(ini).getTime(),f=fin?new Date(fin).getTime():Date.now();
+ return DB.get('pagos',[]).filter(function(p){var ms=pfTs(p);return ms&&ms>=i&&ms<=f;}).sort(function(a,b){return pfTs(a)-pfTs(b);});
 }
 function imprimirCortePorTurno(turnoId, _modo){
   const t=turnos().find(x=>x.id===turnoId);
   if(!t){ alert('No se encontró el turno.'); return; }
   const ini=t.inicio, fin=t.fin||new Date().toISOString();
-  const movs=kardexDeRango(ini, fin);
-  const pagos=(Array.isArray(t.pagos)&&t.pagos.length)? t.pagos.slice() : pagosDeRango(ini, fin);
-  const sT=function(k){ return k.turnoId===t.id; };
+  const movs=pfMovsTurno(t);
+  const PF=pfCuadre(t);
+  const pagos=PF.pagos;
+  const sT=function(k){ return String(k.turnoId)===String(t.id); };
   const deTipo=function(tp){ return movs.filter(k=>k.tipo===tp && (sT(k) || !k.turnoId)); };
-  const checkins=deTipo('checkin'), checkouts=deTipo('checkout'), cargos=deTipo('cargo'), anuls=deTipo('anulacion'), creds=deTipo('credito'), auts=deTipo('autorizada'), cambios=deTipo('cambio'), lstMan=deTipo('listamanual'), comidas=deTipo('comidainc'), espera=deTipo('espera'), corr=deTipo('correccion'), acomp=deTipo('acompanante');
+  const checkins=deTipo('checkin'), checkouts=deTipo('checkout'), cargos=deTipo('cargo'), anuls=deTipo('anulacion'), creds=movs.filter(function(k){return k.tipo==='credito'||(k.tipo==='cxc'&&k.credUsd!=null);}).map(pfCredito), auts=deTipo('autorizada'), cambios=deTipo('cambio'), lstMan=deTipo('listamanual'), comidas=deTipo('comidainc'), espera=deTipo('espera'), corr=deTipo('correccion'), acomp=deTipo('acompanante');
   let cobrBs=0, cobrUsd=0, abonosBs=0, abonosUsd=0; const porMetodo={};
-  pagos.forEach(p=>{ var _tpp=pagoTotal(p); var bs=_tpp.bs, us=_tpp.usd; var esAb=esAbonoPago(p); if(esAb){ abonosBs+=bs; abonosUsd+=us; } cobrBs+=bs; cobrUsd+=us; cajaLineasDePago(p).forEach(function(L){ var m=String(L.metodo||'(sin método)'); if(!porMetodo[m]) porMetodo[m]={n:0,bs:0,usd:0}; porMetodo[m].n++; porMetodo[m].bs+=Number(L.montoBs)||0; porMetodo[m].usd+=Number(L.montoUsd)||0; }); if(!p.control){ var _kr=movs.find(x=>x.tipo==='pago' && Number(x.montoUsd||0)===us && Number(x.montoBs||0)===bs && x.control); if(_kr) p.control=_kr.control; } if(!p.control){ var _rr=findRoom(p.hab); if(_rr && _rr.control) p.control=_rr.control; } });
+  pagos.forEach(p=>{ var _tpp=pagoTotal(p);p.montoUsd=_tpp.usd;p.montoBs=_tpp.bs; var bs=_tpp.bs, us=_tpp.usd; var esAb=esAbonoPago(p); if(esAb){ abonosBs+=bs; abonosUsd+=us; } cobrBs+=bs; cobrUsd+=us; cajaLineasDePago(p).forEach(function(L){ var m=String(L.metodo||'(sin método)'); if(!porMetodo[m]) porMetodo[m]={n:0,bs:0,usd:0}; porMetodo[m].n++; porMetodo[m].bs+=Number(L.montoBs)||0; porMetodo[m].usd+=Number(L.montoUsd)||0; }); if(!p.control){ var _kr=movs.find(x=>x.tipo==='pago' && Number(x.montoUsd||0)===us && Number(x.montoBs||0)===bs && x.control); if(_kr) p.control=_kr.control; } if(!p.control){ var _rr=findRoom(p.hab); if(_rr && _rr.control) p.control=_rr.control; } });
   let credBs=0, credUsd=0; creds.forEach(k=>{ credBs+=Number(k.credBs||0); credUsd+=Number(k.credUsd||0); });
   let anulBs=0, anulUsd=0; anuls.forEach(k=>{ anulBs+=Number(k.montoBs||0); anulUsd+=Number(k.montoUsd||0); });
   let cargosT=0; cargos.forEach(k=>{ cargosT+=Number(k.cargoUsd||0); });
@@ -14975,12 +14955,13 @@ function imprimirCortePorTurno(turnoId, _modo){
   h+='<div class="card"><div class="l">Salidas</div><div class="n">'+checkouts.length+'</div></div>';
   h+='<div class="card"><div class="l">Consumos anotados</div><div class="n">'+cargos.length+'</div><div class="l">'+fmtUSD(cargosT)+'</div></div>';
   h+='<div class="card"><div class="l">Movimientos</div><div class="n">'+movs.length+'</div></div></div>';
-  if(credUsd>0.009||anulUsd>0.009||abonosUsd>0.009){ h+='<div class="cards">'; if(abonosUsd>0.009) h+='<div class="card"><div class="l">Abonos recibidos (incluidos en el total)</div><div class="n">'+fmtUSD(abonosUsd)+'</div><div class="l">'+fmtBs(abonosBs)+'</div></div>'; if(credUsd>0.009) h+='<div class="card" style="border-color:#f0d58a;background:#fffdf5"><div class="l">A crédito (por cobrar)</div><div class="n" style="color:#b36b00">'+fmtUSD(credUsd)+'</div><div class="l">'+fmtBs(credBs)+' · '+creds.length+'</div></div>'; if(anulUsd>0.009) h+='<div class="card" style="border-color:#f2c2c2;background:#fdf7f7"><div class="l">Anulado</div><div class="n" style="color:#b23b3b">'+fmtUSD(anulUsd)+'</div><div class="l">'+fmtBs(anulBs)+' · '+anuls.length+'</div></div>'; h+='</div>'; }
+  if(Math.abs(credUsd)>0.009||anulUsd>0.009||abonosUsd>0.009){ h+='<div class="cards">'; if(abonosUsd>0.009) h+='<div class="card"><div class="l">Abonos recibidos (incluidos en el total)</div><div class="n">'+fmtUSD(abonosUsd)+'</div><div class="l">'+fmtBs(abonosBs)+'</div></div>'; if(Math.abs(credUsd)>0.009) h+='<div class="card" style="border-color:#f0d58a;background:#fffdf5"><div class="l">Aumento neto de CXC</div><div class="n" style="color:#b36b00">'+fmtUSD(credUsd)+'</div><div class="l">'+fmtBs(credBs)+' · '+creds.length+'</div></div>'; if(anulUsd>0.009) h+='<div class="card" style="border-color:#f2c2c2;background:#fdf7f7"><div class="l">Anulado</div><div class="n" style="color:#b23b3b">'+fmtUSD(anulUsd)+'</div><div class="l">'+fmtBs(anulBs)+' · '+anuls.length+'</div></div>'; h+='</div>'; }
+  h+=pfCuadreHTML(PF);
   h+='<h2>Cobros del turno</h2><table><tr><th>Hora</th><th>Quién cobró</th><th>N° Control</th><th>Habitación</th><th>A quién</th><th>Concepto</th><th>Forma de pago</th><th class="r">Bs</th><th class="r">USD</th></tr>';
   if(!pagos.length) h+='<tr><td colspan="9" class="c" style="color:#888;padding:16px">No se cobró nada en este turno</td></tr>';
-  pagos.forEach(p=>{ h+='<tr><td>'+horaCorta(p.id>1e12?new Date(Number(p.id)).toISOString():(p.fechaStr||p.dia))+'</td><td>'+esc(p.usuario||'—')+'</td><td>'+(p.control?('<b>'+fmtControl(p.control)+'</b>' ):((p.hab&&findRoom(p.hab)&&findRoom(p.hab).control)?('<b>'+fmtControl(findRoom(p.hab).control)+'</b>'):'—'))+'</td><td>'+(p.hab?('Hab. '+esc(String(p.hab))):'—')+'</td><td>'+esc(p.huesped||p.cliente||'—')+'</td><td>'+esc(p.concepto||'—')+'</td><td>'+esc(p.metodo||'—')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; });
+  pagos.forEach(p=>{ h+='<tr><td>'+horaCorta(pfTs(p)||p.fechaStr||p.dia)+'</td><td>'+esc(p.usuario||'—')+'</td><td>'+(p.control?('<b>'+fmtControl(p.control)+'</b>' ):((p.hab&&findRoom(p.hab)&&findRoom(p.hab).control)?('<b>'+fmtControl(findRoom(p.hab).control)+'</b>'):'—'))+'</td><td>'+(p.hab?('Hab. '+esc(String(p.hab))):'—')+'</td><td>'+esc(p.huesped||p.cliente||'—')+'</td><td>'+esc(p.concepto||'—')+'</td><td>'+esc(p.metodo||'—')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; });
   h+='<tr class="tot"><td colspan="7">TOTAL COBRADO EN EL TURNO</td><td class="r">'+fmtBs(cobrBs)+'</td><td class="r">'+fmtUSD(cobrUsd)+'</td></tr></table>';
-  if(_otros.length){ h+='<h2>Cobros hechos por otros usuarios (supervisión / administración)</h2><table><tr><th>Hora</th><th>Quién cobró</th><th>N° Control</th><th>Habitación</th><th>A quién</th><th>Concepto</th><th>Forma de pago</th><th class="r">Bs</th><th class="r">USD</th></tr>'; _otros.forEach(function(p){ h+='<tr><td>'+horaCorta(p.id>1e12?new Date(Number(p.id)).toISOString():(p.fechaStr||p.dia))+'</td><td><b>'+esc(p.usuario||'—')+'</b></td><td>'+(p.control?('<b>'+fmtControl(p.control)+'</b>'):'—')+'</td><td>'+(p.hab?('Hab. '+esc(String(p.hab))):'—')+'</td><td>'+esc(p.huesped||p.cliente||'—')+'</td><td>'+esc(p.concepto||'—')+'</td><td>'+esc(p.metodo||'—')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="7">TOTAL COBRADO POR OTROS</td><td class="r">'+fmtBs(_oBs)+'</td><td class="r">'+fmtUSD(_oUsd)+'</td></tr></table><div style="font-size:11.5px;color:#667;margin:-4px 0 8px">Estos cobros se hicieron en este turno pero con otro usuario. Se incluyen en el total y en el cuadre, para que el cierre cuadre igual.</div>'; }
+  if(_otros.length){ h+='<h2>Cobros hechos por otros usuarios (supervisión / administración)</h2><table><tr><th>Hora</th><th>Quién cobró</th><th>N° Control</th><th>Habitación</th><th>A quién</th><th>Concepto</th><th>Forma de pago</th><th class="r">Bs</th><th class="r">USD</th></tr>'; _otros.forEach(function(p){ h+='<tr><td>'+horaCorta(pfTs(p)||p.fechaStr||p.dia)+'</td><td><b>'+esc(p.usuario||'—')+'</b></td><td>'+(p.control?('<b>'+fmtControl(p.control)+'</b>'):'—')+'</td><td>'+(p.hab?('Hab. '+esc(String(p.hab))):'—')+'</td><td>'+esc(p.huesped||p.cliente||'—')+'</td><td>'+esc(p.concepto||'—')+'</td><td>'+esc(p.metodo||'—')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="7">TOTAL COBRADO POR OTROS</td><td class="r">'+fmtBs(_oBs)+'</td><td class="r">'+fmtUSD(_oUsd)+'</td></tr></table><div style="font-size:11.5px;color:#667;margin:-4px 0 8px">Estos cobros se hicieron en este turno pero con otro usuario. Se incluyen en el total y en el cuadre, para que el cierre cuadre igual.</div>'; }
   h+=corteTurnoCuentas(pagos, movs, sinPagar);
   if(Object.keys(porMetodo).length){ h+='<h2>Cuadre por forma de pago</h2><table><tr><th>Forma de pago</th><th class="c">Cantidad</th><th class="r">Bs</th><th class="r">USD</th></tr>'; Object.keys(porMetodo).forEach(m=>{ var x=porMetodo[m]; h+='<tr><td>'+esc(m)+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; }); h+='</table>'; }
   h+=corteTurnoBloques({checkins:checkins, checkouts:checkouts, cargos:cargos, anuls:anuls, creds:creds, auts:auts, cambios:cambios, lstMan:lstMan, comidas:comidas, espera:espera, corr:corr, acomp:acomp});
@@ -14989,10 +14970,11 @@ function imprimirCortePorTurno(turnoId, _modo){
   else{ h+='<div class="amar"><b>'+sinPagar.length+'</b> habitación(es) quedaron sin cobrar · total <b>'+fmtUSD(deuda)+'</b>. La deuda sigue en la habitación; el cobro lo hará el recepcionista que la atienda.</div><table><tr><th>Habitación</th><th>Huésped</th><th class="c">Noches</th><th>Salida</th><th class="r">Debe</th></tr>'+sinPagar.map(r=>'<tr><td><b>'+esc(String(r.num))+'</b></td><td>'+esc(r.huesped||'—')+'</td><td class="c">'+(r.noches||'—')+'</td><td>'+(r.salida?fechaDDMMYYYY(r.salida):'—')+'</td><td class="r">'+fmtUSD(saldoDeHab(r))+'</td></tr>').join('')+'<tr class="tot"><td colspan="4">TOTAL PENDIENTE</td><td class="r">'+fmtUSD(deuda)+'</td></tr></table>'; }
   h+='<h2>Detalle completo del turno (hora por hora)</h2><table><tr><th>Hora</th><th>Qué pasó</th><th>Hab.</th><th>Cliente / Huésped</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>';
   if(!movs.length) h+='<tr><td colspan="7" class="c" style="color:#888;padding:16px">Sin movimientos en este turno</td></tr>';
-  movs.forEach(m=>{ var kt=KTIPO[m.tipo]||{t:m.tipo}; var bs=(Number(m.montoBs||0)>0?fmtBs(m.montoBs):'—'); var us=(Number(m.montoUsd||0)>0?fmtUSD(m.montoUsd):'—'); if(m.tipo==='credito'&&Number(m.credBs||0)>0){ bs=fmtBs(m.credBs)+' (créd.)'; us=fmtUSD(m.credUsd)+' (créd.)'; } if(m.tipo==='comidainc'&&Number(m.montoUsd||0)>0){ bs='—'; us=fmtUSD(m.montoUsd)+' (comida)'; } else if(m.tipo==='cargo'&&Number(m.cargoUsd||0)>0){ bs='—'; us=fmtUSD(m.cargoUsd)+' (cargo)'; } if(m.tipo==='anulacion'&&Number(m.montoUsd||0)>0){ bs='-'+fmtBs(m.montoBs||0); us='-'+fmtUSD(m.montoUsd); } h+='<tr><td>'+horaCorta(m.ts)+'</td><td>'+esc(kt.t)+'</td><td>'+(m.hab?esc(String(m.hab)):'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td>'+esc((m.detalle||'')+(m.metodo?(' · '+m.metodo):''))+'</td><td class="r">'+bs+'</td><td class="r">'+us+'</td></tr>'; });
+  movs.forEach(m=>{ var kt=KTIPO[m.tipo]||{t:m.tipo}; var bs=(Number(m.montoBs||0)>0?fmtBs(m.montoBs):'—'); var us=(Number(m.montoUsd||0)>0?fmtUSD(m.montoUsd):'—'); if((m.tipo==='credito'||m.tipo==='cxc')&&Math.abs(Number(m.credUsd||0))>0.009){ bs=fmtBs(m.credBs)+' (créd.)'; us=fmtUSD(m.credUsd)+' (créd.)'; } if(m.tipo==='comidainc'&&Number(m.montoUsd||0)>0){ bs='—'; us=fmtUSD(m.montoUsd)+' (comida)'; } else if(m.tipo==='cargo'&&Number(m.cargoUsd||0)>0){ bs='—'; us=fmtUSD(m.cargoUsd)+' (cargo)'; } if(m.tipo==='anulacion'&&Number(m.montoUsd||0)>0){ bs='-'+fmtBs(m.montoBs||0); us='-'+fmtUSD(m.montoUsd); } h+='<tr><td>'+horaCorta(m.ts)+'</td><td>'+esc(kt.t)+'</td><td>'+(m.hab?esc(String(m.hab)):'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td>'+esc((m.detalle||'')+(m.metodo?(' · '+m.metodo):''))+'</td><td class="r">'+bs+'</td><td class="r">'+us+'</td></tr>'; });
   h+='</table>';
   h+=corteListadoHabitaciones();
   if(impConfig().mostrarFirmas) h+='<div class="firmas"><div class="firma">Entregado por<br>(Recepcionista: '+esc(t.nombre||'')+')</div><div class="firma">Recibido por<br>(Administración)</div></div>';
+  h+='<div style="font-size:11px;color:#667">Cálculo: '+esc(APP_VERSION)+' · fuente: registros de pagos. Los cortes ya enviados se conservan; este documento es una generación nueva.</div>';
   h+=piePaginaHTML()+'</body></html>';
   return entregarDoc(h, _modo, {tipo:'corte', titulo:'Corte del turno · '+esc(t.nombre||''), periodo:new Date(ini).toLocaleString('es-VE')+(t.fin?(' → '+new Date(fin).toLocaleString('es-VE')):''), turnoId:t.id});
 }
@@ -15181,7 +15163,7 @@ function corteTurnoBloques(B){
   if(B.comidas.length){ h+='<h2>Comidas incluidas (turno)</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Restaurante</th><th>Comida</th><th class="r">USD</th></tr>'; let tm=0; B.comidas.forEach(k=>{ tm+=Number(k.montoUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.restaurante||'—')+'</td><td>'+esc(k.comida?mealLabel(k.comida):planLabel(k.plan))+'</td><td class="r">'+fmtUSD(k.montoUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="5">TOTAL COMIDAS</td><td class="r">'+fmtUSD(tm)+'</td></tr></table>'; }
   /* [CORTE-ANULADOS] Los anulados van SIEMPRE en un renglón aparte, para que el cierre cuadre: */
   if(B.anuls.length){ h+='<h2>⚠️ Cobros anulados en el turno (se descuentan aparte, NO cuentan como cobrado)</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'; var _ab2=0,_au2=0; B.anuls.forEach(k=>{ _ab2+=Number(k.montoBs||0); _au2+=Number(k.montoUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.motivo||k.detalle||'')+'</td><td>'+esc(k.anuladoPor||k.usuario||'—')+'</td><td class="r">-'+fmtBs(k.montoBs||0)+'</td><td class="r">-'+fmtUSD(k.montoUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="6">TOTAL ANULADO EN EL TURNO</td><td class="r">-'+fmtBs(_ab2)+'</td><td class="r">-'+fmtUSD(_au2)+'</td></tr></table>'; }
-  if(B.creds.length){ h+='<h2>Ventas a crédito (CXC) del turno</h2><table><tr><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'; let cb=0,cu=0; B.creds.forEach(k=>{ cb+=Number(k.credBs||0); cu+=Number(k.credUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td class="r">'+fmtBs(k.credBs||0)+'</td><td class="r">'+fmtUSD(k.credUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="4">TOTAL A CRÉDITO</td><td class="r">'+fmtBs(cb)+'</td><td class="r">'+fmtUSD(cu)+'</td></tr></table>'; }
+  if(B.creds.length){ h+='<h2>Movimientos de crédito (CXC) del turno</h2><table><tr><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'; let cb=0,cu=0; B.creds.forEach(k=>{ cb+=Number(k.credBs||0); cu+=Number(k.credUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td class="r">'+fmtBs(k.credBs||0)+'</td><td class="r">'+fmtUSD(k.credUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="4">AUMENTO NETO DE CXC</td><td class="r">'+fmtBs(cb)+'</td><td class="r">'+fmtUSD(cu)+'</td></tr></table>'; }
   if(B.auts.length){ h+='<h2>👑 Autorizadas por '+esc(autorizaTitulo())+'</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th class="r">Normal</th><th class="r">Se cobra</th></tr>'; B.auts.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.autMotivo||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):(k.metodo||'—'))+'</td><td class="r">'+fmtUSD(k.autTarifaNormal||0)+'</td><td class="r">'+fmtUSD(k.autTarifaCobra||0)+'</td></tr>'; }); h+='</table>'; }
   if(B.cambios.length){ h+='<h2>Cambios de habitación</h2><table><tr><th>Hora</th><th>Habitación</th><th>N° Control</th><th>Huésped</th><th>Detalle</th></tr>'; B.cambios.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))+(k.hacia?(' → Hab. '+esc(String(k.hacia))):'')):'—')+'</td><td>'+corteCtrl(k)+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
   if(B.acomp.length){ h+='<h2>Acompañantes agregados</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Detalle</th></tr>'; B.acomp.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
@@ -15193,7 +15175,7 @@ function corteTurnoBloques(B){
 function imprimirKardex(turnoId){
   const t=turnos().find(x=>x.id===turnoId); const movs=kardexDeTurno(turnoId);
   let cobrUsd=0,cobrBs=0; movs.forEach(m=>{cobrUsd+=Number(m.montoUsd||0);cobrBs+=Number(m.montoBs||0);});
-  let filas=''; movs.forEach(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; let bs=(Number(m.montoBs||0)>0?fmtBs(m.montoBs):'—'); let usd=(Number(m.montoUsd||0)>0?fmtUSD(m.montoUsd):'—'); if(m.tipo==='credito'&&Number(m.credBs||0)>0){ bs=fmtBs(m.credBs)+' (créd.)'; usd=fmtUSD(m.credUsd)+' (créd.)'; } filas+='<tr><td>'+horaCorta(m.ts)+'</td><td>'+k.t+'</td><td>'+(m.hab||'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td>'+esc((m.detalle||'')+(m.metodo?(' · '+m.metodo):''))+'</td><td class="r">'+bs+'</td><td class="r">'+usd+'</td></tr>'; });
+  let filas=''; movs.forEach(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; let bs=(Number(m.montoBs||0)>0?fmtBs(m.montoBs):'—'); let usd=(Number(m.montoUsd||0)>0?fmtUSD(m.montoUsd):'—'); if((m.tipo==='credito'||m.tipo==='cxc')&&Math.abs(Number(m.credUsd||0))>0.009){ bs=fmtBs(m.credBs)+' (créd.)'; usd=fmtUSD(m.credUsd)+' (créd.)'; } filas+='<tr><td>'+horaCorta(m.ts)+'</td><td>'+k.t+'</td><td>'+(m.hab||'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td>'+esc((m.detalle||'')+(m.metodo?(' · '+m.metodo):''))+'</td><td class="r">'+bs+'</td><td class="r">'+usd+'</td></tr>'; });
   if(!filas) filas='<tr><td colspan="7" class="c" style="color:#888;padding:18px">Sin movimientos</td></tr>';
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Kardex turno</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:14px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
@@ -16877,6 +16859,7 @@ function unirCuentasV2(numOrigen, numOtra, modo){
   if(Number(rootP.num)!==Number(principal.num)) return {ok:false, msg:'La Hab. '+principal.num+' ya esta unida a la cuenta de la Hab. '+rootP.num+'. Para sumarle mas cuartos, abre la Hab. '+rootP.num+' y une desde ahi.'};
   var rootO=raizCuentaDe(otra)||otra;
   if(Number(rootO.num)!==Number(otra.num)) return {ok:false, msg:'La Hab. '+otra.num+' ya esta unida a la cuenta de la Hab. '+rootO.num+'. Primero separala desde la ficha.'};
+  if((principal.creditoCxc||otra.creditoCxc)){var ep=ceEmpresaHab(principal),eo=ceEmpresaHab(otra);if((ceRefHab(principal)&&!ep)||(ceRefHab(otra)&&!eo)||(ep&&eo&&ep.id!==eo.id))return {ok:false,msg:'Las cuentas pertenecen a empresas diferentes o sin identificar. No se unirán sus deudas.'};if((principal.creditoCxc&&!cxcCuentaDeHabCobro(principal))||(otra.creditoCxc&&!cxcCuentaDeHabCobro(otra)))return {ok:false,msg:'Revisa el vínculo CXC de ambas estadías antes de unir.'};}
   var por=''; try{ por=(session()&&session().nombre)||''; }catch(e){}
   var sello={cuentaPor:por, cuentaFecha:new Date().toISOString()};
   /* [UNION-PRIMERO] La union se graba LO PRIMERO que se escribe cada habitacion.
@@ -18218,7 +18201,7 @@ function csRestarExacto(c,num,motivo){
  var l=csLink(c);if(!l)return 0;var lista=cxc(),e=lista.find(function(e){return e.id===l.e.id;}),m=Number(c.montoUsd||0);if(!e||!(m>0))return 0;
  e.montoUsd=Math.round((Number(e.montoUsd||0)-m)*100)/100;
  e.cargos.push({ts:new Date().toISOString(),tipo2:'consumo',hab:String(num),montoUsd:-m,concepto:'Corrección: consumo retirado · '+motivo,anulaConsumoId:String(c.id),usuario:session().nombre||''});
- saveCxc(lista);return m;
+ saveCxc(lista);logKardex('credito',{hab:Number(num),control:l.cargo.control||e.control||0,huesped:e.nombre||'',cxcId:e.id,detalle:'Consumo retirado de CXC · '+motivo,credUsd:-m,credBs:-precioBs(m),montoUsd:0,montoBs:0});return m;
 }
 
 function csAnularPago(p,btn){
@@ -18366,6 +18349,136 @@ function ceConfirm(){
 document.addEventListener('click',function(ev){var b=ev.target.closest('[data-ce-room],[data-ce-source],[data-ce-review],[data-ce-confirm],[data-ce-close]');if(!b)return;if(b.hasAttribute('data-ce-room'))ceModal('',b.getAttribute('data-ce-room'));else if(b.hasAttribute('data-ce-source'))ceModal(b.getAttribute('data-ce-source'));else if(b.hasAttribute('data-ce-review'))ceReview();else if(b.hasAttribute('data-ce-confirm'))ceConfirm();else{CE_PLAN=null;cerrarModal();}});
 
 function ceCuentaSegura(id){var e=cxc().find(function(e){return e.id===id;});if(!e)return false;return rooms().every(function(r){if(r.estado!=='ocupada'||!r.creditoCxc)return true;var involves=r.creditoCxcId===id||ceTieneMovimiento(e,r.num,r.creditoCxcControl);if(!involves)return true;var emp=ceEmpresaHab(r);return (!ceRefHab(r)||emp)&&(!emp||ceMismoCliente(e,emp))&&ceCuentaEstadia(e,r,r.creditoCxcControl);});}
+
+/* [PREVENCION-202] No migrations: these guards operate only on new actions. */
+function pfNuevoPagoId(){var used={};DB.get('pagos',[]).forEach(function(p){used[String(p.id)]=1;});var id=Date.now();while(used[String(id)])id++;return id;}
+function pfTs(p){
+ if(!p)return 0;var v=p.ts;if(v!=null){var n=typeof v==='number'?v:(/^\d{13}$/.test(String(v))?Number(v):Date.parse(v));if(Number.isFinite(n)&&n>1e12)return n;}
+ var id=Number(p.id);if(Number.isFinite(id)&&id>1e12)return id;
+ var m=String(p.id||'').match(/^(?:CRP|dev)(\d{13})/);if(m)return Number(m[1]);
+ var f=String(p.fechaStr||'');if(/^\d{4}-\d{2}-\d{2}T/.test(f))return Date.parse(f)||0;
+ var z=f.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(a\.?\s*m\.?|p\.?\s*m\.?)?/i);
+ if(z){var h=Number(z[4]);if(z[7]){h=h%12;if(/^p/i.test(z[7]))h+=12;}return Date.UTC(Number(z[3]),Number(z[2])-1,Number(z[1]),h+4,Number(z[5]),Number(z[6]||0));}
+ return 0;
+}
+function pfEnTurno(p,t){if(!p||!t)return false;if(p.turnoId!=null&&p.turnoId!=='')return String(p.turnoId)===String(t.id);var ms=pfTs(p),x=ms?turnoPorTs(ms):null;return !!x&&String(x.id)===String(t.id);}
+function pfMovsTurno(t){return kardexAll().filter(function(k){return pfEnTurno(k,t);}).sort(function(a,b){return pfTs(a)-pfTs(b);});}
+function pfAnulado(p){return !!(p&&(p.anulado||p.anulada||/ANUL/i.test(String(p.metodo||''))));}
+function pfCredito(k){var x=Object.assign({},k);if(x.credUsd==null)x.credUsd=Number(x.montoUsd)||0;if(x.credBs==null)x.credBs=Number(x.montoBs)||0;return x;}
+function pfCuadre(t){
+ var raw=pagosDelTurno(t.id),valid=raw.filter(function(p){return !pfAnulado(p);}).map(function(p){return JSON.parse(JSON.stringify(p));});
+ var R={pagos:valid,anulados:raw.filter(pfAnulado),metodos:{},usd:0,bs:0,devUsd:0,devBs:0,errores:[],operaciones:{},devoluciones:devolucionesDe({tipo:'turno',id:t.id})};
+ var ids={},juntos={};function add(m){if(!R.metodos[m])R.metodos[m]={usd:0,bs:0,devUsd:0,devBs:0};return R.metodos[m];}
+ valid.forEach(function(p){var id=String(p.id),T=pagoTotal(p),u=Number(T.usd)||0,b=Number(T.bs)||0;if(ids[id])R.errores.push('Identificador de pago repetido: '+id);ids[id]=true;
+  if(!Number.isFinite(Number(p.montoUsd||0))||!Number.isFinite(Number(p.montoBs||0))||u<0||b<0)R.errores.push('Monto inválido · control '+fmtControl(p.control||0));
+  var lu=0,lb=0;cajaLineasDePago(p).forEach(function(l){var x=add(String(l.metodo||'Otro'));lu+=Number(l.montoUsd)||0;lb+=Number(l.montoBs)||0;x.usd+=Number(l.montoUsd)||0;x.bs+=Number(l.montoBs)||0;});
+  if(Math.abs(lu-u)>0.011||Math.abs(lb-b)>0.021)R.errores.push('Formas de pago no coinciden · control '+fmtControl(p.control||0));
+  R.usd+=u;R.bs+=b;R.operaciones[p.operacionConjunta||p.operacionId||id]=1;
+  if(p.operacionConjunta){var j=juntos[p.operacionConjunta]||(juntos[p.operacionConjunta]={usd:0,total:null});j.usd+=u;if(p.totalOperacionUsd!=null){if(j.total!=null&&Math.abs(j.total-Number(p.totalOperacionUsd))>0.011)R.errores.push('Totales distintos en pago conjunto '+p.operacionConjunta);j.total=Number(p.totalOperacionUsd);}}
+ });
+ Object.keys(juntos).forEach(function(id){var j=juntos[id];if(j.total!=null&&Math.abs(j.usd-j.total)>0.011)R.errores.push('Falta una parte del pago conjunto '+id);});
+ R.devoluciones.forEach(function(d){var x=add(String(d.metodo||'Sin método de devolución')),u=Number(d.montoUsd)||0,b=Number(d.montoBs)||0;R.devUsd+=u;R.devBs+=b;x.devUsd+=u;x.devBs+=b;if(u<0||b<0||!d.metodo)R.errores.push('Revisar importe o método de devolución '+d.id);});
+ ['usd','bs','devUsd','devBs'].forEach(function(k){R[k]=Math.round(R[k]*100)/100;});R.netoUsd=Math.round((R.usd-R.devUsd)*100)/100;R.netoBs=Math.round((R.bs-R.devBs)*100)/100;R.nOperaciones=Object.keys(R.operaciones).length;var cred=pfMovsTurno(t).filter(function(k){return k.tipo==='credito'||(k.tipo==='cxc'&&k.credUsd!=null);}).map(pfCredito);R.creditoGenerado=0;R.creditoReducido=0;cred.forEach(function(k){var u=Number(k.credUsd)||0;if(u>0)R.creditoGenerado+=u;else R.creditoReducido-=u;});
+ return R;
+}
+function pfCuadreDia(dia){
+ var t={id:'__dia__',inicio:dia+'T00:00:00-04:00',fin:dia+'T23:59:59.999-04:00'},f=pagosDelTurno,dev=devolucionesDe;
+ try{pagosDelTurno=function(){return DB.get('pagos',[]).filter(function(p){return p.dia===dia;});};devolucionesDe=function(){return dev({tipo:'dia',dia:dia});};return pfCuadre(t);}finally{pagosDelTurno=f;devolucionesDe=dev;}
+}
+function pfCuadreHTML(R){
+ var h='<h2>Control de cobros y devoluciones</h2><div class="amar">'+R.pagos.length+' registros de pago · '+R.nOperaciones+' operaciones. Una operación conjunta puede tener varios destinos; se suma una sola vez cada registro. Los Bs y USD representan equivalentes, no dos ingresos separados.</div>';
+ if(R.errores.length)h+='<div class="amar"><b>REQUIERE REVISIÓN — no es un cierre conciliado</b><ul>'+R.errores.map(function(e){return '<li>'+esc(e)+'</li>';}).join('')+'</ul></div>';
+ h+='<table><tr><th>Forma de pago</th><th class="r">Cobrado USD</th><th class="r">Devuelto USD</th><th class="r">Neto USD</th><th class="r">Neto Bs (equivalente)</th></tr>';
+ Object.keys(R.metodos).forEach(function(m){var x=R.metodos[m];h+='<tr><td>'+esc(m)+'</td><td class="r">'+fmtUSD(x.usd)+'</td><td class="r">'+fmtUSD(x.devUsd)+'</td><td class="r">'+fmtUSD(x.usd-x.devUsd)+'</td><td class="r">'+fmtBs(x.bs-x.devBs)+'</td></tr>';});
+ h+='<tr class="tot"><td>TOTAL</td><td class="r">'+fmtUSD(R.usd)+'</td><td class="r">'+fmtUSD(R.devUsd)+'</td><td class="r">'+fmtUSD(R.netoUsd)+'</td><td class="r">'+fmtBs(R.netoBs)+'</td></tr></table>';
+ h+='<div class="amar">CXC: crédito generado '+fmtUSD(R.creditoGenerado||0)+' · reducciones '+fmtUSD(R.creditoReducido||0)+' · aumento neto '+fmtUSD((R.creditoGenerado||0)-(R.creditoReducido||0))+'. No es dinero recibido.</div>';
+ if(R.devoluciones.length){h+='<h2>Devoluciones del turno</h2><table><tr><th>Hora</th><th>Control</th><th>Habitación</th><th>Concepto</th><th>Se devolvió por</th><th class="r">USD</th></tr>';R.devoluciones.forEach(function(d){h+='<tr><td>'+esc(horaCorta(pfTs(d)))+'</td><td>'+fmtControl(d.control||0)+'</td><td>'+esc(d.hab||'—')+'</td><td>'+esc(d.concepto||'Devolución')+'</td><td>'+esc(d.metodo||'Sin método')+'</td><td class="r">'+fmtUSD(d.montoUsd)+'</td></tr>';});h+='</table>';}
+ return h;
+}
+/* New grouped view uses identity/control evidence; names alone never merge companies. */
+function pfCxcGrupo(r){
+ if(!r||r.estado!=='ocupada')return [];
+ var gs=[r];try{gs=cuartosQuePaganA(r);if(!gs.length)gs=[r];}catch(e){}
+ return cxc().filter(function(e){return e&&!e.anulada&&!e.unidaAId&&gs.some(function(q){var emp=ceEmpresaHab(q);return (!ceRefHab(q)||emp)&&(!emp||ceMismoCliente(e,emp))&&[q.control,q.creditoCxcControl,q.autorizadaCxcControl].filter(Boolean).some(function(ctrl){return ceCuentaEstadia(e,q,ctrl);});});});
+}
+var pfAvisoAnterior=ceAvisoHab;
+ceAvisoHab=function(r){var h=pfAvisoAnterior(r),es=pfCxcGrupo(r);if(es.length<2)return h;var tot=es.reduce(function(v,e){return v+cxcSaldo(e);},0);return h+'<div style="background:#eef6ff;padding:12px;border:1px solid #cfe0f5;border-radius:9px;margin:10px 0"><b>Esta cuenta tiene '+es.length+' CXC vinculadas · saldo total '+fmtUSD(tot)+'</b><p>Revisa todas al cobrar; no se han unido ni duplicado.</p>'+es.map(function(e){return '<div>'+esc(e.nombre)+' · control '+fmtControl(e.control||0)+' · '+fmtUSD(cxcSaldo(e))+'</div>';}).join('')+'</div>';};
+_cxcDeHab=function(r){return cxcCuentaDeHabCobro(r);};
+/* Workstation-local operation batch: all financial writes validate before commit.
+   This does not replace server transactions or resolve two-device concurrent writes. */
+var PF_BATCH=null,PF_ACTION=null,PF_MODAL='',PF_USED={};
+var pfDBGet=DB.get.bind(DB),pfDBSet=DB.set.bind(DB);
+DB.get=function(k,d){if(PF_BATCH&&Object.prototype.hasOwnProperty.call(PF_BATCH.vals,k))return JSON.parse(JSON.stringify(PF_BATCH.vals[k]));return pfDBGet(k,d);};
+function pfPrepararPagos(arr){
+ var old=pfDBGet('pagos',[])||[],by={};old.forEach(function(p){by[String(p.id)]=p;});var seen={},oldCount={},ops={};old.forEach(function(p){var id=String(p.id);oldCount[id]=(oldCount[id]||0)+1;});old.forEach(function(p){if(p.operacionId&&p.registroOperacion)ops[p.operacionId+'|'+p.registroOperacion]=String(p.id);});
+ return arr.map(function(src){var p=JSON.parse(JSON.stringify(src)),id=String(p.id);seen[id]=(seen[id]||0)+1;if(seen[id]>Math.max(1,oldCount[id]||0))throw Error('No se registró: identificador de pago repetido. Vuelve a abrir el cobro.');if(by[id])return p;
+  if(!id||id==='undefined')throw Error('No se registró: identificador de pago repetido. Vuelve a abrir el cobro.');
+  var u=Number(p.montoUsd),b=Number(p.montoBs);if(!Number.isFinite(u)||!Number.isFinite(b)||u<=0||b<0)throw Error('No se registró: importe de pago inválido.');
+  if(!pfTs(p))p.ts=Date.now();else p.ts=pfTs(p);var t=turnoActivo();if(t&&p.turnoId==null)p.turnoId=t.id;p.versionRegistro=APP_VERSION;
+  var sumU=0,sumB=0;cajaLineasDePago(p).forEach(function(l){sumU+=Number(l.montoUsd)||0;sumB+=Number(l.montoBs)||0;});if(Math.abs(sumU-u)>0.011||Math.abs(sumB-b)>0.021)throw Error('No se registró: las formas de pago no suman el total.');
+  p.operacionId=p.operacionId||p.operacionConjunta||PF_ACTION||('OP'+Date.now()+Math.random().toString(36).slice(2,9));p.registroOperacion=p.registroOperacion||(p.reservaLoc?'reserva:'+p.reservaLoc:p.cxcId?'cxc:'+p.cxcId:'cuenta:'+String(p.hab||0));
+  var op=p.operacionId+'|'+p.registroOperacion;if(ops[op])throw Error('Esta operación ya está registrada. No se volvió a cobrar.');ops[op]=id;return p;
+ });
+}
+DB.set=function(k,v){
+ if(window.__consulta)return pfDBSet(k,v);
+ try{if(k==='pagos'&&Array.isArray(v)&&!window.__pfImport)v=pfPrepararPagos(v);
+  if(PF_BATCH){PF_BATCH.vals[k]=JSON.parse(JSON.stringify(v));return;}
+  return pfDBSet(k,v);
+ }catch(e){if(PF_BATCH)PF_BATCH.error=e;throw e;}
+};
+function pfTransaccion(fn){
+ if(PF_BATCH)return fn();var B={vals:{},error:null};PF_BATCH=B;
+ // Defer success messages until local persistence succeeds.
+ var originalAlert=window.alert,originalRender=render,originalMostrar=mostrarResultadoCobro;var avisos=[],pintar=false,resultados=[];
+ window.alert=function(m){avisos.push(m);};render=function(){pintar=true;};mostrarResultadoCobro=function(r){resultados.push(r);};
+ try{var result=fn();if(B.error)throw B.error;var keys=Object.keys(B.vals),raw={};keys.forEach(function(k){raw[k]=lsGet(k);});
+  try{keys.forEach(function(k){localStorage.setItem(tenKey(k),JSON.stringify(B.vals[k]));});}catch(e){keys.forEach(function(k){try{if(raw[k]===null)localStorage.removeItem(tenKey(k));else localStorage.setItem(tenKey(k),raw[k]);}catch(_){} });throw Error('No se pudo guardar la operación completa en este equipo. No vuelvas a cobrar sin comprobar Caja.');}
+  PF_BATCH=null;keys.forEach(function(k){if(SYNC_KEYS.indexOf(k)>=0&&k!=='presencia')_pendAdd(k);});
+  if(keys.length){try{mostrarGuardando();if(CLOUD.enabled&&CLOUD.ready)CLOUD.flushQueue();}catch(e){}}
+  window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;if(pintar)render();resultados.forEach(function(r){mostrarResultadoCobro(r);});avisos.forEach(function(m){originalAlert(m);});return result;
+ }catch(e){PF_BATCH=null;window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;throw e;}
+ finally{PF_BATCH=null;window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;}
+}
+var pfShowModal=showModal;
+showModal=function(h){PF_MODAL='M'+Date.now()+Math.random().toString(36).slice(2,10);window._pagoOkFn=null;return pfShowModal(h);};
+/* Repeated confirmation consumes its callback once; changed balances require review again. */
+var pfConfirmPanel=pagoConfirmarEnPanel;
+pagoConfirmarEnPanel=function(msg,fn,btn){
+ var snap=JSON.stringify([rooms(),cxc(),DB.get('pagos',[]),reservas()]),op=PF_MODAL||('OP'+Date.now()+Math.random().toString(36).slice(2));
+ return pfConfirmPanel(msg,function(){
+  if(snap!==JSON.stringify([rooms(),cxc(),DB.get('pagos',[]),reservas()])){procesoListo(btn);alert('Los saldos o la estadía cambiaron mientras confirmabas. No se registró el pago. Abre el cobro nuevamente.');return;}
+  if(PF_USED[op]){alert('Esta confirmación ya fue procesada. No se volvió a cobrar.');return;}
+  PF_ACTION=op;try{pfTransaccion(fn);PF_USED[op]=true;}catch(e){procesoListo(btn);alert(e.message);}finally{PF_ACTION=null;}
+ },btn);
+};
+pagoConfirmarSi=function(b){var f=window._pagoOkFn;window._pagoOkFn=null;if(b)b.disabled=true;if(f)try{f();}catch(e){alert(e.message);}};
+/* Advisory reference check before confirmation; valid grouped parts are exempt. */
+var pfPMLeer=pmLeer;
+pmLeer=function(prefix){var x=pfPMLeer(prefix);if(!x.ok)return x;var hit=[];
+ x.metodos.forEach(function(l){if(!l.ref)return;var prior=DB.get('pagos',[]).find(function(p){return !pfAnulado(p)&&cajaLineasDePago(p).some(function(m){return String(m.metodo).trim().toUpperCase()===String(l.metodo).trim().toUpperCase()&&String(m.ref).trim().toUpperCase()===String(l.ref).trim().toUpperCase();});});if(prior)hit.push(l.metodo+' · referencia '+l.ref+' · control '+fmtControl(prior.control||0));});
+ var mark=PF_MODAL+'|'+JSON.stringify(hit);if(hit.length&&window.__pfRefOk!==mark){if(!confirm('Referencia ya registrada:\n'+hit.join('\n')+'\n\nComprueba el comprobante. ¿Confirmas que es una operación distinta?'))return {ok:false,msg:'Revisa la referencia antes de registrar el pago.'};window.__pfRefOk=mark;}return x;};
+function pfFechaValida(iso){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||'')))return false;var d=new Date(iso+'T12:00:00Z');return !isNaN(d)&&d.toISOString().slice(0,10)===iso;}
+function pfValidarNoches(ent,sal,n){return pfFechaValida(ent)&&pfFechaValida(sal)&&Number.isInteger(Number(n))&&Number(n)>0&&nochesEntreISO(ent,sal)===Number(n);}
+function pfGuardEstadia(r){if(!r)return true;if(r.estado==='ocupada'&&!pfValidarNoches(entradaISO(r),r.salida,r.noches)){alert('Hab. '+r.num+': entrada, salida y noches no coinciden. Revisa las fechas antes de extender o quitar noches. No se cambió el cobro.');return false;}if((r.creditoCxc||habMitadACxc(r))&&!cxcCuentaDeHabCobro(r)){alert('Hab. '+r.num+': el vínculo CXC no corresponde a la estadía actual. Requiere revisión antes de agregar o quitar cargos.');return false;}return true;}
+function pfEnvolver(nombre,validar){var f=window[nombre];if(typeof f!=='function')return;window[nombre]=function(){var args=arguments,key=(PF_MODAL||'directo')+'|'+nombre,btn=Array.from(args).find(function(x){return x&&x.tagName==='BUTTON';});
+ if(PF_USED[key]){procesoListo(btn);return;}
+ if(validar&&!validar.apply(null,args)){procesoListo(btn);return;}
+ var antes=JSON.stringify([rooms(),cxc(),DB.get('pagos',[]),reservas()]);PF_ACTION=key;
+ try{var v=pfTransaccion(function(){return f.apply(null,args);});if(antes!==JSON.stringify([rooms(),cxc(),DB.get('pagos',[]),reservas()]))PF_USED[key]=true;return v;}
+ catch(e){procesoListo(btn);alert(e.message);}finally{PF_ACTION=null;}
+ };}
+pfEnvolver('cobrarAnticipoConfirm');pfEnvolver('cxcAbonarConfirm');pfEnvolver('cxcAgregarCargoConfirm');
+pfEnvolver('guardarPagoManual');pfEnvolver('cobrarYCheckout');pfEnvolver('csPagoConfirm');pfEnvolver('csGuardarConfirm');pfEnvolver('csAnularPago');
+pfEnvolver('guardarReserva',function(){var e=(document.getElementById('res-entrada')||{}).value,s=(document.getElementById('res-salida')||{}).value;if(!pfFechaValida(e)||!pfFechaValida(s)||nochesEntreISO(e,s)<1){alert('Revisa las fechas de llegada y salida de la reserva.');return false;}return true;});
+pfEnvolver('checkin',function(num){var n=Number((document.getElementById('m-noches')||{}).value),sal=(document.getElementById('m-salida')||{}).value||fechaSalidaAuto(n);if(!pfValidarNoches(hoyISO(),sal,n)){alert('La salida debe corresponder a la entrada más las noches indicadas. Revisa antes de hacer check-in.');return false;}return true;});
+pfEnvolver('confirmarCheckinReserva',function(loc){var r=reservas().find(function(x){return x.loc===loc;}),n=Number((document.getElementById('cr-noches')||{}).value);if(r&&(!pfFechaValida(r.fechaEntrada)||!pfFechaValida(r.fechaSalida)||diffNoches(r.fechaEntrada,r.fechaSalida)<1||!Number.isInteger(n)||n<1)){alert('Revisa las fechas de la reserva antes de ingresar.');return false;}return true;});
+pfEnvolver('extenderEstadiaConfirm',function(num){return pfGuardEstadia(cuentaRaizDe(num)||findRoom(num));});
+pfEnvolver('quitarNochesConfirm',function(num){return pfGuardEstadia(cuentaRaizDe(num)||findRoom(num));});
+pfEnvolver('guardarCargoExtra',function(num){var r=findRoom(num);return !(r&&r.creditoCxc&&!cxcCuentaDeHabCobro(r))||pfGuardEstadia(r);});
+/* Signed credits include undo events but exclude inter-company transfers. */
+var pfCorteDatos=corteDatos;
+corteDatos=function(fecha,turno){var D=pfCorteDatos(fecha,turno);var t=turno&&turno!=='todos'?turnos().find(function(x){return String(x.id)===String(turno);}):null;var ks=t?pfMovsTurno(t):kardexAll().filter(function(k){return diaKey(new Date(k.ts))===fecha;});D.cred=ks.filter(function(k){return k.tipo==='credito'||(k.tipo==='cxc'&&k.credUsd!=null);}).map(pfCredito);D.credUsd=D.cred.reduce(function(a,k){return a+Number(k.credUsd||0);},0);D.credBs=D.cred.reduce(function(a,k){return a+Number(k.credBs||0);},0);return D;};
 
 </script>
 </body>
