@@ -407,7 +407,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v2.08 · 27/11/2026';
+const APP_VERSION = 'v2.09 · 27/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -2374,6 +2374,7 @@ function renderRecepcion(){
   const c = document.getElementById('content');
   let html = '<div class="section-title">Panel de Recepción</div>';
   const _rol = session().rol;
+  if(_rol==='supervisor'){ const ta=turnoActivo(); html += '<div style="padding:12px;border:1px solid #cbd5e1;border-radius:10px;margin-bottom:14px;font-size:13px">'+(ta?('Turno de <b>'+esc(ta.nombre||ta.usuario)+'</b> abierto. Tus movimientos quedan en ese turno como realizados por <b>'+esc(session().nombre||session().user)+'</b> (Supervisor).'):'🔒 No hay turno de Recepción abierto. Solicita su apertura para registrar operaciones. Puedes consultar y ver reportes.')+'</div>'; }
   const esConfig = ROLES_CONFIGURABLES.indexOf(_rol)>=0;
   // Pestañas según los permisos que el Master activó para este rol
   const _perm = permisosDe(_rol);
@@ -14874,6 +14875,7 @@ function salidaCobrarPrimero(numsStr){
   cobrarCuentaModal(numsStr);
 }
 function abrirTurno(){
+  if(!session() || session().rol!=='recepcion'){ alert('Solo Recepción puede abrir el turno. El Supervisor registra sus movimientos en el turno de Recepción que esté abierto.'); return; }
   const _a0=turnoActivo(); if(_a0){ alert('Ya hay un turno abierto a nombre de '+(_a0.nombre||'otro usuario')+' (desde '+fechaHoraCorta(_a0.inicio)+'). Debe cerrarlo esa persona antes de abrir otro turno.'); return; }
   const s=session(); const t=turnos();
   t.unshift({ id:'t'+Date.now(), usuario:s.user, nombre:s.nombre, inicio:new Date().toISOString(), fin:null, abierto:true });
@@ -14884,7 +14886,7 @@ function abrirTurno(){
 }
 function requiereTurnoAbierto(){
   const s=session(); if(!s) return false;
-  if(s.rol!=='recepcion') return false;
+  if(s.rol!=='recepcion' && s.rol!=='supervisor') return false;
   if(turnoDeOtro()) return false;
   return !turnoActivo();
 }
@@ -14925,12 +14927,14 @@ function pagoConfirmarNo(b){
 function btnEvento(){ try{ return (typeof event!=='undefined' && event && event.currentTarget) ? event.currentTarget : null; }catch(e){ return null; } }
 function procesoReset(id){ try{ var b=document.getElementById(id); if(b) b.disabled=false; }catch(e){} }
 function guardTurno(){
+  if(session() && session().rol==='supervisor' && !turnoActivo()){ pedirAbrirTurno(); return true; }
   const s=session(); const o=turnoDeOtro();
   if(o && s && s.rol==='recepcion'){ alert('Cobros y ventas bloqueados. El turno esta abierto a nombre de '+(o.nombre||'otro usuario')+' desde '+fechaHoraCorta(o.inicio)+'. Pide que cierre su turno para poder cobrar o vender.'); return true; }
   if(requiereTurnoAbierto()){ pedirAbrirTurno(); return true; }
   return false;
 }
 function pedirAbrirTurno(){
+  if(session() && session().rol==='supervisor'){ showModal('<h2>🔒 No hay turno de Recepción abierto</h2><p>Solicita a Recepción que abra su turno. Tus movimientos quedarán en ese turno, con tu nombre como Supervisor.</p><p>Puedes seguir consultando y viendo reportes. No se registró ninguna operación.</p><div class="actions"><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>'); return; }
   let body='<button class="close" onclick="cerrarModal()">×</button>';
   body+='<h2>🕐 Primero abre tu turno</h2>';
   body+='<div style="font-size:14px;color:#44526a;line-height:1.6;margin:8px 0 6px">Para registrar <b>ventas y cobros</b> necesitas tener tu <b>turno abierto</b>. Así cada movimiento queda a tu nombre.</div>';
@@ -14940,6 +14944,8 @@ function pedirAbrirTurno(){
 }
 function abrirTurnoDesdeAviso(){ cerrarModal(); abrirTurno(); }
 function cerrarTurno(){
+  if(!session() || session().rol!=='recepcion'){ alert('Solo Recepción puede cerrar su turno.'); return; }
+  if(turnoDeOtro()){ alert('Solo el recepcionista titular puede cerrar este turno.'); return; }
   const t=turnos(); const a=t.find(x=>x.abierto); if(!a){ alert('No hay ningún turno abierto.'); return; }
   try{ var _iniT=new Date(a.inicio); var _trRec=turnoRecepDe(_iniT.getHours()); if(_trRec){ var _cierreT=new Date(_iniT); _cierreT.setHours(Number(_trRec.hasta),0,0,0); if(_cierreT<=_iniT) _cierreT.setDate(_cierreT.getDate()+1); if(new Date()<_cierreT){ if(!confirm('⚠️ TODAVÍA no es la hora de cerrar tu turno.\n\nTu turno '+(_trRec.nombre||'')+' cierra a las '+fmtHora12(_trRec.hasta)+'.\n\nSi lo cierras ahora, el corte se hará antes de tiempo.\n\n¿Cerrar de todas formas?')) return; } } }catch(_){}
   if(!confirm('¿Cerrar el turno de '+a.nombre+'?\n\nSe hará el CORTE completo: todo lo que se cobró en este turno y las habitaciones que quedan sin cobrar (pasan como pendientes para el siguiente turno).')) return;
@@ -15000,17 +15006,22 @@ const KTIPO = { checkin:{t:'Check-in',c:'var(--verde)'}, checkout:{t:'Check-out'
 function renderKardex(){
   let h='';
   const act = turnoActivo();
+  const esTitular=!!(session() && session().rol==='recepcion' && (!act || act.usuario===session().user));
+  const esSupervisor=!!(session() && session().rol==='supervisor');
   h += '<div style="background:#fff;padding:18px;border-radius:12px;max-width:640px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:20px">';
   if(act){
     h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
     h += '<div style="width:12px;height:12px;border-radius:50%;background:var(--verde)"></div>';
     h += '<div style="flex:1;min-width:180px"><div style="font-weight:700">Turno abierto · '+esc(act.nombre)+'</div><div style="font-size:12.5px;color:#55637a">Desde '+fechaHoraCorta(act.inicio)+' · '+duracionTurno(act)+' · '+kardexDeTurno(act.id).length+' movimiento(s)</div></div>';
-    h += '<button class="btn-red" onclick="cerrarTurno()">Cerrar turno</button></div>';
+    if(esTitular) h += '<button class="btn-red" onclick="cerrarTurno()">Cerrar turno</button>';
+    h += '</div>';
+    if(esSupervisor) h += '<p style="color:#1d6b38;font-size:13px">Tus movimientos quedan en este turno como realizados por <b>'+esc(session().nombre||session().user||'Supervisor')+'</b> (Supervisor).</p>';
   } else {
     h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
     h += '<div style="width:12px;height:12px;border-radius:50%;background:#c3ccda"></div>';
-    h += '<div style="flex:1;min-width:180px"><div style="font-weight:700">No hay turno abierto</div><div style="font-size:12.5px;color:#55637a">Abre tu turno al empezar para que cada movimiento quede a tu nombre.</div></div>';
-    h += '<button class="btn-green" onclick="abrirTurno()">Abrir mi turno</button></div>';
+    h += '<div style="flex:1;min-width:180px"><div style="font-weight:700">No hay turno abierto</div><div style="font-size:12.5px;color:#55637a">'+(esSupervisor?'Solicita a Recepción que abra el turno para registrar operaciones. Puedes consultar y ver reportes.':'Abre tu turno al empezar para que cada movimiento quede a tu nombre.')+'</div></div>';
+    if(esTitular) h += '<button class="btn-green" onclick="abrirTurno()">Abrir mi turno</button>';
+    h += '</div>';
   }
   h += '</div>';
   const ts = turnos();
@@ -15046,11 +15057,11 @@ function turnoBloque(t){
   h += '<button class="btn-ghost" style="padding:6px 12px" onclick="exportarKardexCSV(\''+t.id+'\')">Excel</button>';
   h += '</div>';
   if(movs.length===0){ h += '<div style="padding:16px;color:#8893a5;font-size:13px">Sin movimientos en este turno.</div></div>'; return h; }
-  h += '<div style="overflow-x:auto"><table class="users-table" style="box-shadow:none;border-radius:0"><tr><th>Hora</th><th>Tipo</th><th>Hab.</th><th>Cliente / Huésped</th><th>Detalle</th><th style="text-align:right">Monto</th></tr>';
+  h += '<div style="overflow-x:auto"><table class="users-table" style="box-shadow:none;border-radius:0"><tr><th>Hora</th><th>Tipo</th><th>Realizado por</th><th>Hab.</th><th>Cliente / Huésped</th><th>Detalle</th><th style="text-align:right">Monto</th></tr>';
   movs.forEach(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo,c:'#888'};
     let monto = (Number(m.montoBs||0)>0) ? (fmtBs(m.montoBs)+'<div style="font-size:11px;color:#8893a5">'+fmtUSD(m.montoUsd)+'</div>') : '—';
     if(m.tipo==='credito' && Number(m.credBs||0)>0){ monto='<span style="color:#b36b00">'+fmtBs(m.credBs)+'</span><div style="font-size:11px;color:#b36b00">'+fmtUSD(m.credUsd)+' · crédito</div>'; }
-    h += '<tr><td style="white-space:nowrap">'+horaCorta(m.ts)+'</td><td><span style="color:'+k.c+';font-weight:700">'+k.t+'</span></td><td>'+(m.hab?m.hab:'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td style="font-size:12.5px;color:#55637a">'+esc(m.detalle||'')+(m.metodo?(' · '+esc(m.metodo)):'')+'</td><td style="text-align:right;white-space:nowrap">'+monto+'</td></tr>';
+    h += '<tr><td style="white-space:nowrap">'+horaCorta(m.ts)+'</td><td><span style="color:'+k.c+';font-weight:700">'+k.t+'</span></td><td>'+esc(m.usuario||'—')+(m.usuarioRol?(' · '+esc(m.usuarioRol)):'')+'</td><td>'+(m.hab?m.hab:'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td style="font-size:12.5px;color:#55637a">'+esc(m.detalle||'')+(m.metodo?(' · '+esc(m.metodo)):'')+'</td><td style="text-align:right;white-space:nowrap">'+monto+'</td></tr>';
   });
   h += '</table></div></div>';
   return h;
@@ -15058,8 +15069,8 @@ function turnoBloque(t){
 function exportarKardexCSV(turnoId){
   const t = turnos().find(x=>x.id===turnoId); const movs = kardexDeTurno(turnoId);
   if(!movs.length){ alert('No hay movimientos en este turno para exportar.'); return; }
-  const headers=['Hora','Tipo','Habitacion','Cliente/Huesped','Detalle','Metodo','Monto Bs','Monto USD'];
-  const rows=movs.map(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; return [fechaHoraCorta(m.ts), k.t, m.hab||'', m.huesped||'', m.detalle||'', m.metodo||'', Number(m.montoBs||0).toFixed(2), Number(m.montoUsd||0).toFixed(2)]; });
+  const headers=['Hora','Tipo','Realizado por','Rol','Habitacion','Cliente/Huesped','Detalle','Metodo','Monto Bs','Monto USD'];
+  const rows=movs.map(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; return [fechaHoraCorta(m.ts), k.t, m.usuario||'', m.usuarioRol||'', m.hab||'', m.huesped||'', m.detalle||'', m.metodo||'', Number(m.montoBs||0).toFixed(2), Number(m.montoUsd||0).toFixed(2)]; });
   _descargarXLS('kardex_'+(t?t.nombre.replace(/\s+/g,'_'):turnoId)+'.xls', headers, rows);
 }
 /* ===== CORTE POR TURNO: desde que se abre hasta que se cierra, aislado del turno anterior ===== */
@@ -15076,7 +15087,7 @@ function rolDeUsuario(nombre){
 function cobradoPorOtros(p, t){
   var u=String((p&&p.usuario)||'').trim().toLowerCase(); if(!u) return false;
   var mine=String((t&&t.nombre)||'').trim().toLowerCase(); if(u===mine) return false;
-  var r=rolDeUsuario(u);
+  var r=(p&&p.usuarioRol)||rolDeUsuario(u);
   return (r==='supervisor' || r==='supervisora' || r==='master' || r==='admin' || r==='administracion');
 }
 function pagosDeRango(ini,fin){
@@ -15332,14 +15343,14 @@ function corteTurnoBloques(B){
 function imprimirKardex(turnoId){
   const t=turnos().find(x=>x.id===turnoId); const movs=kardexDeTurno(turnoId);
   let cobrUsd=0,cobrBs=0; movs.forEach(m=>{cobrUsd+=Number(m.montoUsd||0);cobrBs+=Number(m.montoBs||0);});
-  let filas=''; movs.forEach(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; let bs=(Number(m.montoBs||0)>0?fmtBs(m.montoBs):'—'); let usd=(Number(m.montoUsd||0)>0?fmtUSD(m.montoUsd):'—'); if((m.tipo==='credito'||m.tipo==='cxc')&&Math.abs(Number(m.credUsd||0))>0.009){ bs=fmtBs(m.credBs)+' (créd.)'; usd=fmtUSD(m.credUsd)+' (créd.)'; } filas+='<tr><td>'+horaCorta(m.ts)+'</td><td>'+k.t+'</td><td>'+(m.hab||'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td>'+esc((m.detalle||'')+(m.metodo?(' · '+m.metodo):''))+'</td><td class="r">'+bs+'</td><td class="r">'+usd+'</td></tr>'; });
-  if(!filas) filas='<tr><td colspan="7" class="c" style="color:#888;padding:18px">Sin movimientos</td></tr>';
+  let filas=''; movs.forEach(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; let bs=(Number(m.montoBs||0)>0?fmtBs(m.montoBs):'—'); let usd=(Number(m.montoUsd||0)>0?fmtUSD(m.montoUsd):'—'); if((m.tipo==='credito'||m.tipo==='cxc')&&Math.abs(Number(m.credUsd||0))>0.009){ bs=fmtBs(m.credBs)+' (créd.)'; usd=fmtUSD(m.credUsd)+' (créd.)'; } filas+='<tr><td>'+horaCorta(m.ts)+'</td><td>'+k.t+'</td><td>'+esc(m.usuario||'—')+(m.usuarioRol?(' · '+esc(m.usuarioRol)):'')+'</td><td>'+(m.hab||'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td>'+esc((m.detalle||'')+(m.metodo?(' · '+m.metodo):''))+'</td><td class="r">'+bs+'</td><td class="r">'+usd+'</td></tr>'; });
+  if(!filas) filas='<tr><td colspan="8" class="c" style="color:#888;padding:18px">Sin movimientos</td></tr>';
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Kardex turno</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:14px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   html+='<h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('kardex','Kardex de Recepción'))+'</h1>'+hotelLinePrint();
   html+='<div class="sub">Turno de <b>'+esc(t?t.nombre:'')+'</b> · '+(t?fechaHoraCorta(t.inicio):'')+(t&&t.fin?(' a '+fechaHoraCorta(t.fin)):' (abierto)')+' · Duración: '+(t?duracionTurno(t):'')+' · Generado: '+new Date().toLocaleString('es-VE')+'</div>';
-  html+='<table><tr><th>Hora</th><th>Tipo</th><th>Hab.</th><th>Cliente / Huésped</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filas;
-  html+='<tr class="tot"><td colspan="5">TOTAL COBRADO EN EL TURNO</td><td class="r">'+fmtBs(cobrBs)+'</td><td class="r">'+fmtUSD(cobrUsd)+'</td></tr></table>';
+  html+='<table><tr><th>Hora</th><th>Tipo</th><th>Realizado por</th><th>Hab.</th><th>Cliente / Huésped</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filas;
+  html+='<tr class="tot"><td colspan="6">TOTAL COBRADO EN EL TURNO</td><td class="r">'+fmtBs(cobrBs)+'</td><td class="r">'+fmtUSD(cobrUsd)+'</td></tr></table>';
   if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Entregado por<br>(Recepcionista)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
   html+=piePaginaHTML()+'</body></html>';
   return imprimirHTML(html);
@@ -18658,6 +18669,52 @@ function svValidarLote(B){
 var svUnir=unirCuentasV2;
 unirCuentasV2=function(){var args=arguments;return pfTransaccion(function(){var res=svUnir.apply(null,args);if(!res||!res.ok){var err=Error(res&&res.msg||'No se pudo unir la cuenta.');if(PF_BATCH)PF_BATCH.error=err;throw err;}return res;});};
 pfEnvolver('_unirVariasConfirmar');pfEnvolver('separarCuenta');pfEnvolver('separarHabDeCuenta');
+
+
+/* [TURNO-SUPERVISOR-209] Only new operations: no startup migration or history reassignment.
+   Client-side protection; existing offline synchronization behavior is unchanged. */
+var TS_MODAL=null;
+function tsSupervisor(){return !!(session()&&session().rol==='supervisor');}
+function tsGuardOperacion(){
+ if(!tsSupervisor())return false;
+ if(guardTurno())return true;
+ var t=turnoActivo();
+ if(TS_MODAL && (TS_MODAL.turnoId!==String(t.id)||TS_MODAL.usuario!==String(session().user||session().nombre))){
+  alert('El turno o el usuario cambió mientras esta ventana estaba abierta. No se registró la operación. Cierra la ventana y vuelve a abrirla en el turno actual.');return true;
+ }
+ return false;
+}
+var tsShowModal=showModal;
+showModal=function(h){var t=turnoActivo(),s=session();TS_MODAL=tsSupervisor()?{turnoId:t?String(t.id):'',usuario:String(s.user||s.nombre)}:null;return tsShowModal(h);};
+var tsCerrarModal=cerrarModal;
+cerrarModal=function(){TS_MODAL=null;return tsCerrarModal.apply(this,arguments);};
+var tsLogKardex=logKardex;
+logKardex=function(tipo,data){
+ if(tsSupervisor()&&tsGuardOperacion())throw Error('Operación bloqueada: requiere el turno abierto de Recepción.');
+ var s=session(),t=turnoActivo();
+ return tsLogKardex(tipo,Object.assign({},data||{},s?{usuario:s.nombre||s.user||'',usuarioId:s.user||'',usuarioRol:s.rol||'',turnoId:t?t.id:null}:{}));
+};
+var tsDBSet=DB.set;
+DB.set=function(k,v){
+ if(!window.__consulta && !window.__pfImport && Array.isArray(v) && ['pagos','devoluciones'].indexOf(k)>=0){
+  var prev=DB.get(k,[]),ids={};prev.forEach(function(x){ids[String(x.id)]=true;});
+  var nuevos=v.some(function(x){return !ids[String(x.id)];});
+  if(nuevos && tsSupervisor() && tsGuardOperacion())throw Error('No se registró: solicita a Recepción que abra el turno y vuelve a abrir la operación.');
+  var s=session(),t=turnoActivo();
+  if(nuevos&&s)v=v.map(function(x){return ids[String(x.id)]?x:Object.assign({},x,{usuario:s.nombre||s.user||'',usuarioId:s.user||'',usuarioRol:s.rol||'',turnoId:t?t.id:null});});
+ }
+ return tsDBSet(k,v);
+};
+var tsTransaccion=pfTransaccion;
+pfTransaccion=function(fn){
+ if(tsSupervisor()&&tsGuardOperacion())throw Error('No se registró: el turno de Recepción ya no está disponible.');
+ return tsTransaccion(fn);
+};
+function tsEnvolver(n){var f=window[n];if(typeof f!=='function')throw Error('Falta operación protegida: '+n);window[n]=function(){if(tsGuardOperacion()){Array.from(arguments).forEach(function(x){if(x&&x.tagName==='BUTTON')procesoListo(x);});return;}return f.apply(this,arguments);};}
+var TS_OPERACIONES=['checkin','confirmarCheckinReserva','checkoutSinCobro','checkoutCuenta','checkoutConDeuda','checkoutCxcConfirm','cobrarYCheckout','cobrarCuentaConfirm','cobrarAnticipoConfirm','guardarPagoManual','cxcAbonarConfirm','cxcAgregarCargoConfirm','extenderEstadiaConfirm','quitarNochesConfirm','guardarCargoExtra','guardarCargo','quitarCargoConfirm','guardarReserva','cancelarReserva','eliminarReserva','resLiberarApartado','resCancelarLlegada','noShowMarcar','noShowDesmarcar','confirmarCambioHab','enviarACxCConfirm','asigEmpCuentaConfirm','asigEmpAplicar','salidaSoloAjustar','salidaConfirmar','salidaCobrarPrimero','salidaRegistrarAnticipada','confirmarAnularPago','confirmarEditarPago','crpConfirmar','csPagoConfirm','csGuardarConfirm','csAnularPago','ceConfirm','ccConfigurarConfirmar','chAutorizarConfirmar','chQuitarConfirmar','extenderGuardarComidasNuevas','separarCuenta','separarHabDeCuenta','_unirVariasConfirmar','forzarLibre','corregirNombreConfirm','ponerEnEspera','guardarAcompPost','guardarMenorPost','quitarMenorPost','quitarCoronaHab','reabrirCuentaHab','quitarPagoDeCuenta','cobrarSinCheckout','cambiarPromoHab','cxcAnularConfirm','cxcReactivar','guardarCliente','emitComidasInc','soltarCuentaMapa','cxcJuntarCuentas','cxcDeshacerConfirm','extenderEstadiaModal','resCancelarLlegadaModal'];
+TS_OPERACIONES.forEach(tsEnvolver);
+var tsPagoSi=pagoConfirmarSi;
+pagoConfirmarSi=function(b){if(tsGuardOperacion()){window._pagoOkFn=null;procesoListo(b);return;}return tsPagoSi(b);};
 
 </script>
 </body>
