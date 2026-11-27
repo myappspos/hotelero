@@ -350,7 +350,7 @@ body.consulta .topbar{top:38px}
 <!-- Chip: estado de guardado en la nube -->
 <div id="guardado-chip"><span class="dot"></span><span id="guardado-txt">Guardado</span></div>
 <!-- Chip: version de la app (para saber que version tiene cada equipo) -->
-<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v2.04 · 26/11/2026</span></div>
+<div id="ver-chip" onclick="verVersionModal()" title="Toca para ver la versión de la app">🏷️ <span id="ver-txt">v2.06 · 27/11/2026</span></div>
 
 <!-- ===== MODAL ===== -->
 <div class="modal-bg" id="modal-bg">
@@ -407,7 +407,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v2.04 · 26/11/2026';
+const APP_VERSION = 'v2.07 · 27/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -1988,6 +1988,7 @@ function cerrarNotif(){ const p=document.getElementById('notif-panel'); if(p) p.
 function cerrarNotifOut(ev){ const w=document.getElementById('notif-wrap'); if(w && !w.contains(ev.target)) cerrarNotif(); }
 let _roomsRaw=null, _roomsCache=null;
 function rooms(){
+  if(typeof PF_BATCH!=='undefined'&&PF_BATCH)return DB.get('rooms',[]);
   const raw=lsGet('rooms');
   if(raw===_roomsRaw && _roomsCache) return _roomsCache;
   try{ _roomsCache = raw?JSON.parse(raw):[]; }catch(e){ _roomsCache=[]; }
@@ -2054,7 +2055,11 @@ function cerrarControlDeHab(room){
   try{
     const c=parseInt(room&&room.control)||0; if(!c) return;
     const r=reservas().find(function(x){ return (parseInt(x.control)||0)===c && x.controlEstado!=='cerrado'; });
-    if(r && r.estado!=='cancelada' && r.estado!=='noshow'){ cerrarControlReserva(r.loc,'checkout'); }
+    if(r && r.estado!=='cancelada' && r.estado!=='noshow'){
+      /* [LLEGADAS-207] El control es del grupo: no se cierra mientras queden llegadas por ingresar. */
+      var _pend207=resIngresos207(r).length&&resHabsDe(r).length>resIngresos207(r).length;
+      if(!_pend207) cerrarControlReserva(r.loc,'checkout');
+    }
   }catch(e){}
 }
 /* ---- Habitaciones de un control (incluye los tramos por cambio de habitación) ---- */
@@ -2553,6 +2558,11 @@ function anticipoPropioEstadia203(a,r){
   var guardados=(r.abonos||[]).filter(function(x){return x&&String(x.id)===String(a.id);});
   if(!a.id||!guardados.length||guardados[0]!==a)return false;
   var res=reservas().find(function(x){return x.loc===loc;});
+  if(res&&a.id&&String(a.id).indexOf('abR207-')===0){
+    var asign207=(res.anticipoAplicaciones207||[]).find(function(x){return x.id===a.id;});
+    var ingreso207=asign207&&resIngreso207(res,asign207.idx);
+    return !!(asign207&&ingreso207&&Number(asign207.num)===Number(r.num)&&asign207.clienteId===r.clienteId&&Math.round(Number(asign207.montoUsd)*100)===Math.round(Number(a.montoUsd)*100)&&asign207.entrada===entradaISO(r)&&ingreso207.clienteId===r.clienteId&&Number(ingreso207.num)===Number(r.num)&&a.controlEstadiaCliente===r.clienteId&&a.estadiaEntrada204===entradaISO(r));
+  }
   if(!res||res.estado!=='ingresada'||Number(res.control||0)!==Number(a.controlEstadia||a.controlOriginal||a.control||0))return false;
   var rc=Number(r.control||0),sc=Number(res.control||0);
   if(rc!==sc&&Number(r.controlMovido||0)!==sc)return false;
@@ -2584,7 +2594,7 @@ function abonoPropioEstadia204(a,r){
 function abonoCuentaUsd(a, r){
   if(!a || a.anulado || a.anulada) return 0;
   if(r&&r.creditoCxc&&cargosDe(r).some(function(c){return c.destinoConsumo==='huesped';}))return 0;
-  var m=Number(a.montoUsd||0); if(!(m>0)) return 0;
+  var m=svAbonoDisponible(a); if(!(m>0)) return 0;
   if(a.soloConsumo || (r&&r.creditoCxc&&a.cxc)) return 0;
   /* [CONTROL-1] El control que manda es UNO solo para toda la cuenta: el numero mas alto
      del grupo (la principal). Antes, si la secundaria no dejaba su control, se tomaba el
@@ -2967,7 +2977,7 @@ function resChoqueHab(num, entrada, salida, excluir){
   return reservas().find(function(r){
     if(r.estado!=='pendiente'||r.loc===excluir||!r.fechaEntrada) return false;
     var fin=(r.fechaEntrada<=hoyISO())?'9999-12-31':r.fechaSalida;
-    return resHabsDe(r).some(function(x){return String(x.hab)===String(num);}) && resCruce(entrada,salida,r.fechaEntrada,fin);
+    return resPendientes207(r).some(function(x){return String(x.hab)===String(num);}) && resCruce(entrada,salida,r.fechaEntrada,fin);
   })||null;
 }
 function resValidarUso(num,entrada,salida,excluir){
@@ -2977,14 +2987,14 @@ function resValidarUso(num,entrada,salida,excluir){
   alert('No se puede ocupar o extender la Hab. '+num+'.\n\nEstá protegida para '+r.loc+' · '+((r.nombre||'')+' '+(r.apellido||'')).trim()+'\nLlegada: '+fmtFechaCorta(r.fechaEntrada)+' · Salida: '+fmtFechaCorta(r.fechaSalida)+'\n\nLa otra estadía puede salir el mismo día de llegada de la reserva, pero no después. Si el reservado no llegó, debes resolver la reserva: no se libera sola.');
   return false;
 }
-function resPendHab(num,soloApartado){ return reservas().filter(function(r){return r.estado==='pendiente'&&(!soloApartado||resEnApartado(r))&&resHabsDe(r).some(function(x){return String(x.hab)===String(num);});}).sort(function(a,b){return String(a.fechaEntrada).localeCompare(String(b.fechaEntrada));}); }
+function resPendHab(num,soloApartado){ return reservas().filter(function(r){return r.estado==='pendiente'&&(!soloApartado||resEnApartado(r))&&resPendientes207(r).some(function(x){return String(x.hab)===String(num);});}).sort(function(a,b){return String(a.fechaEntrada).localeCompare(String(b.fechaEntrada));}); }
 function resAvisoHab(num){
   var arr=resPendHab(num,false); if(!arr.length) return '';
   return '<div style="background:#fff8e1;color:#795800;border:1px solid #e7c46a;border-radius:9px;padding:10px;margin:10px 0;font-size:13px">'+arr.map(function(r){return '🔒 '+(resEnApartado(r)?'<b>Apartada por reserva</b>':'<b>Reserva futura</b>')+' · '+esc(r.loc)+' · '+esc(((r.nombre||'')+' '+(r.apellido||'')).trim())+' · llega '+esc(fmtFechaCorta(r.fechaEntrada));}).join('<br>')+'<br>Puede venderse hasta esa fecha inclusive para la salida. Hay que desocupar y limpiar antes del nuevo check-in.<div id="res-uso-aviso" role="status"></div></div>';
 }
 function resTextoCard(r){
   if(r.estado!=='pendiente') return '';
-  var hs=resHabsDe(r),faltan=hs.filter(function(x){return !x.hab;}).length;
+  var hs=resPendientes207(r),faltan=hs.filter(function(x){return !x.hab;}).length;
   var txt=(resAnticipoUsd(r)>0.009?'✅ Confirmada con pago':'🕒 Sin anticipo registrado');
   txt+=' · '+(resEnApartado(r)?'🔒 Apartado activo':'Apartado visible desde '+fmtFechaCorta(sumarDiasISO(r.fechaEntrada,-resApartarDias())));
   if(faltan) txt+=' · ⚠️ Falta asignar '+faltan+' habitación(es)'+(r.apartadoLiberado?' · Bloqueo retirado por Supervisión: '+r.apartadoLiberado.motivo:'');
@@ -2998,10 +3008,10 @@ function resTextoCard(r){
 }
 function resResumenApartados(){
   var list=reservas().filter(resEnApartado),nums={};
-  list.forEach(function(r){resHabsDe(r).forEach(function(x){if(x.hab) nums[String(x.hab)]=1;});});
-  var pendientes=list.filter(function(r){return resHabsDe(r).some(function(x){return !x.hab;});}).length;
+  list.forEach(function(r){resPendientes207(r).forEach(function(x){if(x.hab) nums[String(x.hab)]=1;});});
+  var pendientes=list.filter(function(r){return resPendientes207(r).some(function(x){return !x.hab;});}).length;
   if(!list.length)return '';
-  return '<div style="background:#fff8e1;border:1px solid #e7c46a;border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;line-height:1.7"><b>🔒 '+Object.keys(nums).length+' habitaciones apartadas por reserva</b>'+(pendientes?' · ⚠️ '+pendientes+' reserva(s) sin asignación completa':'')+'<br>'+list.map(function(r){return esc(r.loc)+' · '+esc(((r.nombre||'')+' '+(r.apellido||'')).trim())+' · llega '+esc(fmtFechaCorta(r.fechaEntrada))+' · Hab. '+esc(resHabsDe(r).map(function(x){return x.hab||'sin asignar';}).join(', '));}).join('<br>')+'<br>Si están ocupadas o no están listas, Recepción y Supervisión deben resolverlo. No se expulsa a nadie ni se libera automáticamente un no show.<br><button type="button" class="btn-primary" data-res-ver>Ver reservas</button></div>';
+  return '<div style="background:#fff8e1;border:1px solid #e7c46a;border-radius:12px;padding:14px;margin-bottom:14px;font-size:13px;line-height:1.7"><b>🔒 '+Object.keys(nums).length+' habitaciones apartadas por reserva</b>'+(pendientes?' · ⚠️ '+pendientes+' reserva(s) sin asignación completa':'')+'<br>'+list.map(function(r){return esc(r.loc)+' · '+esc(((r.nombre||'')+' '+(r.apellido||'')).trim())+' · llega '+esc(fmtFechaCorta(r.fechaEntrada))+' · Hab. '+esc(resPendientes207(r).map(function(x){return x.hab||'sin asignar';}).join(', '));}).join('<br>')+'<br>Si están ocupadas o no están listas, Recepción y Supervisión deben resolverlo. No se expulsa a nadie ni se libera automáticamente un no show.<br><button type="button" class="btn-primary" data-res-ver>Ver reservas</button></div>';
 }
 function resLiberarApartado(loc){
   if(session().rol!=='supervisor'||!puede('liberarApartadoReserva')){alert('Solo Supervisión con permiso del Master puede retirar un apartado.');return;}
@@ -3011,7 +3021,7 @@ function resLiberarApartado(loc){
   var motivo=prompt('Motivo obligatorio para retirar las habitaciones de '+loc+'. La reserva y el anticipo permanecen; debes reubicarla.','');
   if(motivo===null)return;motivo=String(motivo).trim();if(!motivo){alert('Debes escribir el motivo.');return;}
   if(!confirm('¿Retirar las habitaciones apartadas de '+loc+'? Quedará una alerta de asignación pendiente.'))return;
-  var hs=resHabsDe(r).map(function(x){return Object.assign({},x,{hab:''});}),prev=resHabsDe(r).map(function(x){return x.hab||'';});
+  var hs=resHabsDe(r).map(function(x,i){return resIngreso207(r,i)?x:Object.assign({},x,{hab:''});}),prev=resPendientes207(r).map(function(x){return x.hab||'';});
   r.habs=hs;r.habPref='';r.apartadoLiberado={fecha:nowISO(),por:session().nombre||session().user,motivo:motivo,habitaciones:prev};
   saveReservas(list);logKardex('reserva',{hab:0,huesped:r.nombre||'',detalle:'Apartado retirado '+loc+' · Hab. '+prev.join(', ')+' · Motivo: '+motivo+' · Por '+r.apartadoLiberado.por,montoUsd:0,montoBs:0,metodo:''});render();
 }
@@ -3137,7 +3147,7 @@ function calSegsRoom(num,y,m){
     reservas().forEach(function(res){
       var est=String(res.estado||'pendiente').toLowerCase();
       if(est!=='pendiente') return; /* las ya ingresadas se pintan como estadía en la habitación */
-      resHabsDe(res).forEach(function(h){
+      resPendientes207(res).forEach(function(h){
         if(String(h.hab||'')!==String(num)) return;
         var a=calDiaRel(res.fechaEntrada,y,m), b=calDiaRel(res.fechaSalida,y,m);
         if(a==null||b==null) return;
@@ -3180,9 +3190,10 @@ function calReservaModal(loc){
   var ant=0; try{ ant=resAnticipoUsd(r); }catch(e){}
   if(ant>0) h+='<div style="color:#1d6b38">💰 Anticipo: <b>'+fmtUSD(ant)+'</b></div>';
   h+='<div style="margin-top:6px">'+resEstadoBadge(r.estado)+'</div></div>';
+  h+=resProgresoHTML207(r);
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">';
   if(String(r.estado)==='pendiente') h+='<button class="btn-green" style="padding:9px 14px" onclick="cerrarModal();checkinReservaModal(\''+escA(r.loc)+'\')">✅ Check-in</button>';
-  h+='<button class="btn-gray" style="padding:9px 14px" onclick="cerrarModal();nuevaReservaModal(\''+escA(r.loc)+'\')">✏️ Editar</button>';
+  if(!resTieneIngresos207(r))h+='<button class="btn-gray" style="padding:9px 14px" onclick="cerrarModal();nuevaReservaModal(\''+escA(r.loc)+'\')">✏️ Editar</button>';
   h+='<button class="btn-gray" style="padding:9px 14px" onclick="calIrReserva(\''+escA(r.loc)+'\')">📋 Ver en Reservas</button>';
   h+='</div>';
   showModal(h);
@@ -3225,7 +3236,7 @@ function renderCalendario(){
   h+='<span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#d64045;vertical-align:middle"></span> Estado actual de la habitación</span>';
   h+='<span><span style="display:inline-block;width:22px;height:12px;border-radius:4px;background:#fff3d6;border:1px solid #f0c96b;vertical-align:middle"></span> Hoy</span>';
   h+='</div>';
-  var sinHab=0; try{ sinHab=reservas().filter(function(r){ if(String(r.estado||'pendiente')!=='pendiente') return false; return resHabsDe(r).every(function(h){ return !h.hab; }); }).length; }catch(e){}
+  var sinHab=0; try{ sinHab=reservas().filter(function(r){ if(String(r.estado||'pendiente')!=='pendiente') return false; return resPendientes207(r).every(function(h){ return !h.hab; }); }).length; }catch(e){}
   if(sinHab>0) h+='<div style="margin-top:8px;font-size:12px;color:#8a5100;background:#fff8e8;border:1px solid #f0c96b;border-radius:8px;padding:7px 10px">⚠️ '+sinHab+' reserva(s) sin habitación asignada: no se pueden pintar aquí. <a href="#" onclick="calIrReservas();return false" style="color:#8a5100;font-weight:800">Ver en Reservas</a></div>';
   h+='<div style="font-size:12px;color:#8893a5;margin-top:8px;line-height:1.55">Toca una barra para ver la reserva o la ficha de la habitación. Toca un día libre para crear una reserva en esa habitación y esa fecha. La barra ocupa las <b>noches</b>: el día de salida ya no se pinta.</div>';
   h+='</div>';
@@ -3416,7 +3427,7 @@ function reservaRows(q){
     else { _gCer.push(r); if(e!=='noshow') _nCancel++; }
   });
   let h='';
-  h+=resSeccionHTML('🛎️ Por llegar','Reservas que todavía no hacen check-in','#1b6ca8',_gPend,q);
+  h+=resSeccionHTML('🛎️ Por llegar','Reservas con llegadas pendientes (incluye ingresos parciales)','#1b6ca8',_gPend,q);
   h+=resSeccionHTML('✅ Ya ingresaron','Huéspedes que ya están en su habitación','#1d6b38',_gIng,q);
   h+=resSeccionHTML('🚫 Canceladas / no show',(_nCancel?_nCancel+' cancelada'+(_nCancel>1?'s':''):'')+(_nCancel&&_gCer.length>_nCancel?' · ':'')+(_gCer.length>_nCancel?(_gCer.length-_nCancel)+' no show':''),'#8893a5',_gCer,q);
   return h;
@@ -3444,6 +3455,7 @@ function resCardHTML(r){
     if(r.tarifa) h+='<span>💵 '+fmtUSD(r.tarifa)+'/noche</span>';
     if(r.telefono) h+='<span>📞 '+esc(r.telefono)+'</span>';
     h+='</div>';
+    h+=resProgresoHTML207(r);
     var _rhabs=resHabsDe(r); if(_rhabs.length===1 && _rhabs[0].hab && r.estado==='pendiente') h+='<div style="font-size:12.5px;color:#2b5ca8;background:#eef4fd;border:1px solid #cddff5;border-radius:8px;padding:6px 10px;margin-bottom:6px">🛏️ Habitación <b>'+esc(String(_rhabs[0].hab))+'</b> asignada a esta reserva · precio amarrado</div>';
     if(_rhabs.length>1){ h+='<div style="font-size:12.5px;color:#2b5ca8;background:#eef4fd;border:1px solid #cddff5;border-radius:8px;padding:6px 10px;margin-bottom:6px">🏘️ Reserva de <b>'+_rhabs.length+' habitaciones</b>: '+esc(_rhabs.map(function(x,i){ return '#'+(i+1)+' '+(x.tipo||'cualquiera')+(x.hab?(' → Hab. '+x.hab):'')+' · '+fmtUSD(x.tarifa||0)+'/n'; }).join('  ·  '))+'</div>'; }
     if(r.empresaRef) h+='<div style="font-size:12.5px;color:#55637a;margin-bottom:6px">🏢 '+esc(r.empresaRef)+'</div>';
@@ -3454,6 +3466,7 @@ function resCardHTML(r){
     if(r.notas) h+='<div style="font-size:12.5px;color:#8893a5;margin-bottom:6px;font-style:italic">“'+esc(r.notas)+'”</div>';
     if(r.estado==='pendiente'){ var _totR=resTotalReserva(r); if(_totR>0) h+='<div style="font-size:12.5px;color:#44526a;margin-bottom:6px">🧾 Total de la reserva: <b>'+fmtUSD(_totR)+'</b> ('+fmtBs(precioBs(_totR))+')</div>'; }
     var _ant=resAnticipoUsd(r);
+    if(_ant>0&&resIngresos207(r).length)h+='<div style="font-size:12.5px;color:#1d6b38;margin-bottom:6px">Anticipo aplicado: '+fmtUSD(resAplicadoAnt207(r))+' · guardado sin aplicar: '+fmtUSD(Math.max(0,_ant-resAplicadoAnt207(r)))+'.'+(resIngresos207(r).some(function(e){return resPendienteAnt207(r,e.idx)>0.009&&!resHabitacionIngreso207(r,e);})?' Hay una parte de estadía cerrada o cambiada que debe revisar Administración; no se aplicará a otro huésped.':'')+'</div>';
     if(_ant>0) h+='<div style="font-size:12.5px;color:#1d6b38;background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:6px 10px;margin-bottom:6px">💰 Anticipo ya pagado: <b>'+fmtUSD(_ant)+'</b> ('+fmtBs(precioBs(_ant))+')</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
     if(r.estado==='pendiente'){
@@ -3463,14 +3476,14 @@ function resCardHTML(r){
       if(r.cortesiaReserva&&chPuede())h+='<button class="btn-blue" onclick="ccConfigurarModal(\'reserva\',\''+escA(r.loc)+'\')">Configurar cobro de consumos</button>';
       h+=chReservaResumen(r);if(!r.cortesiaReserva&&chPuede())h+='<button class="btn-gray" onclick="chAutorizarModal(\'reserva\',\''+escA(r.loc)+'\')">👑 Cortesía de hospedaje</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="enviarLocalizador(\''+r.loc+'\')">📲 Enviar localizador</button>';
-      h+='<button class="btn-gray" style="padding:8px 14px" onclick="nuevaReservaModal(\''+r.loc+'\')">✏️ Editar</button>';
-      h+='<button class="btn-gray" style="padding:8px 14px" onclick="cancelarReserva(\''+r.loc+'\')">❌ Cancelar</button>';
-      if(noShowOn() && puede('marcarNoShow') && r.fechaEntrada && String(r.fechaEntrada)<hoyISO()) h+='<button class="btn-gray" style="padding:8px 14px" onclick="noShowMarcar(\''+r.loc+'\')">🚫 No show (no llegó)</button>';
+      if(!resTieneIngresos207(r))h+='<button class="btn-gray" style="padding:8px 14px" onclick="nuevaReservaModal(\''+r.loc+'\')">✏️ Editar</button>';
+      if(!resTieneIngresos207(r))h+='<button class="btn-gray" style="padding:8px 14px" onclick="cancelarReserva(\''+r.loc+'\')">❌ Cancelar</button>';
+      if(!resTieneIngresos207(r) && noShowOn() && puede('marcarNoShow') && r.fechaEntrada && String(r.fechaEntrada)<hoyISO()) h+='<button class="btn-gray" style="padding:8px 14px" onclick="noShowMarcar(\''+r.loc+'\')">🚫 No show (no llegó)</button>';
     } else if(r.estado==='noshow') {
       if(puede('marcarNoShow')) h+='<button class="btn-gray" style="padding:8px 14px" onclick="noShowDesmarcar(\''+r.loc+'\')">↩️ Quitar no show</button>';
-      h+='<button class="btn-gray" style="padding:8px 14px" onclick="eliminarReserva(\''+r.loc+'\')">🗑️ Eliminar</button>';
+      if(!resTieneIngresos207(r))h+='<button class="btn-gray" style="padding:8px 14px" onclick="eliminarReserva(\''+r.loc+'\')">🗑️ Eliminar</button>';
     } else {
-      h+='<button class="btn-gray" style="padding:8px 14px" onclick="eliminarReserva(\''+r.loc+'\')">🗑️ Eliminar</button>';
+      if(!resTieneIngresos207(r))h+='<button class="btn-gray" style="padding:8px 14px" onclick="eliminarReserva(\''+r.loc+'\')">🗑️ Eliminar</button>';
     }
     h+='</div></div>';
     return h;
@@ -3480,6 +3493,58 @@ function resHabsDe(r){
   if(r && Array.isArray(r.habs) && r.habs.length) return r.habs;
   return [{tipo:(r&&r.tipoPreferido)||'', hab:(r&&(r.habPref||''))||'', tarifa:(r&&Number(r.tarifa))||0, personas:(r&&r.personas)||1, ninos:(r&&r.ninos)||0, acompanantes:(r&&Array.isArray(r.acompanantes))?r.acompanantes:[]}];
 }
+
+/* [LLEGADAS-207] Nuevas operaciones solamente; sin migrar reservas ni pagos antiguos.
+   Cada plaza reservada mantiene identidad estable incluso tras salir su ocupante. */
+var RP207_MODAL=null;
+function resIngresos207(r){return Array.isArray(r&&r.ingresosReserva)?r.ingresosReserva:[];}
+function resIngreso207(r,i){return resIngresos207(r).find(function(x){return Number(x.idx)===Number(i);})||null;}
+function resPendientes207(r){return resHabsDe(r).filter(function(x,i){return !resIngreso207(r,i);});}
+function resTieneIngresos207(r){return !!(resIngresos207(r).length||(r&&r.habsAsignadas||[]).length||(r&&r.estado==='ingresada'));}
+function resGuardEdicion207(r){if(resTieneIngresos207(r)){alert('Esta reserva ya tiene ingresos registrados. No se puede editar, cancelar, eliminar ni marcar toda la reserva como no show. Los ingresos y los anticipos quedan intactos. Atiende las llegadas pendientes desde Check-in y los cambios de estadía desde la habitación.');return false;}return true;}
+function resProgreso207(r){var n=resHabsDe(r).length,entr=resIngresos207(r).length||(r.estado==='ingresada'?n:0);return entr+' de '+n+' ingresada'+(n===1?'':'s')+(entr<n?' · '+(n-entr)+' pendiente'+(n-entr===1?'':'s'):' · Completa');}
+function resProgresoHTML207(r){
+ if(!resIngresos207(r).length&&r.estado!=='pendiente')return '';
+ var h='<div style="background:#eef4fd;border:1px solid #cddff5;border-radius:8px;padding:9px 11px;margin:8px 0;font-size:13px"><b>'+esc(resProgreso207(r))+'</b>';
+ resHabsDe(r).forEach(function(x,i){var e=resIngreso207(r,i);h+='<div style="margin-top:4px">#'+(i+1)+' · '+(e?'✅ '+esc(e.nombre)+' · Hab. '+esc(String(e.num))+' · '+esc(fmtFechaCorta(e.entrada)):'⏳ Pendiente'+(x.hab?' · apartada Hab. '+esc(String(x.hab)):''))+'</div>';});
+ return h+'</div>';
+}
+function resPesosAnt207(r){
+ var hs=resHabsDe(r),p=Array.isArray(r.anticipoPesos207)&&r.anticipoPesos207.length===hs.length?r.anticipoPesos207:hs.map(function(x){return Math.max(0,Number(x.tarifa)||0)*Math.max(1,diffNoches(r.fechaEntrada,r.fechaSalida)||1);});
+ if(!p.some(function(x){return x>0;}))p=hs.map(function(){return 1;});return p;
+}
+function resCuotasAnt207(r){
+ var p=resPesosAnt207(r),sum=p.reduce(function(a,x){return a+x;},0),out=p.map(function(){return 0;}),deps=Array.isArray(r.anticipos)?r.anticipos:[{montoUsd:resAnticipoUsd(r)}];
+ deps.forEach(function(a){var cents=Math.round(Number(a.montoUsd||0)*100),base=p.map(function(x){return Math.floor(cents*x/sum);}),used=base.reduce(function(t,x){return t+x;},0),rank=p.map(function(x,i){return {i:i,rest:cents*x/sum-base[i]};}).sort(function(a,b){return b.rest-a.rest||a.i-b.i;});
+  for(var n=0;n<cents-used;n++)base[rank[n%rank.length].i]++;base.forEach(function(c,i){out[i]+=c;});
+ });return out.map(function(c){return c/100;});
+}
+function resAplicadoAnt207(r,i){return (r.anticipoAplicaciones207||[]).filter(function(a){return i==null||Number(a.idx)===Number(i);}).reduce(function(t,a){return Math.round((t+Number(a.montoUsd||0))*100)/100;},0);}
+function resPendienteAnt207(r,i){return Math.max(0,Math.round((resCuotasAnt207(r)[i]-resAplicadoAnt207(r,i))*100)/100);}
+function resAbonoAnt207(r,i,num,clienteId,entrada){
+ var usd=resPendienteAnt207(r,i);if(!(usd>0.009))return [];
+ if(!r.anticipoPesos207)r.anticipoPesos207=resPesosAnt207(r).slice();
+ var id='abR207-'+r.loc+'-'+i+'-'+Math.round(resAplicadoAnt207(r,i)*100)+'-'+Math.round(resAnticipoUsd(r)*100);
+ var ts=new Date().toISOString(),a={id:id,idx:i,num:Number(num),clienteId:clienteId,entrada:entrada,montoUsd:usd,fecha:ts};
+ if(!Array.isArray(r.anticipoAplicaciones207))r.anticipoAplicaciones207=[];
+ r.anticipoAplicaciones207.push(a);
+ return [{id:id,concepto:'Anticipo reserva '+r.loc,montoUsd:usd,montoBs:precioBs(usd),fecha:ts,control:Number(r.control)||0,controlEstadia:Number(r.control)||0,reservaLoc:r.loc,hab:Number(num),origen:'reserva',controlEstadiaCliente:clienteId,estadiaEntrada204:entrada}];
+}
+function resHabitacionIngreso207(r,e){var rm=findRoom(Number(e.num));return rm&&rm.estado==='ocupada'&&rm.reservaLoc207===r.loc&&Number(rm.reservaIdx207)===Number(e.idx)&&rm.clienteId===e.clienteId&&entradaISO(rm)===e.entrada?rm:null;}
+function resRevisarDocumento207(r,dt,ced,extra,idx){
+ var docs=[{docTipo:dt,docNum:ced}].concat(extra||[]),seen={};
+ for(var j=0;j<docs.length;j++){
+  var d=docs[j],key=(d.docTipo||'V')+'|'+normDoc(d.docNum);
+  if(seen[key]){alert('El mismo documento aparece dos veces en este ingreso. Revisa al huésped y acompañantes.');return false;}seen[key]=true;
+  var antes=resIngresos207(r).some(function(e){return [{docTipo:e.docTipo,docNum:e.docNum}].concat(e.acompanantes||[]).some(function(v){return (v.docTipo||'V')+'|'+normDoc(v.docNum)===key;});});
+  if(antes){alert('Este huésped ya fue ingresado en esta reserva. Elige la llegada pendiente correcta; no se volvió a registrar.');return false;}
+  if(Number(idx)!==0&&r.docNum&&(r.docTipo||'V')+'|'+normDoc(r.docNum)===key){alert('Este documento corresponde al huésped principal, reservado en la llegada #1. Selecciona esa llegada para ingresarlo.');return false;}
+  var ocupado=rooms().find(function(rm){if(rm.estado!=='ocupada')return false;var c=clientes().find(function(x){return x.id===rm.clienteId;});return (c&&((c.docTipo||'V')+'|'+normDoc(c.docNum)===key))||(rm.acompanantes||[]).some(function(v){return (v.docTipo||'V')+'|'+normDoc(v.docNum)===key;});});
+  if(ocupado){alert('Este documento ya está alojado en la Hab. '+ocupado.num+'. No se duplicó el ingreso.');return false;}
+ }return true;
+}
+document.addEventListener('click',function(ev){var b=ev.target.closest('[data-rp-slot]');if(!b)return;if(RP207_MODAL&&Number(b.dataset.rpSlot)!==RP207_MODAL.idx){if(!confirm('¿Cambiar la llegada seleccionada? Los datos sin confirmar de este formulario no se guardarán.'))return;}checkinReservaModal(b.dataset.rpLoc,Number(b.dataset.rpSlot));});
+
 function resHabsInit(d){
   var arr=(d&&Array.isArray(d.habs)&&d.habs.length)?d.habs:[{tipo:(d&&d.tipoPreferido)||'', hab:(d&&(d.habPref||''))||'', tarifa:(d&&Number(d.tarifa))||0, personas:(d&&d.personas)||1, ninos:(d&&d.ninos)||0, acompanantes:(d&&Array.isArray(d.acompanantes))?d.acompanantes:[]}];
   _resHabs=arr.map(function(x){ return {tipo:x.tipo||'', hab:(x.hab!=null?String(x.hab):''), tarifa:Number(x.tarifa)||0, personas:parseInt(x.personas)||1, ninos:parseInt(x.ninos)||0, acompanantes:Array.isArray(x.acompanantes)?x.acompanantes:[]}; });
@@ -3497,7 +3562,7 @@ function resRoomOptions(sel, filtroTipo){
     if(r.estado!=='pendiente') return;
     if(!(r.fechaEntrada && r.fechaSalida)) return;
     if(String(r.fechaEntrada)>=hoy) return;      // reserva futura: el cuarto se puede reservar igual
-    resHabsDe(r).forEach(function(x){ if(x.hab) ocupadas[String(x.hab)]=1; });
+    resPendientes207(r).forEach(function(x){ if(x.hab) ocupadas[String(x.hab)]=1; });
   });
   var h='<option value="">— Elegir habitación —</option>';
   var arr=rooms().slice().sort(function(a,b){return (a.num||0)-(b.num||0);});
@@ -3707,6 +3772,7 @@ function chQuitarConfirmar(btn){
 }
 
 function nuevaReservaModal(loc){
+  if(loc){var _rg=reservas().find(function(x){return x.loc===loc;});if(_rg&&!resGuardEdicion207(_rg))return;}
   const r = loc ? reservas().find(x=>x.loc===loc) : null;
   const esEdit = !!r;
   reservaTmpHab=null;
@@ -3889,6 +3955,7 @@ function usarClienteCedulaRes(id){
   if(res) res.innerHTML='<span style="color:var(--verde)">✓ Cliente encontrado: '+esc(nom)+' ('+docLabel(c.docTipo)+' '+esc(c.docNum)+')</span>';
 }
 function guardarReserva(loc){
+  if(loc){var _rg=reservas().find(function(x){return x.loc===loc;});if(_rg&&!resGuardEdicion207(_rg))return;}
   const tipoReserva=(document.getElementById('res-tiporeserva')||{}).value||'persona';
   const nombre=mayusculasYa(document.getElementById('res-nombre').value.trim());
   const docNum=document.getElementById('res-docnum').value.trim();
@@ -3965,10 +4032,15 @@ function guardarReserva(loc){
   }
 }
 function habitacionesLibres(){ return rooms().filter(r=>r.estado==='libre'); }
-function checkinReservaModal(loc){
+function checkinReservaModal(loc,seleccion){
   if(guardTurno()) return;
   const r=reservas().find(x=>x.loc===loc); if(!r){ alert('No se encontró la reserva.'); return; }
+  if(r.estado!=='pendiente'){alert('Esta reserva ya no tiene llegadas pendientes.');return;}
+  if((r.habsAsignadas||[]).length&&!resIngresos207(r).length){alert('Esta reserva antigua tiene habitaciones ingresadas pero no identifica sus llegadas. Requiere revisión; no se duplicó ningún ingreso.');return;}
   const habsR=resHabsDe(r);
+  var idx=Number.isInteger(seleccion)?seleccion:habsR.findIndex(function(x,i){return !resIngreso207(r,i);});
+  if(idx<0||idx>=habsR.length||resIngreso207(r,idx)){alert('Esta llegada ya fue ingresada o no existe.');return;}
+  RP207_MODAL={loc:loc,idx:idx,snapshot:JSON.stringify(r)};
   const libres=habitacionesLibres();
   if(libres.length===0){
     const nom0=((r.nombre||'')+' '+(r.apellido||'')).trim()||'Huésped';
@@ -3978,31 +4050,31 @@ function checkinReservaModal(loc){
     bb+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn-gray" style="flex:1" onclick="cerrarModal()">Cerrar</button><button class="btn-primary" style="flex:2" onclick="ponerEnEspera(\''+r.loc+'\')">⏳ Poner en lista de espera</button></div>';
     showModal(bb); return;
   }
-  var usados={};
-  var defs=habsR.map(function(x){
-    if(x.hab && libres.some(function(l){return String(l.num)===String(x.hab);}) && !usados[x.hab]){ usados[x.hab]=1; return String(x.hab); }
-    var m=libres.find(function(l){ return !usados[l.num] && x.tipo && (l.tipo||'')===x.tipo; });
-    if(m){ usados[m.num]=1; return String(m.num); }
-    var a=libres.find(function(l){ return !usados[l.num]; });
-    if(a){ usados[a.num]=1; return String(a.num); }
-    return '';
+  var defs=habsR.map(function(x,i){
+    if(i!==idx)return '';
+    var opciones=libres.filter(function(l){return !resChoqueHab(l.num,hoyISO(),fechaSalidaAuto(Math.max(1,diffNoches(r.fechaEntrada,r.fechaSalida))),loc);});
+    var elegido=opciones.find(function(l){return String(l.num)===String(x.hab);})||opciones.find(function(l){return x.tipo&&(l.tipo||'')===x.tipo;})||opciones[0];return elegido?String(elegido.num):'';
   });
-  var faltan=habsR.length-libres.length;
   var _esEmpR=(r.docTipo==='J');
   let b='<button class="close" onclick="cerrarModal()">×</button>';
   b+='<h2>Check-in · '+esc(r.loc)+'</h2>';
   b+='<div style="max-height:66vh;overflow:auto;padding-right:4px">';
-  b+='<div style="font-size:12px;color:#55637a;margin:4px 0 10px">Confirma o corrige los <b>datos reales de cada huésped</b> con su cédula en mano. '+(habsR.length>1?'Cada habitación lleva el huésped que la ocupa (para el registro policial); la cuenta sale a nombre del <b>huésped principal</b> con un solo número de control.':'')+'</div>';
+  b+='<div style="font-size:12px;color:#55637a;margin:4px 0 10px">Confirma o corrige los <b>datos reales de cada huésped</b> con su cédula en mano. '+(habsR.length>1?'Cada habitación lleva el huésped que la ocupa (para el registro policial). Se conserva el titular de la reserva y el mismo número de control.':'')+'</div>';
   if((r.empresaRef||'').trim()){ var _empR=empresaPorRef(r.empresaRef); b+='<div style="font-size:12.5px;color:#2b5ca8;background:#eef4fd;border:1px solid #cddff5;border-radius:8px;padding:7px 10px;margin-bottom:10px">🏢 Reserva de empresa: <b>'+esc(_empR?(_empR.nombre||_empR.codigo||r.empresaRef):r.empresaRef)+'</b>.</div>'; }
   var _antCk=resAnticipoUsd(r);
-  if(_antCk>0) b+='<div style="font-size:13px;color:#1d6b38;background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:8px 11px;margin-bottom:10px">💰 Anticipo ya pagado: <b>'+fmtUSD(_antCk)+'</b> ('+fmtBs(precioBs(_antCk))+')'+(habsR.length>1?'. Se aplicará a la primera habitación.':'. Recuérdalo al cobrar el saldo.')+'</div>';
-  b+='<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label class="lbl">Noches</label><input type="number" min="1" id="cr-noches" class="inp" value="'+(diffNoches(r.fechaEntrada,r.fechaSalida))+'"></div><div style="flex:1"></div></div>';
-  b+='<label class="lbl">🍳 Plan de comidas</label>';
-  b+='<select id="cr-plan" class="inp" onchange="rebuildMealRests(\'cr\')">'+planOptions(r.plan||'solo')+'</select>';
-  b+='<div id="cr-meals-box">'+mealRestSelectorsHTML('cr', r.plan||'solo', r.planRest||{})+'</div>';
-  if(faltan>0) b+='<div style="font-size:12.5px;color:#8a5200;background:#fff4e5;border:1px solid #f3c96b;border-radius:8px;padding:8px 10px;margin-bottom:10px">⚠️ Esta reserva es de <b>'+habsR.length+' habitaciones</b> y ahora solo hay <b>'+libres.length+' libre'+(libres.length>1?'s':'')+'</b>. Para ingresar el grupo deben estar todas asignadas y listas; si faltan, pon la reserva en espera.</div>';
-  b+='<label class="lbl">Habitaciones a asignar</label>';
+  b+=resProgresoHTML207(r);
+  b+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+  habsR.forEach(function(x,i){if(!resIngreso207(r,i))b+='<button type="button" class="btn-gray" data-rp-slot="'+i+'" data-rp-loc="'+escA(r.loc)+'"'+(i===idx?' disabled':'')+'>Llegada #'+(i+1)+(i===idx?' · seleccionada':'')+'</button>';});b+='</div>';
+  b+='<input type="hidden" id="cr-slot" value="'+idx+'">';
+  b+='<div style="background:#fff8e1;border:1px solid #e7c46a;border-radius:8px;padding:9px 11px;font-size:13px;margin-bottom:10px">Solo ingresará la llegada <b>#'+(idx+1)+'</b> que selecciones. Las demás seguirán pendientes, aunque ahora no haya habitaciones libres para todas.</div>';
+  if(_antCk>0)b+='<div style="font-size:13px;color:#1d6b38;background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:8px 11px;margin-bottom:10px">Anticipo total: <b>'+fmtUSD(_antCk)+'</b>. Aplicado antes: <b>'+fmtUSD(resAplicadoAnt207(r))+'</b>.<br>Para esta llegada #'+(idx+1)+': <b>'+fmtUSD(resPendienteAnt207(r,idx))+'</b>. Se reparte según el valor de las habitaciones reservadas; la parte de las otras llegadas queda guardada y no se reutiliza. No es un cobro nuevo.</div>';
+  b+='<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label class="lbl">Noches</label><input type="number" min="1" id="cr-noches" class="inp" value="'+Math.max(1,diffNoches(hoyISO(),r.fechaSalida))+'"></div><div style="flex:1"></div></div>';
+  b+='<label class="lbl">🍳 Plan de comidas para esta llegada</label>';
+  b+='<select id="cr-plan" class="inp" onchange="rebuildMealRests(\'cr\')">'+planOptions(idx===0?(r.plan||'solo'):'solo')+'</select>';
+  b+='<div id="cr-meals-box">'+mealRestSelectorsHTML('cr', idx===0?(r.plan||'solo'):'solo', idx===0?(r.planRest||{}):{})+'</div>';
+  b+='<label class="lbl">Habitación y huésped que llegan ahora</label>';
   habsR.forEach(function(x,i){
+    if(i!==idx)return;
     var gDt=(i===0)?(r.docTipo||'V'):'V'; var gEmp=(gDt==='J');
     var gCed=(i===0)?(r.docNum||''):''; var gNom=(i===0)?(r.nombre||''):''; var gApe=(i===0)?(r.apellido||''):'';
     b+='<div style="background:#f6f8fc;border:1px solid #e3e9f4;border-radius:10px;padding:10px 12px;margin-bottom:8px">';
@@ -4056,6 +4128,9 @@ function crhToggleDoc(i){ var dt=document.getElementById('crh'+i+'-doctipo'); va
 function crToggleDoc(){ var dt=document.getElementById('cr-doctipo'); var w=document.getElementById('cr-apellido-wrap'); if(dt&&w) w.style.display=(dt.value==='J')?'none':''; var n=document.getElementById('cr-nombre'); if(n) n.placeholder=(dt&&dt.value==='J')?'Razón social':'Nombre'; if(dt&&dt.value==='J'){ var a=document.getElementById('cr-apellido'); if(a) a.value=''; } }
 function confirmarCheckinReserva(loc){
   var _pre=reservas().find(function(x){return x.loc===loc;});if(!_pre||_pre.estado!=='pendiente'){alert('La reserva ya no está pendiente.');return;}
+  var slotEl=document.getElementById('cr-slot'),slot=slotEl?Number(slotEl.value):-1;
+  if(!RP207_MODAL||RP207_MODAL.loc!==loc||RP207_MODAL.idx!==slot||!Number.isInteger(slot)||slot<0||slot>=resHabsDe(_pre).length||resIngreso207(_pre,slot)){alert('Esta llegada ya fue ingresada o el formulario no está vigente. Abre Check-in nuevamente.');return;}
+  if(RP207_MODAL.snapshot!==JSON.stringify(_pre)){alert('La reserva o sus anticipos cambiaron mientras confirmabas. No se ingresó nadie. Abre Check-in nuevamente para revisar.');return;}
   var _nPre=Number((document.getElementById('cr-noches')||{}).value)||1;
   var _sPre=fechaSalidaAuto(_nPre);
   for(var _p=0;_p<resHabsDe(_pre).length;_p++){var _ns=Number((document.getElementById('crh'+_p+'-hab')||{}).value)||0;if(_ns&&!resValidarUso(_ns,hoyISO(),_sPre,loc))return;}
@@ -4067,8 +4142,9 @@ function confirmarCheckinReserva(loc){
   var _rPlanRest=restsConDefault(_rPlan, collectMealRests('cr'));
   var asign=[]; var vistos={};
   for(var i=0;i<habsR.length;i++){
+    if(i!==slot)continue;
     var sel=document.getElementById('crh'+i+'-hab'); var numI=sel?parseInt(sel.value):0;
-    if(!numI){ alert('Asigna todas las habitaciones de esta reserva para ingresar el grupo completo. Si faltan habitaciones listas, pon la reserva en espera.'); return; }
+    if(!numI){ alert('Elige una habitación libre para la llegada seleccionada. Las demás quedarán pendientes.'); return; }
     if(vistos[numI]){ alert('Asignaste la habitación '+numI+' a dos reservadas. Elige habitaciones distintas.'); return; }
     var habI=findRoom(numI);
     if(!habI || habI.estado!=='libre'){ alert('La habitación '+numI+' ya no está libre. Elige otra.'); return; }
@@ -4096,12 +4172,16 @@ function confirmarCheckinReserva(loc){
       if(!mensI[_im].folio){ alert('Falta el número de folio del niño '+(_im+1)+' de la habitación reservada '+(i+1)+'. El folio es obligatorio para los menores de edad.'); return; }
     }
     var tEl=document.getElementById('crh'+i+'-tarifa'); var tarI=tEl?(parseFloat(tEl.value)||0):(habsR[i].tarifa||0);
+    if(!Number.isFinite(tarI)||tarI<0||(!r.cortesiaReserva&&!(tarI>0))){alert('Revisa la tarifa por noche de la llegada seleccionada.');return;}
+    if(!resRevisarDocumento207(r,dt,ced,acsI,i))return;
+    var _folios207={};for(var _f207=0;_f207<mensI.length;_f207++){var _fk207=normDoc(mensI[_f207].folio);if(_folios207[_fk207]||resIngresos207(r).some(function(e){return (e.menores||[]).some(function(m){return normDoc(m.folio)===_fk207;});})){alert('Este folio de menor ya aparece en otro ingreso de la reserva. No se duplicó el registro.');return;}_folios207[_fk207]=true;}
+
     vistos[numI]=1;
     asign.push({idx:i, num:numI, tarifa:tarI, hab:habI, def:habsR[i], dt:dt, esEmp:esEmp, ced:ced, nom:nomI, ape:apeI, nombreCompleto:(nomI+' '+apeI).trim(), acs:acsI, menores:mensI, personas:(parseInt(habsR[i].personas)||1)});
   }
   if(asign.length===0){ alert('Asigna al menos una habitación para hacer el check-in.'); return; }
   function resolverCliente(a){
-    var ex=clientes().find(function(c){return normDoc(c.docNum)===normDoc(a.ced);});
+    var ex=clientes().find(function(c){return normDoc(c.docNum)===normDoc(a.ced)&&(c.docTipo||'V')===a.dt;});
     if(ex){
       if((r.empresaRef||'').trim()){ var _l=clientes(); var _c=_l.find(function(x){return x.id===ex.id;}); if(_c && _c.tipo!=='empresa' && !(_c.empresaRef||'').trim()){ _c.empresaRef=r.empresaRef; saveClientes(_l); } }
       return ex.id;
@@ -4111,10 +4191,19 @@ function confirmarCheckinReserva(loc){
       : {id:'c'+Date.now()+'r'+a.num, tipo:'persona', nombre:a.nom, apellido:a.ape, docTipo:a.dt, docNum:a.ced, correo:(a.idx===0?(r.correo||''):''), telefono:(a.idx===0?(r.telefono||''):''), ocupacion:'', ciudad:'', empresaRef:r.empresaRef||'', notas:'', historial:[], creado:new Date().toISOString()};
     var cl=clientes(); cl.push(nuevo); saveClientes(cl); return nuevo.id;
   }
+  var _antPreview=resPendienteAnt207(r,slot),_quedan=habsR.length-resIngresos207(r).length-1;
+  var _reasig207=[];habsR.forEach(function(x,j){if(j!==slot&&!resIngreso207(r,j)&&String(x.hab)===String(asign[0].num))_reasig207.push(j);});
+
+  if(!confirm('Confirmar llegada #'+(slot+1)+' de la reserva '+loc+'\n\n'+asign[0].nombreCompleto+' · Hab. '+asign[0].num+'\n'+noches+' noche(s) · '+fmtUSD(asign[0].tarifa)+'/noche\nAnticipo aplicado a esta llegada: '+fmtUSD(_antPreview)+' (no se cobra otra vez).\n'+(_quedan?_quedan+' llegada(s) seguirán pendientes.':'Esta será la última llegada; la reserva quedará completa.')+(_reasig207.length?'\nLa llegada #'+(_reasig207[0]+1)+' queda pendiente SIN habitación apartada, porque eliges su cuarto. Podrás asignarle otro al llegar.':'')+'\n\n¿Confirmar este ingreso?'))return;
+  // La reasignación se confirma arriba; solo se libera el apartado pendiente, nunca una estadía.
+  if(_reasig207.length){r.habs=resHabsDe(r).map(function(x,j){return _reasig207.indexOf(j)>=0?Object.assign({},x,{hab:''}):x;});}
   asign.forEach(function(a){ a.clienteId=resolverCliente(a); });
-  var tituId=asign[0].clienteId;
-  r.nombre=asign[0].nom; r.apellido=asign[0].ape; r.docTipo=asign[0].dt; r.docNum=asign[0].ced;
-  r.plan=_rPlan; r.planRest=_rPlanRest;
+  var principal=resIngreso207(r,0),titularExistente=clientes().find(function(c){return normDoc(c.docNum)===normDoc(r.docNum)&&(c.docTipo||'V')===(r.docTipo||'V');});
+  var tituId=slot===0?asign[0].clienteId:(r.tituId||(principal&&principal.clienteId)||(titularExistente&&titularExistente.id)||'');
+  if(slot===0){r.nombre=asign[0].nom;r.apellido=asign[0].ape;r.docTipo=asign[0].dt;r.docNum=asign[0].ced;}
+  if(tituId)r.tituId=tituId;
+  // El plan se elige para este ingreso; no altera las comidas de otras llegadas.
+
   const emp=r.empresaRef?empresaPorRef(r.empresaRef):null;
   var _resCtrl=parseInt(r.control)||0;
   if(!_resCtrl){
@@ -4123,7 +4212,7 @@ function confirmarCheckinReserva(loc){
     try{ (r.anticipos||[]).forEach(function(a){ a.controlCuenta=_resCtrl; }); }catch(_e0){}
   } else { r.controlEstado='abierto'; }
   var _antUsd=resAnticipoUsd(r);
-  var _repartoAnt=repartirAnticipoReserva(r, asign.map(function(a){ return {num:a.num, tarifa:a.tarifa, noches:noches}; }));
+  var _repartoAnt=[];
   var primerNum=asign[0].num;
   var _chTs=new Date().toISOString(),_chFecha=revisionFechaCaracas(_chTs);
   asign.forEach(function(a,k){
@@ -4135,10 +4224,11 @@ function confirmarCheckinReserva(loc){
     extras+=acompResumenTxt(acsI);
     extras+=menoresResumenTxt(_mensI);
     if(reub) extras+=' · 🔄 Reubicado (pidió '+(a.def.tipo||'—')+', asignado '+(a.hab.tipo||'—')+')';
-    if(habsR.length>1) extras+=' · Reserva de '+asign.length+' hab. (titular: '+asign[0].nombreCompleto+')';
+    if(habsR.length>1) extras+=' · Reserva de '+habsR.length+' hab. · Llegada #'+(a.idx+1)+' (titular: '+((r.nombre||'')+' '+(r.apellido||'')).trim()+')';
     var _abPrev=[]; // La nueva reserva no hereda abonos de la estadía anterior.
+    _repartoAnt[k]=resAbonoAnt207(r,a.idx,a.num,a.clienteId,_chFecha);
     var _abIni=_abPrev.concat(_repartoAnt[k]||[]);
-    updateRoom(a.num,{estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:(1+acsI.length), ninos:_mensI.length, acompanantes:acsI, menores:_mensI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:_chFecha, salida:_sPre, control:_resCtrl, abonos:_abIni, autorizada:false,autorizadaModo:'',cortesiaConsumos:null,cortesiaHosp:r.cortesiaReserva?Object.assign({},r.cortesiaReserva,{desde:_chTs,consumosDesde:_chTs,primeraNocheGratis:_chFecha,nochesPrevias:0,brutoAnterior:0,descuentoAnterior:0,netoAnterior:0}):null,cortesiaRevisionAdmin:!!(r.cortesiaReserva&&_antUsd>0)});
+    updateRoom(a.num,{reservaLoc207:r.loc,reservaIdx207:a.idx,plan:_rPlan,planRest:_rPlanRest,estado:'ocupada', huesped:a.nombreCompleto, clienteId:a.clienteId, tituId:tituId, personas:(1+acsI.length), ninos:_mensI.length, acompanantes:acsI, menores:_mensI, noches:noches, tarifa:a.tarifa, empresaRef:r.empresaRef||'', checkin:_chFecha, salida:_sPre, control:_resCtrl, abonos:_abIni, autorizada:false,autorizadaModo:'',cortesiaConsumos:null,cortesiaHosp:r.cortesiaReserva?Object.assign({},r.cortesiaReserva,{desde:_chTs,consumosDesde:_chTs,primeraNocheGratis:_chFecha,nochesPrevias:0,brutoAnterior:0,descuentoAnterior:0,netoAnterior:0}):null,cortesiaRevisionAdmin:!!(r.cortesiaReserva&&_antUsd>0)});
     logKardex('checkin', {ts:_chTs, hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, ctrlEntrada:_resCtrl, salidaPrev:_sPre, personas:(1+acsI.length), acompanantes:acsI.map(function(x){ return {nombre:x.nombre, docTipo:x.docTipo, docNum:x.docNum, edad:(x.edad||''), estadoCivil:(x.estadoCivil||''), ocupacion:(x.ocupacion||'')}; }), menores:(_mensI||[]), ninos:(_mensI||[]).length, detalle:'Reserva '+r.loc+' · '+noches+' noche(s) · '+fmtUSD(a.tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||r.empresaRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
     abrirEstadia(a.clienteId, a.num, noches, a.tarifa);
     if(k===0 && _rPlan!=='solo'){
@@ -4150,21 +4240,26 @@ function confirmarCheckinReserva(loc){
     if(_abAnt>0.009){ try{ logKardex('abono',{hab:a.num, huesped:a.nombreCompleto, clienteId:a.clienteId, detalle:'Anticipo de la reserva '+r.loc+' aplicado a la cuenta (Control '+fmtControl(_resCtrl)+')', montoUsd:_abAnt, montoBs:precioBs(_abAnt), metodo:'Anticipo reserva'}); }catch(_e2){} }
     acsI.forEach(function(ac){ registrarAcompanante(a.clienteId, {nombre:ac.nombre, docTipo:ac.docTipo, docNum:ac.docNum, hab:a.num}); });
   });
-  if(_resCtrl){ try{ var _pg=DB.get('pagos',[]); var _chg=false; _pg.forEach(function(p){ if((parseInt(p.control)||0)===_resCtrl && (!p.hab||p.hab===0)){ p.hab=primerNum; _chg=true; } }); if(_chg) DB.save('pagos', _pg); }catch(_e){} }
   var _nums=asign.map(function(a){return a.num;});
-  r.estado='ingresada'; r.hab=_nums.join(', '); r.habsAsignadas=_nums; r.ingresadoEn=new Date().toISOString(); r.enEspera=false;
+  if(!Array.isArray(r.ingresosReserva))r.ingresosReserva=[];
+  asign.forEach(function(a){r.ingresosReserva.push({idx:a.idx,num:a.num,clienteId:a.clienteId,nombre:a.nombreCompleto,docTipo:a.dt,docNum:a.ced,entrada:_chFecha,fecha:_chTs,salida:_sPre,noches:noches,tarifa:a.tarifa,acompanantes:a.acs,menores:a.menores,plan:_rPlan,planRest:_rPlanRest,anticipoUsd:(_repartoAnt[0]||[]).reduce(function(t,x){return t+Number(x.montoUsd||0);},0)});});
+  r.habsAsignadas=resIngresos207(r).map(function(e){return e.num;});r.hab=r.habsAsignadas.join(', ');
+  r.estado=resIngresos207(r).length===habsR.length?'ingresada':'pendiente';
+  r.primerIngresoEn=r.primerIngresoEn||_chTs;r.ultimoIngresoEn=_chTs;if(r.estado==='ingresada')r.ingresadoEn=_chTs;r.enEspera=false;
+  if(slot===0)resIngresos207(r).forEach(function(e){var rm=resHabitacionIngreso207(r,e);if(rm&&rm.tituId!==tituId)updateRoom(e.num,{tituId:tituId});});
   saveReservas(list);
   cerrarModal(); render();
-  modalEnvio({ titulo:'✅ Check-in listo', sub:'<b>'+esc(asign[0].nombreCompleto)+'</b> y su reserva quedaron en '+(_nums.length>1?('las habitaciones '+_nums.join(', ')):('la habitación '+_nums[0]))+'. Puedes enviarle un mensaje de bienvenida:', tel:r.telefono, correo:r.correo, asunto:'Bienvenido(a) a '+nombreHotelMsg(), mensaje:msgBienvenida(asign[0].nombreCompleto, _nums[0]) });
+  modalEnvio({ titulo:'✅ Check-in listo', sub:'<b>'+esc(resProgreso207(r))+'</b><br><b>'+esc(asign[0].nombreCompleto)+'</b> quedó en '+(_nums.length>1?('las habitaciones '+_nums.join(', ')):('la habitación '+_nums[0]))+'. Puedes enviarle un mensaje de bienvenida:', tel:r.telefono, correo:r.correo, asunto:'Bienvenido(a) a '+nombreHotelMsg(), mensaje:msgBienvenida(asign[0].nombreCompleto, _nums[0]) });
 }
 /* ====== RESERVAS QUE NO LLEGARON (NO SHOW) ====== */
 var NL=String.fromCharCode(10);
 function noShowOn(){ const h=hotel(); return h.noShowOn===undefined?true:!!h.noShowOn; }
 function reservasVencidas(){
   const hoy=hoyISO();
-  return reservas().filter(function(r){ return r.estado==='pendiente' && r.fechaEntrada && String(r.fechaEntrada)<hoy; });
+  return reservas().filter(function(r){ return r.estado==='pendiente' && !resTieneIngresos207(r) && r.fechaEntrada && String(r.fechaEntrada)<hoy; });
 }
 function noShowMarcar(loc){
+  var _rg=reservas().find(function(x){return x.loc===loc;});if(_rg&&!resGuardEdicion207(_rg))return;
   if(!puede('marcarNoShow')){ alert('No tienes permiso para marcar reservas que no llegaron. Lo habilita el Master.'); return; }
   if(guardTurno()) return;
   const list=reservas(); const r=list.find(function(x){return x.loc===loc;}); if(!r){ alert('No se encontró la reserva.'); return; }
@@ -4186,6 +4281,7 @@ function noShowMarcar(loc){
   alert('Listo. La reserva '+loc+' quedó marcada como NO SHOW.'+(r.noShowAdminPend?(NL+NL+'El anticipo de '+fmtUSD(ant)+' quedó anotado para que Administración lo revise.'):''));
 }
 function noShowDesmarcar(loc){
+  var _rg=reservas().find(function(x){return x.loc===loc;});if(_rg&&resTieneIngresos207(_rg)){alert('Esta reserva tiene ingresos registrados; no puede volver a ingresarse como una reserva nueva.');return;}
   if(!puede('marcarNoShow')){ alert('No tienes permiso para cambiar esta reserva. Lo habilita el Master.'); return; }
   if(guardTurno()) return;
   const list=reservas(); const r=list.find(function(x){return x.loc===loc;}); if(!r) return;
@@ -4290,6 +4386,7 @@ function limpiarCanceladasViejas(){
   }catch(e){}
 }
 function cancelarReserva(loc){
+  var _rg=reservas().find(function(x){return x.loc===loc;});if(_rg&&!resGuardEdicion207(_rg))return;
   const list=reservas(); const r=list.find(x=>x.loc===loc); if(!r) return;
   if(!confirm('\u00bfCancelar la reserva '+loc+'? Quedara marcada como cancelada pero no se borra.')) return;
   var ant=resAnticipoUsd(r);
@@ -4310,6 +4407,7 @@ function resDejaAnticipo(r){
   return confirm('Esta reserva tiene un anticipo cobrado de '+fmtUSD(ant)+' que ya est\u00e1 en la caja y se queda en el arqueo.\n\n¿Continuar de todas formas?');
 }
 function eliminarReserva(loc){
+  var _rg=reservas().find(function(x){return x.loc===loc;});if(_rg&&!resGuardEdicion207(_rg))return;
   const _r=reservas().find(x=>x.loc===loc);
   if(!_r){ alert('No se encontro la reserva '+loc+'. Puede que ya se haya borrado.'); return; }
   if(!confirm('\u00bfEliminar definitivamente la reserva '+loc+'? Esta accion no se puede deshacer.'+reservaCanceladaMsg(_r))) return;
@@ -4328,6 +4426,7 @@ function resPagoEnReserva(r, concepto){
   return 0;
 }
 function repartirAnticipoReserva(r, habs){
+  if(resTieneIngresos207(r)||(r.anticipoAplicaciones207||[]).length)throw Error('El anticipo de esta reserva ya tiene asignaciones; no puede repartirse desde cero.');
   var total=resAnticipoUsd(r);
   var out=(habs||[]).map(function(){ return []; });
   if(!(total>0.009) || !out.length) return out;
@@ -4391,6 +4490,8 @@ function cobrarAnticipoModal(loc){
 function cobrarAnticipoConfirm(loc){
   if(guardTurno()) return;
   const list=reservas(); const r=list.find(x=>x.loc===loc); if(!r){ alert('No se encontró la reserva.'); return; }
+  if(r.estado!=='pendiente'){alert('Esta reserva ya no tiene llegadas pendientes. Cobra desde la cuenta de la habitación.');return;}
+  if((r.habsAsignadas||[]).length&&!resIngresos207(r).length){alert('Esta reserva antigua ya registra habitaciones ingresadas. Cobra desde la cuenta; no se repartió ningún anticipo.');return;}
   if(r.cortesiaReserva){alert('La reserva tiene cortesía de hospedaje. No se registra un nuevo anticipo desde aquí.');return;}
   const monto=parseFloat((document.getElementById('ant-monto')||{}).value)||0;
   if(!(monto>0)){ alert('Escribe el monto del anticipo.'); return; }
@@ -4399,25 +4500,29 @@ function cobrarAnticipoConfirm(loc){
   const nota=((document.getElementById('ant-nota')||{}).value||'').trim();
   const totalUsd = moneda==='USD'? monto : (monto/tasa());
   const totalBs = precioBs(totalUsd);
+  if(!Number.isFinite(totalUsd)||!Number.isFinite(totalBs)||!(totalUsd>0)||!metodo){alert('Revisa el monto, la tasa y la forma de pago.');return;}
+  var _sim=Object.assign({},r,{anticipos:(r.anticipos||[{montoUsd:resAnticipoUsd(r)}]).concat([{montoUsd:totalUsd}])}),_desc=[];
+  resHabsDe(r).forEach(function(x,i){var e=resIngreso207(r,i),due=resPendienteAnt207(_sim,i);if(!(due>0.009))return;_desc.push('#'+(i+1)+' · '+fmtUSD(due)+(e?(resHabitacionIngreso207(r,e)?' a la cuenta de Hab. '+e.num:' queda reservado: estadía anterior cerrada/cambiada; revisión de Administración'):' guardado para su llegada pendiente'));});
+  if(!confirm('Cobrar anticipo de '+fmtUSD(totalUsd)+' para '+loc+'\n\n'+_desc.join('\n')+'\n\nCada parte se aplica una sola vez, sin modificar pagos previos. ¿Confirmar el cobro?'))return;
   const nom=((r.nombre||'')+' '+(r.apellido||'')).trim()||r.nombre||'Huésped';
   const now=new Date();
   let ctrl=parseInt(r.control)||0;
   if(!ctrl){ ctrl=siguienteControl(); r.control=ctrl; r.controlEstado='abierto'; r.controlAbierto=nowISO(); } else { r.controlEstado='abierto'; }
   const s=session();
   const pagos=DB.get('pagos',[]);
-  pagos.unshift({ id:pfNuevoPagoId(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+  var _pagoAntId=pfNuevoPagoId();
+  pagos.unshift({ id:_pagoAntId, control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
     hab:0, reservaLoc:r.loc, esAnticipo:true, huesped:nom, concepto:'Anticipo reserva '+r.loc+(nota?(' · '+nota):''), metodo:metodo,
     metodos:[{metodo:metodo, montoUsd:totalUsd, montoBs:totalBs}],
     clienteId:'', clienteDoc:(r.docNum||''), clienteCiudad:'',
     montoUsd:totalUsd, montoBs:totalBs, tasa:tasa(), usuario:(s?s.nombre:'') });
   DB.save('pagos', pagos); confirmarControl(ctrl);
-  if(!Array.isArray(r.anticipos)) r.anticipos=[];
-  r.anticipos.push({ts:now.toISOString(), montoUsd:totalUsd, montoBs:totalBs, metodo:metodo, nota:nota, control:ctrl, usuario:(s?s.nombre:'')});
+  if(!Array.isArray(r.anticipos)) r.anticipos=resAnticipoUsd(r)>0?[{montoUsd:resAnticipoUsd(r),origen:'anticipo-legado-conservado'}]:[];
+  r.anticipos.push({id:_pagoAntId,ts:now.toISOString(), montoUsd:totalUsd, montoBs:totalBs, metodo:metodo, nota:nota, control:ctrl, usuario:(s?s.nombre:'')});
   r.anticipoUsd=resAnticipoUsd(r);
   r.confirmadaPago=true;r.confirmadaPagoEn=r.confirmadaPagoEn||now.toISOString();
+  resIngresos207(r).forEach(function(e){var rm=resHabitacionIngreso207(r,e);if(!rm)return;var nuevos=resAbonoAnt207(r,e.idx,e.num,e.clienteId,e.entrada);if(!nuevos.length)return;updateRoom(e.num,{abonos:(rm.abonos||[]).concat(nuevos)});logKardex('abono',{hab:e.num,huesped:rm.huesped||'',clienteId:e.clienteId,detalle:'Nueva parte de anticipo reserva '+r.loc+' aplicada una sola vez · Control '+fmtControl(ctrl),montoUsd:nuevos[0].montoUsd,montoBs:nuevos[0].montoBs,metodo:metodo});});
   saveReservas(list);
-  var _habsIng=[]; try{ _habsIng=(r.habsAsignadas||[]).slice(); }catch(_e){}
-  _habsIng.forEach(function(_n){ var _rm=findRoom(parseInt(_n)); if(_rm && _rm.estado==='ocupada'){ try{ logKardex('abono',{hab:parseInt(_n), huesped:_rm.huesped||'', clienteId:_rm.clienteId||'', detalle:'Anticipo de la reserva '+r.loc+' aplicado a la cuenta (Control '+fmtControl(ctrl)+')', montoUsd:totalUsd, montoBs:totalBs, metodo:metodo}); }catch(_e3){} } if(_rm && _rm.estado==='ocupada'){ var _ab=(Array.isArray(_rm.abonos)?_rm.abonos.slice():[]); _ab.push({id:'ab'+Date.now()+_n, concepto:'Anticipo reserva '+r.loc, montoUsd:totalUsd, montoBs:totalBs, fecha:now.toISOString(), control:ctrl, origen:'reserva'}); updateRoom(parseInt(_n),{abonos:_ab}); } });
   try{ logKardex('pago',{hab:0, huesped:nom, detalle:'Anticipo reserva '+r.loc+(nota?(' · '+nota):''), montoUsd:totalUsd, montoBs:totalBs, metodo:metodo}); }catch(err){}
   cerrarModal(); render();
   alert('Anticipo cobrado.\nReserva: '+r.loc+'\nHuésped: '+nom+'\nControl N° '+fmtControl(ctrl)+'\nMonto: '+fmtUSD(totalUsd)+' · '+fmtBs(totalBs)+'\n\nQuedará recordado para el día del check-in.');
@@ -5889,11 +5994,11 @@ function detalleCuentaHab(r){
       abs=abs.filter(function(a){
         var habA=(a.hab!=null && String(a.hab)!=='')?Number(a.hab):null;
         if(habA!=null) return true;
-        abGen+=Number(a.montoUsd||0);
+        abGen+=svAbonoDisponible(a);
         return false;
       });
     }
-    var ab=abs.reduce(function(a,x){ return a+Number(x.montoUsd||0); },0);
+    var ab=abs.reduce(function(a,x){ return a+svAbonoDisponible(x); },0);
     /* La cortesía cubre hospedaje; los consumos y abonos mantienen su valor. */
     pending.push({q:q, noches:noches, hosp:hosp, d:d, cons:cons, ab:ab, abs:abs, abGen:abGen, cgs:cgs, cort:_cortP});
   });
@@ -6103,7 +6208,7 @@ function abonosDeCuenta(r){
   const out=[]; cuartosQuePaganA(r).forEach(q=>{ (Array.isArray(q.abonos)?q.abonos:[]).forEach(a=>{ if(abonoCuentaUsd(a,q)>0) out.push(a); }); });
   return out;
 }
-function abonosCuentaUsd(r){ return abonosDeCuenta(r).reduce((a,x)=>a+Number(x.montoUsd||0),0); }
+function abonosCuentaUsd(r){ return abonosDeCuenta(r).reduce((a,x)=>a+svAbonoDisponible(x),0); }
 function cargosDe(r){ return Array.isArray(r.cargos)?r.cargos:[]; }
 function restaurantes(){ const r=DB.get('restaurantes',null); return (Array.isArray(r)&&r.filter(x=>String(x).trim()).length)?r.filter(x=>String(x).trim()):['Restaurante 1','Restaurante 2']; }
 function saveRestaurantes(a){ DB.save('restaurantes', (a||[]).map(x=>String(x).trim()).filter(Boolean)); }
@@ -9895,7 +10000,7 @@ function cuadroAbonosHTML(list, costo, saldo){
 function quitarNochesModal(num){
   if(findRoom(num)&&findRoom(num).cortesiaHosp){alert('Las noches anteriores se conservaron al autorizar la cortesía. Para salir, usa check-out; no se devuelve dinero automáticamente.');return;}
   if(guardTurno()) return;
-  var _rq=cuentaRaizDe(num); if(_rq) num=_rq.num;
+  var _rq=cuentaRaizDe(num); if(_rq&&Number(_rq.num)!==Number(num)){alert('Esta habitación está unida a otra cuenta. Revisa y separa la operación antes de quitar noches. No se cambió ningún dato.');return;}
   var r=findRoomAny(num); if(!r||r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
   var noches=Number(nochesHab(r)||0);
   if(noches<=1){ alert('La estadía ya es de 1 noche: no se puede quitar más.'); return; }
@@ -9910,117 +10015,42 @@ function quitarNochesModal(num){
   body+='<div id="qn-prev" style="background:#f3f6fb;border-radius:10px;padding:14px;font-size:14px;color:#44526a"></div>';
   body+='<div id="qn-dev" style="display:none;margin-top:10px;background:#fff8ec;border:1px solid #f3d9ac;border-radius:10px;padding:10px 12px;font-size:12.6px;color:#7a4b00">';
   body+='<div style="font-weight:800;margin-bottom:6px">💵 Ya había pagado. ¿Qué hacemos con lo que sobra?</div>';
-  body+='<label style="display:block;margin-bottom:4px"><input type="radio" name="qn-forma" value="caja" checked> Devolver en efectivo (sale de la caja del turno)</label>';
-  body+='<label style="display:block"><input type="radio" name="qn-forma" value="favor"> Dejar el saldo a favor del huésped (no toca la caja)</label>';
+  body+='<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><input type="radio" name="qn-forma" value="caja" style="width:16px;height:16px;margin:0;flex:0 0 16px"> Devolver en efectivo (sale de la caja del turno)</label>';
+  body+='<label style="display:flex;align-items:center;gap:8px"><input type="radio" name="qn-forma" value="favor" checked style="width:16px;height:16px;margin:0;flex:0 0 16px"> Dejar el saldo a favor del huésped (no toca la caja)</label>';
   body+='</div>';
   body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="quitarNochesConfirm('+num+', this)">Quitar noches</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(body); qnPrev(num);
 }
 function qnPrev(num){
-  var r=findRoomAny(num); if(!r) return;
-  var el=document.getElementById('qn-n'); if(!el) return;
-  var quitar=parseInt(el.value)||0; if(quitar<1) quitar=1;
-  var noches=Number(nochesHab(r)||0);
-  if(quitar>=noches){ quitar=noches-1; el.value=String(quitar); }
-  if(quitar<1) quitar=1;
-  var nuevas=noches-quitar;
-  var hosp=Math.round(Number(brutoHab(r)||0)*100)/100;
-  var porNoche=noches>0?Math.round((hosp/noches)*100)/100:0;
-  var nuevoTotal=Math.round(Math.max(0,hosp-porNoche*quitar)*100)/100;
-  var ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s2,a){ return s2+Number(abonoCuentaUsd(a,r)||0); },0);
-  var pagado=Math.round(Math.max(ab,0)*100)/100;
-  var nuevoSaldo=Math.round(Math.max(0,nuevoTotal-pagado)*100)/100;
-  var sobra=Math.round(Math.max(0,pagado-nuevoTotal)*100)/100;
-  var nuevaSalida=salidaPorNoches(entradaISO(r), nuevas);
-  var e=document.getElementById('qn-prev');
-  if(e){
-    var h='<div style="display:flex;justify-content:space-between"><span>Noches</span><b>'+noches+' → '+nuevas+'</b></div>';
-    h+='<div style="display:flex;justify-content:space-between;margin-top:4px"><span>Hospedaje</span><b>'+fmtUSD(hosp)+' → '+fmtUSD(nuevoTotal)+'</b></div>';
-    if(nuevaSalida) h+='<div style="display:flex;justify-content:space-between;margin-top:4px"><span>Nueva salida</span><b>'+fechaDDMMYYYY(nuevaSalida)+'</b></div>';
-    h+='<div style="display:flex;justify-content:space-between;margin-top:4px"><span>Ya pagado</span><b>'+fmtUSD(pagado)+'</b></div>';
-    if(nuevoSaldo>0.009) h+='<div style="display:flex;justify-content:space-between;margin-top:4px;color:#c0392b"><span>Queda debiendo</span><b>'+fmtUSD(nuevoSaldo)+'</b></div>';
-    if(sobra>0.009) h+='<div style="display:flex;justify-content:space-between;margin-top:4px;color:#1d6b38"><span>Sobra de lo pagado</span><b>'+fmtUSD(sobra)+'</b></div>';
-    e.innerHTML=h;
-  }
-  var dev=document.getElementById('qn-dev');
-  if(dev) dev.style.display=(sobra>0.009?'block':'none');
+ var r=findRoomAny(num),el=document.getElementById('qn-n');if(!r||!el)return;
+ var q=Number(el.value);if(!Number.isInteger(q)||q<1||q>=nochesHab(r))return;
+ var D=svQuitarCalculo(r,q),e=document.getElementById('qn-prev');
+ if(e)e.textContent='Quedan '+D.noches+' noche(s). Hospedaje: '+fmtUSD(D.antes)+' → '+fmtUSD(D.despues)+'. Consumos conservados: '+fmtUSD(D.consumos)+'. Salida: '+fechaDDMMYYYY(D.salida)+'. Excedente disponible: '+fmtUSD(D.sobra)+'. No se devuelve dinero automáticamente.';
+ var dev=document.getElementById('qn-dev');if(dev)dev.style.display=D.sobra>0.009?'block':'none';
 }
-function quitarNochesConfirm(num, btn){
-  if(findRoom(num)&&findRoom(num).cortesiaHosp){alert('El hospedaje anterior a la cortesía quedó fijado.');return;}
-  if(guardTurno()) return;
-  if(procesoDoble(btn)) return;
-  var _rq2=cuentaRaizDe(num); if(_rq2) num=_rq2.num;
-  var r=findRoomAny(num);
-  if(!r){ procesoListo(btn); return; } if(!r||r.estado!=='ocupada'){ procesoListo(btn); return; }
-  var quitar=parseInt((document.getElementById('qn-n')||{}).value)||0;
-  var noches=Number(nochesHab(r)||0);
-  if(quitar<1){ procesoListo(btn); alert('Escribe cuántas noches quitar.'); return; }
-  if(quitar>=noches){ procesoListo(btn); alert('No se pueden quitar todas las noches. Debe quedar al menos 1.'); return; }
-  var nuevas=noches-quitar;
-  var hosp=Math.round(Number(brutoHab(r)||0)*100)/100;
-  var porNoche=noches>0?Math.round((hosp/noches)*100)/100:0;
-  var nuevoTotal=Math.round(Math.max(0,hosp-porNoche*quitar)*100)/100;
-  var ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s2,a){ return s2+Number(abonoCuentaUsd(a,r)||0); },0);
-  var pagado=Math.round(Math.max(ab,0)*100)/100;
-  var sobra=Math.round(Math.max(0,pagado-nuevoTotal)*100)/100;
-  var forma='caja';
-  try{ var sel=document.querySelector('input[name="qn-forma"]:checked'); if(sel) forma=sel.value; }catch(e){}
-  var nuevaSal=salidaPorNoches(entradaISO(r), nuevas);
-  var _msg='¿Quitar '+quitar+' noche(s)?\n\nQuedan '+nuevas+' noche(s).\nHospedaje: '+fmtUSD(hosp)+' -> '+fmtUSD(nuevoTotal);
-  if(sobra>0.009) _msg+='\nSobra de lo pagado: '+fmtUSD(sobra)+' ('+(forma==='caja'?'se devuelve en efectivo, sale de la caja':'queda a favor del huésped')+')';
-  if(!confirm(_msg)){ procesoListo(btn); return; }
-  var patch={noches:nuevas};
-  if(nuevaSal) patch.salida=nuevaSal;
-  /* la tarifa sigue igual; si habia tramos se ajusta el ultimo tramo */
-  try{
-    if(Array.isArray(r.tramos) && r.tramos.length){
-      var tr=r.tramos.slice(); var resta=quitar;
-      for(var i=tr.length-1;i>=0 && resta>0;i--){ var n=Number(tr[i].noches||0); var q2=Math.min(n,resta); tr[i]=Object.assign({},tr[i],{noches:n-q2}); resta-=q2; }
-      tr=tr.filter(function(x){ return Number(x.noches)>0; });
-      if(tr.length===1 && Math.abs(Number(tr[0].tarifa||0)-Number(r.tarifa||0))<0.009){ patch.tramos=[]; patch.tramosCobro=false; }
-      else patch.tramos=tr;
-    }
-  }catch(e){}
-  /* la bitacora de extensiones: se marca que se quitaron noches */
-  try{
-    var ex=Array.isArray(r.extensiones)?r.extensiones.slice():[];
-    if(ex.length && quitar>0){ ex[ex.length-1]=Object.assign({},ex[ex.length-1],{nochesQuitadas:(Number(ex[ex.length-1].nochesQuitadas||0)+quitar)}); patch.extensiones=ex; }
-    patch.quitarNochesLog=(Array.isArray(r.quitarNochesLog)?r.quitarNochesLog.slice():[]);
-    patch.quitarNochesLog.push({noches:quitar, fecha:new Date().toISOString(), por:(session&&session().nombre)||'', antes:noches, despues:nuevas, sobraUsd:sobra});
-  }catch(e){}
-  if(sobra>0.009){
-    /* Se ajusta lo pagado: se quita el excedente de los abonos (del ultimo hacia atras) */
-    try{
-      var arr=(Array.isArray(r.abonos)?r.abonos.slice():[]); var resta2=sobra;
-      for(var j=arr.length-1;j>=0 && resta2>0.009;j--){
-        var v=Number(arr[j].montoUsd||0); var q3=Math.min(v,resta2);
-        var nv=Math.round((v-q3)*100)/100; resta2=Math.round((resta2-q3)*100)/100;
-        arr[j]=Object.assign({},arr[j],{montoUsd:nv, montoBs:(nv>0?precioBs(nv):0), ajustadoPorNoches:true});
-        if(nv<=0.009) arr[j]=null;
-      }
-      arr=arr.filter(Boolean);
-      patch.abonos=arr;
-    }catch(e){}
-    if(forma==='caja'){
-      /* [SALIDA-DE-CAJA] Queda registrado como devolucion del turno (sale el efectivo) */
-      try{
-        var dev={ id:'dev'+Date.now()+Math.random().toString(36).slice(2,7), ts:Date.now(), tasa:tasa(), abonosOrigen:(r.abonos||[]).map(function(a){return {id:a.id||'',control:a.control||0,montoUsd:a.montoUsd||0};}), pagosOrigen:DB.get('pagos',[]).filter(function(p){return Number(p.control)===Number(controlDeHab(r))&&corteNumerosHab(p.hab).indexOf(String(num))>=0;}).map(function(p){return p.id;}), tipo:'devolucion', dia:diaKey(new Date()), fechaStr:new Date().toLocaleString('es-VE'),
-          hab:Number(num), huesped:r.huesped||'', control:parseInt(controlDeHab(r)||0)||0,
-          concepto:'Devolución por noches quitadas (Hab. '+num+')', montoUsd:sobra, montoBs:precioBs(sobra),
-          metodo:'Efectivo USD', usuario:(session&&session().nombre)||'', turnoId:(typeof turnoActivo==='function'&&turnoActivo()?turnoActivo().id:null) };
-        var dl=DB.get('devoluciones',[]); dl.unshift(dev); DB.save('devoluciones',dl);
-        logKardex('devolucion',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Devolución en efectivo por quitar '+quitar+' noche(s) · '+fmtUSD(sobra)+' · Control N° '+fmtControl(dev.control), montoUsd:sobra, montoBs:precioBs(sobra), metodo:'Efectivo USD'});
-      }catch(e){}
-    }
-  }
-  updateRoom(num, patch);
-  try{ logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Se quitaron '+quitar+' noche(s) · quedan '+nuevas+' · hospedaje '+fmtUSD(hosp)+' → '+fmtUSD(nuevoTotal)+(sobra>0.009?(' · devuelto '+fmtUSD(sobra)+' ('+(forma==='caja'?'efectivo de la caja':'a favor del huésped')+')'):''), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
-  procesoListo(btn); cerrarModal(); render();
-  var _ok='Listo: quedan '+nuevas+' noche(s).';
-  if(nuevaSal) _ok+='\nNueva salida: '+fechaDDMMYYYY(nuevaSal)+'.';
-  _ok+='\nHospedaje ahora: '+fmtUSD(nuevoTotal);
-  if(sobra>0.009) _ok+='\nSe devolvió '+fmtUSD(sobra)+' ('+(forma==='caja'?'salió de la caja del turno':'saldo a favor del huésped')+').';
-  alert(_ok);
+function quitarNochesConfirm(num,btn){
+ if(guardTurno()||procesoDoble(btn))return;
+ var r=findRoomAny(num);if(!r||r.estado!=='ocupada'){procesoListo(btn);return;}
+ if(r.cortesiaHosp||r.creditoCxc||habMitadACxc(r)||r.cuentaCon||cuartosQuePaganA(r).length>1){procesoListo(btn);alert('Esta reducción requiere revisar cortesía, crédito o cuenta unida. No se cambió ninguna noche ni deuda. Separa la operación y revisa con Administración; no se genera devolución automática.');return;}
+ var q=Number((document.getElementById('qn-n')||{}).value);
+ if(!Number.isInteger(q)||q<1||q>=nochesHab(r)){procesoListo(btn);alert('Indica un número entero de noches; debe quedar al menos una.');return;}
+ var D=svQuitarCalculo(r,q),sel=document.querySelector('input[name="qn-forma"]:checked'),forma=sel?sel.value:'favor';
+ if(!confirm('¿Quitar '+q+' noche(s)? Quedan '+D.noches+'.\nHospedaje: '+fmtUSD(D.antes)+' → '+fmtUSD(D.despues)+'\nConsumos y pagos históricos se conservan.\nExcedente disponible: '+fmtUSD(D.sobra)+(forma==='caja'?' (devolución en efectivo)':' (se conserva como crédito, sin salida de Caja)'))){procesoListo(btn);return;}
+ if(D.sobra>0.009&&forma==='caja'&&!confirm('CONFIRMA ENTREGA REAL: ¿entregarás '+fmtUSD(D.sobra)+' en EFECTIVO USD al huésped ahora?\nEsto registrará una salida en el turno activo. Si no entregarás efectivo, cancela y elige conservar crédito.')){procesoListo(btn);return;}
+ var patch={noches:D.noches,salida:D.salida,tramos:D.tramos,tramosCobro:D.tramos.length?true:false,ocultarCobrar:false};
+ var log={id:'qn'+Date.now()+Math.random().toString(36).slice(2,8),fecha:new Date().toISOString(),por:(session()||{}).nombre||'',noches:q,antes:nochesHab(r),despues:D.noches,antesUsd:D.antes,despuesUsd:D.despues,sobraUsd:D.sobra,forma:forma};
+ patch.quitarNochesLog=(r.quitarNochesLog||[]).concat([log]);
+ if(D.sobra>0.009&&forma==='caja'){
+  var dev={id:'dev'+Date.now()+Math.random().toString(36).slice(2,8),ts:Date.now(),tasa:tasa(),tipo:'devolucion',dia:diaKey(new Date()),fechaStr:new Date().toLocaleString('es-VE'),hab:Number(num),huesped:r.huesped||'',control:Number(r.control)||0,concepto:'Devolución confirmada por noches quitadas',montoUsd:D.sobra,montoBs:precioBs(D.sobra),metodo:'Efectivo USD',usuario:(session()||{}).nombre||'',turnoId:turnoActivo().id,confirmacionEfectivo:true,operacionId:PF_ACTION||log.id,abonosOrigen:[],pagosOrigen:[]};
+  var resta=D.sobra;patch.abonos=(r.abonos||[]).map(function(a){return Object.assign({},a);});
+  for(var i=patch.abonos.length-1;i>=0&&resta>0.009;i--){var orig=r.abonos[i],v=abonoCuentaUsd(orig,r),m=Math.min(v,resta);if(m<=0)continue;patch.abonos[i].devolucionesUsd=svCent(Number(orig.devolucionesUsd||0)+m);patch.abonos[i].devolucionesIds=(orig.devolucionesIds||[]).concat([dev.id]);dev.abonosOrigen.push({id:orig.id,control:orig.control,montoUsd:orig.montoUsd,devueltoUsd:m});resta=svCent(resta-m);}
+  if(resta>0.009)throw Error('No se pudo identificar el crédito para la devolución. Nada se guardó.');
+  var ds=DB.get('devoluciones',[]);ds.unshift(dev);DB.save('devoluciones',ds);
+  logKardex('devolucion',{hab:num,huesped:r.huesped||'',clienteId:r.clienteId||'',control:r.control,detalle:'Entrega real confirmada por reducción de noches · '+fmtUSD(D.sobra),montoUsd:D.sobra,montoBs:precioBs(D.sobra),metodo:'Efectivo USD',devolucionId:dev.id});
+ }
+ updateRoom(num,patch);
+ logKardex('cargo',{hab:num,huesped:r.huesped||'',clienteId:r.clienteId||'',detalle:'Reducción de '+q+' noche(s) · '+fmtUSD(D.antes)+' → '+fmtUSD(D.despues)+(D.sobra>0.009?(forma==='caja'?' · efectivo entregado y confirmado':' · crédito conservado, sin devolución'):''),montoUsd:0,montoBs:0,metodo:''});
+ procesoListo(btn);cerrarModal();render();alert('Quedan '+D.noches+' noche(s). Nueva salida: '+fechaDDMMYYYY(D.salida)+'.'+(D.sobra>0.009?(forma==='caja'?' Devolución registrada: '+fmtUSD(D.sobra):' Crédito conservado: '+fmtUSD(D.sobra)+'. No salió dinero de Caja.'):' No se generó devolución.'));
 }
 
 function corregirNombreGrupoModal(numsStr){
@@ -10050,7 +10080,7 @@ function guardarCargoExtra(num){
   const _cgId='cg'+Date.now();
   cargos.push({id:_cgId, tipo:tipo, desc:desc, montoUsd:monto, fecha:new Date().toISOString(), pagado:false});
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
-  try{ cxcSumarHab(num,{concepto:tipo+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]}); }catch(e){}
+  cxcSumarHab(num,{concepto:tipo+(desc?(' · '+desc):''), montoUsd:monto, tipo2:'consumo', hab:num, cargosIds:[_cgId]});
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, detalle:tipo+(desc?' · '+desc:'')+' · '+fmtUSD(monto), montoUsd:0, montoBs:0, metodo:''});
   cerrarModal(); render();
 }
@@ -10244,7 +10274,7 @@ function _unirVariasConfirmar(){
 }
 
 function unirCuentas(numOrigen, numOtra, modo){
-  try{ return unirCuentasV2(numOrigen, numOtra, modo); }catch(e){}
+  return unirCuentasV2(numOrigen, numOtra, modo);
   let a=findRoom(numOrigen), b=findRoom(numOtra);
   const _a0=a, _b0=b;              /* copia de antes: findRoom/updateRoom pueden cambiar el objeto */
   const nA=d=>Number((d&&d.num)||0), nB=d=>Number((d&&d.cuentaCon)||0);
@@ -11126,7 +11156,7 @@ function extenderEstadiaModal(num){
 }
 function extPrev(num){
   const r=findRoom(num); const add=parseInt(document.getElementById('ext-n').value)||0; const e=document.getElementById('ext-prev'); if(!e) return;
-  const nuevas=(r.noches||1)+Math.max(0,add); const tarifa=Number(r.tarifa||0);
+  const nuevas=Number(r.noches||1)+Math.max(0,add); const tarifa=Number(r.tarifa||0);
   /* [CORTESIA-CERO] en cortesia no se suma nada */
   const extra=(r&&r.autorizada&&r.autorizadaModo==='gratis')?0:tarifa*Math.max(0,add);
   /* [SALIDA-NOCHES] la salida se recalcula desde la ENTRADA: entrada + noches nuevas */
@@ -11136,13 +11166,13 @@ function extPrev(num){
 function extenderEstadiaConfirm(num, btn){
   if(procesoDoble(btn)) return;
   const r=findRoom(num); if(!r||r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
-  const add=parseInt(document.getElementById('ext-n').value)||0;
-  if(add<=0){ alert('Escribe cuántas noches agregar (1 o más).'); return; }
+  const add=Number(document.getElementById('ext-n').value);
+  if(!Number.isInteger(add)||add<=0){ alert('Escribe cuántas noches agregar (1 o más).'); return; }
   const _prox=reservasProximas(2); const _lib=habitacionesLibres().length;
   if(_prox.length>0 && _lib<=_prox.length){
     if(!confirm('⚠️ ¡Ojo! Hay '+_prox.length+' reserva(s) que llegan en los próximos 1-2 días y solo quedan '+_lib+' habitación(es) libre(s).\n\nSi extiendes esta habitación, podrías quedarte sin cupo y tener que reubicar a esos huéspedes a otra habitación.\n\n¿Extender de todas formas?')) return;
   }
-  const nuevas=(r.noches||1)+add;
+  const nuevas=Number(r.noches||1)+add;
   /* [SALIDA-NOCHES] Se recalcula con la entrada + las noches totales, no sumando
      sobre la salida vieja: si la salida ya venia corrida, aqui se cuadra. */
   let nuevaSalida=salidaPorNoches(entradaISO(r), nuevas);
@@ -11204,7 +11234,7 @@ function extenderEstadiaConfirm(num, btn){
       var _mExt=cxcMontoNochesExtras(r, add);
       if(_mExt>0.009){ _extCxc=cxcSumarHab(num,{concepto:'Noche(s) extra · +'+add+' noche(s) × '+fmtUSD(cxcTarifaNoche(r)), montoUsd:_mExt, tipo2:'extension', hab:num, nochesExtra:add, tarifaNoche:cxcTarifaNoche(r)}); }
     }
-  }catch(e){}
+  }catch(e){throw e;}
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Extensión de estadía: +'+add+' noche(s) · total '+nuevas+' · nueva salida '+fechaDDMMYYYY(nuevaSalida)+' · '+fmtUSD(((habCortesia(r)||r.cortesiaHosp)?0:Number(r.tarifa||0))*add)+((habCortesia(r)||r.cortesiaHosp)?' (cortesía: no se cobra)':'')+' agregados', montoUsd:0, montoBs:0, metodo:''});
   if(_extCxc){ try{ extenderPreguntarComidas(num, add); return; }catch(e){} cerrarModal(); render(); alert('Estadía extendida. Ahora son '+nuevas+' noche(s).\n\nSumado a la cuenta CXC N° '+fmtControl(_extCxc.control||0)+': la deuda ahora es '+fmtUSD(cxcSaldo(_extCxc))+'.\nLo que ya estaba enviado no se tocó.'); return; }
   /* [COMIDAS-NOCHES-NUEVAS] se pregunta por las comidas de las noches nuevas (sin nombres fijos) */
@@ -12341,18 +12371,17 @@ function cxcSumarHab(num, op){
   var monto=Math.round(Number(op.montoUsd||0)*100)/100;
   if(!(monto>0.009)) return null;
   var ref=cxcCuentaDeHabCobro(r);
-  if(!ref) return null;
+  if(!ref){if(r&&(r.creditoCxc||habMitadACxc(r)))throw Error('No se guardó: vínculo CXC no validado para la estadía.');return null;}
   /* OJO: cxc() devuelve una COPIA nueva cada vez. Si se modifica esa copia y luego
      se guarda otra copia, el cambio se pierde (la deuda no subia). Hay que buscar el
      renglon DENTRO de la lista que se va a guardar. */
   var lista=cxc(); if(!Array.isArray(lista)) lista=[];
   var e=null;
   for(var _i=0;_i<lista.length;_i++){ if(lista[_i] && lista[_i].id===ref.id){ e=lista[_i]; break; } }
-  if(!e) return null;
-  if(e.anulada) return null;
+  if(!e||e.anulada)throw Error('La cuenta CXC cambió o fue anulada. No se guardó la modificación.');
   var s=null; try{ s=session(); }catch(err){}
   var now=new Date();
-  var enHab=cxcViveEnHab(e);
+  var enHab=!!(r&&r.estado==='ocupada'&&ref&&ref.id===e.id);
   var ctrl=parseInt((r&&r.creditoCxcControl)||e.control||0)||0;
   var nuevo=false;
   if(!enHab){
@@ -12379,7 +12408,7 @@ function cxcSumarHab(num, op){
   if(!Array.isArray(e.habsRef)) e.habsRef=[];
   var hs=String(op.hab||num||'');
   if(hs && e.habsRef.map(String).indexOf(hs)<0) e.habsRef.push(hs);
-  try{ saveCxc(lista); }catch(err){}
+  saveCxc(lista);
   try{
     logKardex('credito',{hab:Number(op.hab||num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
       detalle:(nuevo?'Agregado DESPUES del check-out':'Sumado durante la estadia')+' a la cuenta CXC N° '+fmtControl(e.control||0)+' · '+renglon.concepto+' · +'+fmtUSD(monto)+' · deuda ahora '+fmtUSD(cxcSaldo(e)),
@@ -12473,7 +12502,7 @@ function cxcRestarHab(num, monto, motivo){
   e.montoUsd=Math.round((total-resta)*100)/100;
   if(!Array.isArray(e.quitas)) e.quitas=[];
   e.quitas.push({ts:now.toISOString(), hab:hs, montoUsd:resta, control:ctrl, usuario:(s?s.nombre:''), motivo:(motivo||'consumo quitado'), deudaDespues:Math.round((total-resta)*100)/100});
-  try{ saveCxc(lista); }catch(err){}
+  saveCxc(lista);
   try{
     logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl,
       detalle:'DESCUENTO en la cuenta CXC N° '+fmtControl(e.control||0)+' · se quito un consumo de la Hab. '+num+' · -'+fmtUSD(resta)+' · motivo: '+(motivo||'consumo quitado')+' · deuda ahora '+fmtUSD(cxcSaldo(e)),
@@ -12546,7 +12575,7 @@ function cxcComidaQuitar(num, monto, motivo){
   e.montoUsd=Math.round((total-resta)*100)/100;
   if(!Array.isArray(e.quitas)) e.quitas=[];
   e.quitas.push({ts:new Date().toISOString(), hab:hs, montoUsd:resta, control:ctrl, usuario:(s?s.nombre:''), motivo:('Plan de comidas: '+(motivo||'cambio de plan')), deudaDespues:Math.round((total-resta)*100)/100});
-  try{ saveCxc(lista); }catch(err){}
+  saveCxc(lista);
   try{ logKardex('credito',{hab:Number(num)||0, huesped:(r&&r.huesped)||'', clienteId:(r&&r.clienteId)||'credito', control:ctrl, detalle:'AJUSTE en la cuenta CXC N° '+fmtControl(e.control||0)+' · plan de comidas de la Hab. '+num+' · -'+fmtUSD(resta)+' · '+(motivo||'cambio de plan')+' · deuda ahora '+fmtUSD(cxcSaldo(e)), credUsd:-resta, credBs:-precioBs(resta), cxcId:e.id, montoUsd:0, montoBs:0, metodo:''}); }catch(err){}
   return resta;
 }
@@ -14683,9 +14712,9 @@ function salidaAjustarHabs(nums){
         falta-=us;
       });
       if(!nt.length) nt=[{hab:r.num, tarifa:Number(r.tarifa||0), noches:a.cobrar}];
-      updateRoom(r.num,{tramos:nt, noches:Number(nt.reduce(function(s,x){return s+Number(x.noches||0);},0))});
+      updateRoom(r.num,{tramos:nt, noches:Number(nt.reduce(function(s,x){return s+Number(x.noches||0);},0)),salida:salidaPorNoches(entradaISO(r),a.cobrar)});
     } else {
-      updateRoom(r.num,{noches:a.cobrar, salida:fechaSalidaAuto(a.cobrar)});
+      updateRoom(r.num,{noches:a.cobrar, salida:salidaPorNoches(entradaISO(r),a.cobrar)});
     }
     hechas.push({num:r.num, pro:a.pro, cobrar:a.cobrar});
     try{ logKardex('salida',{hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'⏱️ Salida anticipada: reservó '+a.pro+' noche(s), se cobran '+a.cobrar+' (ajuste hecho por '+(((session()||{}).nombre)||'')+')', montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
@@ -16914,6 +16943,7 @@ function unirCuentasV2(numOrigen, numOtra, modo){
   if((principal.creditoCxc||otra.creditoCxc)){var ep=ceEmpresaHab(principal),eo=ceEmpresaHab(otra);if((ceRefHab(principal)&&!ep)||(ceRefHab(otra)&&!eo)||(ep&&eo&&ep.id!==eo.id))return {ok:false,msg:'Las cuentas pertenecen a empresas diferentes o sin identificar. No se unirán sus deudas.'};if((principal.creditoCxc&&!cxcCuentaDeHabCobro(principal))||(otra.creditoCxc&&!cxcCuentaDeHabCobro(otra)))return {ok:false,msg:'Revisa el vínculo CXC de ambas estadías antes de unir.'};}
   var por=''; try{ por=(session()&&session().nombre)||''; }catch(e){}
   var sello={cuentaPor:por, cuentaFecha:new Date().toISOString()};
+  svSellarAbonos(principal);svSellarAbonos(otra);
   /* [UNION-PRIMERO] La union se graba LO PRIMERO que se escribe cada habitacion.
      Asi ningun paso posterior (control, CXC, kardex) la deja sin efecto. */
   if(modo==='compartida'){
@@ -16977,36 +17007,8 @@ function unirCuentasV2(numOrigen, numOtra, modo){
   }catch(e){}
   try{ principal=findRoomAny(numOrigen)||principal; otra=findRoomAny(numOtra)||otra; }catch(e){}
   if(ctrlO){ try{ updateRoomAny(otra.num,{controlMovido:ctrlO, controlMovidoA:Number(principal.num), controlMovidoFecha:new Date().toISOString(), controlMovidoPor:por}); }catch(e){} }
-  /* [ABONO-CONTROL-GRUPO] Los abonos que ya estaban anotados en el cuarto que pasa a pagar
-     se marcan con el control del GRUPO (el de la principal). Antes conservaban el suyo y la
-     app los descartaba: el abono desaparecia y la cuenta parecia que seguia debiendo.
-     No se toca ningun monto, solo el numero de control con el que se reconocen. */
-  try{
-    var _sello=Number(ctrlP||0)||0;
-    if(_sello){
-      var _fres=findRoomAny(otra.num);
-      if(_fres && Array.isArray(_fres.abonos) && _fres.abonos.length){
-        var _cambios=0;
-        /* [ADELANTO-UNIDA] Si el control del abono NO era de ninguno de los dos cuartos que
-           se unen (nadie lo reconoce en este grupo), queda marcado como de otra cuenta:
-           asi se ve el dinero, pero NO se descuenta del saldo (no se inventa un pago). */
-        var _ctrlsGrupo={};
-        try{ [principal,otra].forEach(function(q){ var _c=parseInt(q&&q.control||0)||0; if(_c) _ctrlsGrupo[_c]=1; }); }catch(e){}
-        _fres.abonos=_fres.abonos.map(function(x){
-          if(!x) return x;
-          if(abonoPropioEstadia204(x,_fres)){
-            if(!x.controlEstadia || !x.controlEstadiaCliente){_cambios++;return Object.assign({},x,{controlEstadia:Number(x.controlEstadia||x.controlOriginal||x.control),controlEstadiaCliente:_fres.clienteId||'',hab:Number(_fres.num)});}
-            return x;
-          }
-          var _ac0=parseInt(x.control||0)||0;
-          var _otroG=!!(_ac0 && _ac0!==_sello && !_ctrlsGrupo[_ac0]);
-          if(_ac0 && _ac0!==_sello&& !(x.controlOriginal)){ _cambios++; return Object.assign({},x,{control:_sello, controlOriginal:_ac0, controlGrupoFecha:new Date().toISOString(), controlOtroGrupo:(_otroG?true:undefined)}); }
-          return x;
-        });
-        if(_cambios){ updateRoomAny(otra.num,{abonos:_fres.abonos}); }
-      }
-    }
-  }catch(e){}
+  /* [ESTABILIDAD-206] Unión visual: ningún control de un pago se reescribe.
+     La pertenencia se fija con huésped/entrada ANTES de cambiar el grupo. */
   try{ principal=findRoomAny(numOrigen)||principal; otra=findRoomAny(numOtra)||otra; }catch(e){}
   var txtCxc=''; try{ txtCxc=_cxcMoverA(otra, principal, por); }catch(e){ txtCxc=''; }
   /* [KARDEX-UNION] Queda anotado en el kardex Y en el corte del turno, en las DOS habitaciones:
@@ -18310,7 +18312,7 @@ function ceTieneMovimiento(e,num,ctrl){return (e.cargos||[]).some(function(c){re
    de que pertenece al mismo huésped y fecha. Un número de habitación no basta. */
 function ceIdentidadEstadia(x,r){
  if(!x||!r||!x.checkin||!r.checkin||!Number(x.control)||Number(x.control)!==Number(r.control))return false;
- if(String(x.checkin)!==String(r.checkin))return false;
+ if(entradaISO({checkin:x.checkin})!==entradaISO(r))return false;
  if(x.clienteId&&r.clienteId)return String(x.clienteId)===String(r.clienteId);
  return !!x.huesped&&String(x.huesped).trim().toUpperCase()===String(r.huesped||'').trim().toUpperCase();
 }
@@ -18323,8 +18325,8 @@ function ceMovimientoEstadia(e,c,r,ctrl){
  var evid=(e.enviosReversibles||[]).filter(function(t){return !t.deshecho&&Number(t.control)===Number(ctrl);});
  if(evid.some(function(t){return (t.rooms||[]).some(function(x){return ceIdentidadEstadia(x.despues,r)&&Number(x.despues.creditoCxcControl)===Number(ctrl);});}))return true;
  // Legacy: entry control must agree. Timestamp and known identity must not contradict it.
- if(Number(r.control)!==Number(ctrl))return false;
- if(c.ts&&String(c.ts).slice(0,10)<String(r.checkin).slice(0,10))return false;
+ if(Number(r.control)!==Number(ctrl))return svCreditoLegado(e,c,r,ctrl);
+ if(c.ts&&revisionFechaCaracas(c.ts)<entradaISO(r))return false;
  if(c.clienteId&&r.clienteId&&String(c.clienteId)!==String(r.clienteId))return false;
  if(c.huesped&&String(c.huesped).trim().toUpperCase()!==String(r.huesped||'').trim().toUpperCase())return false;
  return true;
@@ -18488,13 +18490,13 @@ function pfTransaccion(fn){
  // Defer success messages until local persistence succeeds.
  var originalAlert=window.alert,originalRender=render,originalMostrar=mostrarResultadoCobro;var avisos=[],pintar=false,resultados=[];
  window.alert=function(m){avisos.push(m);};render=function(){pintar=true;};mostrarResultadoCobro=function(r){resultados.push(r);};
- try{var result=fn();if(B.error)throw B.error;var keys=Object.keys(B.vals),raw={};keys.forEach(function(k){raw[k]=lsGet(k);});
+ try{var result=fn();if(B.error)throw B.error;svValidarLote(B);var keys=Object.keys(B.vals),raw={};keys.forEach(function(k){raw[k]=lsGet(k);});
   try{keys.forEach(function(k){localStorage.setItem(tenKey(k),JSON.stringify(B.vals[k]));});}catch(e){keys.forEach(function(k){try{if(raw[k]===null)localStorage.removeItem(tenKey(k));else localStorage.setItem(tenKey(k),raw[k]);}catch(_){} });throw Error('No se pudo guardar la operación completa en este equipo. No vuelvas a cobrar sin comprobar Caja.');}
   PF_BATCH=null;keys.forEach(function(k){if(SYNC_KEYS.indexOf(k)>=0&&k!=='presencia')_pendAdd(k);});
   if(keys.length){try{mostrarGuardando();if(CLOUD.enabled&&CLOUD.ready)CLOUD.flushQueue();}catch(e){}}
-  window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;if(pintar)render();resultados.forEach(function(r){mostrarResultadoCobro(r);});avisos.forEach(function(m){originalAlert(m);});return result;
+  window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;try{if(pintar)render();resultados.forEach(function(r){mostrarResultadoCobro(r);});avisos.forEach(function(m){originalAlert(m);});}catch(uiError){originalAlert('La operación ya quedó guardada. Falló la actualización de pantalla; recarga y comprueba Caja. NO repitas el cobro.');}return result;
  }catch(e){PF_BATCH=null;window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;throw e;}
- finally{PF_BATCH=null;window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;}
+ finally{PF_BATCH=null;_roomsRaw=null;_roomsCache=null;window.alert=originalAlert;render=originalRender;mostrarResultadoCobro=originalMostrar;}
 }
 var pfShowModal=showModal;
 showModal=function(h){PF_MODAL='M'+Date.now()+Math.random().toString(36).slice(2,10);window._pagoOkFn=null;return pfShowModal(h);};
@@ -18516,7 +18518,7 @@ pmLeer=function(prefix){var x=pfPMLeer(prefix);if(!x.ok)return x;var hit=[];
  var mark=PF_MODAL+'|'+JSON.stringify(hit);if(hit.length&&window.__pfRefOk!==mark){if(!confirm('Referencia ya registrada:\n'+hit.join('\n')+'\n\nComprueba el comprobante. ¿Confirmas que es una operación distinta?'))return {ok:false,msg:'Revisa la referencia antes de registrar el pago.'};window.__pfRefOk=mark;}return x;};
 function pfFechaValida(iso){if(!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||'')))return false;var d=new Date(iso+'T12:00:00Z');return !isNaN(d)&&d.toISOString().slice(0,10)===iso;}
 function pfValidarNoches(ent,sal,n){return pfFechaValida(ent)&&pfFechaValida(sal)&&Number.isInteger(Number(n))&&Number(n)>0&&nochesEntreISO(ent,sal)===Number(n);}
-function pfGuardEstadia(r){if(!r)return true;if(r.estado==='ocupada'&&!pfValidarNoches(entradaISO(r),r.salida,r.noches)){alert('Hab. '+r.num+': entrada, salida y noches no coinciden. Revisa las fechas antes de extender o quitar noches. No se cambió el cobro.');return false;}if((r.creditoCxc||habMitadACxc(r))&&!cxcCuentaDeHabCobro(r)){alert('Hab. '+r.num+': el vínculo CXC no corresponde a la estadía actual. Requiere revisión antes de agregar o quitar cargos.');return false;}return true;}
+function pfGuardEstadia(r){if(!r)return true;if(r.estado==='ocupada'&&!pfValidarNoches(entradaISO(r),r.salida,r.noches)){alert('Hab. '+r.num+': entrada '+entradaISO(r)+', salida '+r.salida+', noches guardadas '+r.noches+'. Entre esas fechas hay '+nochesEntreISO(entradaISO(r),r.salida)+' noche(s). Confirma con Administración qué dato corresponde a la estadía real. No se cambió ningún dato ni cobro.');return false;}if((r.creditoCxc||habMitadACxc(r))&&!cxcCuentaDeHabCobro(r)){alert('Hab. '+r.num+': el vínculo CXC no corresponde a la estadía actual. Requiere revisión antes de agregar o quitar cargos.');return false;}return true;}
 function pfEnvolver(nombre,validar){var f=window[nombre];if(typeof f!=='function')return;window[nombre]=function(){var args=arguments,key=(PF_MODAL||'directo')+'|'+nombre,btn=Array.from(args).find(function(x){return x&&x.tagName==='BUTTON';});
  if(PF_USED[key]){procesoListo(btn);return;}
  if(validar&&!validar.apply(null,args)){procesoListo(btn);return;}
@@ -18529,12 +18531,57 @@ pfEnvolver('guardarPagoManual');pfEnvolver('cobrarYCheckout');pfEnvolver('csPago
 pfEnvolver('guardarReserva',function(){var e=(document.getElementById('res-entrada')||{}).value,s=(document.getElementById('res-salida')||{}).value;if(!pfFechaValida(e)||!pfFechaValida(s)||nochesEntreISO(e,s)<1){alert('Revisa las fechas de llegada y salida de la reserva.');return false;}return true;});
 pfEnvolver('checkin',function(num){var n=Number((document.getElementById('m-noches')||{}).value),sal=(document.getElementById('m-salida')||{}).value||fechaSalidaAuto(n);if(!pfValidarNoches(hoyISO(),sal,n)){alert('La salida debe corresponder a la entrada más las noches indicadas. Revisa antes de hacer check-in.');return false;}return true;});
 pfEnvolver('confirmarCheckinReserva',function(loc){var r=reservas().find(function(x){return x.loc===loc;}),n=Number((document.getElementById('cr-noches')||{}).value);if(r&&(!pfFechaValida(r.fechaEntrada)||!pfFechaValida(r.fechaSalida)||diffNoches(r.fechaEntrada,r.fechaSalida)<1||!Number.isInteger(n)||n<1)){alert('Revisa las fechas de la reserva antes de ingresar.');return false;}return true;});
-pfEnvolver('extenderEstadiaConfirm',function(num){return pfGuardEstadia(cuentaRaizDe(num)||findRoom(num));});
-pfEnvolver('quitarNochesConfirm',function(num){return pfGuardEstadia(cuentaRaizDe(num)||findRoom(num));});
+pfEnvolver('extenderEstadiaConfirm',function(num){return pfGuardEstadia(findRoom(num))&&pfGuardEstadia(cuentaRaizDe(num)||findRoom(num));});
+pfEnvolver('quitarNochesConfirm',function(num){return pfGuardEstadia(findRoom(num))&&pfGuardEstadia(cuentaRaizDe(num)||findRoom(num));});
 pfEnvolver('guardarCargoExtra',function(num){var r=findRoom(num);return !(r&&r.creditoCxc&&!cxcCuentaDeHabCobro(r))||pfGuardEstadia(r);});
 /* Signed credits include undo events but exclude inter-company transfers. */
 var pfCorteDatos=corteDatos;
 corteDatos=function(fecha,turno){var D=pfCorteDatos(fecha,turno);var t=turno&&turno!=='todos'?turnos().find(function(x){return String(x.id)===String(turno);}):null;var ks=t?pfMovsTurno(t):kardexAll().filter(function(k){return diaKey(new Date(k.ts))===fecha;});D.cred=ks.filter(function(k){return k.tipo==='credito'||(k.tipo==='cxc'&&k.credUsd!=null);}).map(pfCredito);D.credUsd=D.cred.reduce(function(a,k){return a+Number(k.credUsd||0);},0);D.credBs=D.cred.reduce(function(a,k){return a+Number(k.credBs||0);},0);return D;};
+
+/* [ESTABILIDAD-206] No migration on startup; helpers act only on new operations. */
+function svCent(n){return Math.round(Number(n)*100)/100;}
+function svAbonoDisponible(a){return Math.max(0,svCent(Number(a&&a.montoUsd||0)-Number(a&&a.devolucionesUsd||0)));}
+function svSellarAbonos(r){
+ var changed=false,arr=(r.abonos||[]).map(function(a){
+  if(!abonoPropioEstadia204(a,r))return a;
+  if(a.estadiaEntrada204&&a.controlEstadiaCliente)return a;
+  changed=true;return Object.assign({},a,{hab:Number(r.num),controlEstadia:Number(a.controlEstadia||a.controlOriginal||a.control||r.control),controlEstadiaCliente:r.clienteId||'',estadiaEntrada204:r.checkin||''});
+ });if(changed)updateRoomAny(r.num,{abonos:arr});
+}
+function svCreditoLegado(e,c,r,ctrl){
+ // Only the ORIGINAL automatic check-in credit, a precise check-in event, same
+ // named guest and linked company. Room number or date alone is never sufficient.
+ if(e.origen!=='checkin-empresa'||e.id!==r.creditoCxcId||Number(r.creditoCxcControl)!==Number(ctrl)||Number(c.control)!==Number(ctrl))return false;
+ var company=ceEmpresaHab(r);if(!company||!ceMismoCliente(e,company))return false;
+ var name=String(r.huesped||'').trim().toUpperCase();if(!name||String(c.concepto||'').toUpperCase().split('HUÉSPED: ').slice(1).join('HUÉSPED: ').trim()!==name)return false;
+ var ks=kardexAll().filter(function(k){return k.tipo==='checkin'&&Number(k.hab)===Number(r.num);}).sort(function(a,b){return Date.parse(b.ts)-Date.parse(a.ts);}),k=ks[0];
+ if(!k||!r.clienteId||k.clienteId!==r.clienteId||Number(k.ctrlEntrada||k.control)!==Number(r.control)||revisionFechaCaracas(k.ts)!==entradaISO(r))return false;
+ var a=Date.parse(c.ts),b=Date.parse(k.ts);return Number.isFinite(a)&&Number.isFinite(b)&&a>=b&&a-b<=120000;
+}
+function svQuitarCalculo(r,q){
+ var n=Number(nochesHab(r)),nuevo=n-q;if(!Number.isInteger(q)||q<1||nuevo<1)throw Error('Número de noches inválido.');
+ var tr=tramosActivos(r).map(function(t){return Object.assign({},t);}),left=q;
+ for(var i=tr.length-1;i>=0&&left>0;i--){var take=Math.min(Number(tr[i].noches),left);tr[i].noches-=take;left-=take;}
+ tr=tr.filter(function(t){return t.noches>0;});
+ var next=Object.assign({},r,{noches:nuevo,tramos:tr,tramosCobro:tr.length?true:false});
+ var before=svCent(brutoHab(r)-descUsd(r)),after=svCent(brutoHab(next)-descUsd(next));
+ // Reserve all recorded guest consumptions (paid or pending); ambiguity never
+ // authorizes cash. Separate consumption receipts cannot enlarge this surplus.
+ var seen={},cons=0;cargosDe(r).forEach(function(c){if(!c||c.anulado||c.anulada||csEnCxc(c))return;var key=c.id||JSON.stringify(c);if(seen[key])return;seen[key]=true;cons+=Number(c.montoUsd||0);});cons=svCent(cons);
+ var paid=svCent((r.abonos||[]).reduce(function(v,a){return v+abonoCuentaUsd(a,r);},0));
+ return {noches:nuevo,antes:before,despues:after,consumos:cons,pagado:paid,sobra:Math.max(0,svCent(paid-after-cons)),tramos:tr,salida:salidaPorNoches(entradaISO(r),nuevo)};
+}
+function svValidarLote(B){
+ if(!B.vals.rooms)return;var old=pfDBGet('rooms',[]);
+ B.vals.rooms.forEach(function(r){var prev=old.find(function(q){return Number(q.num)===Number(r.num);});if(r.estado!=='ocupada')return;
+ var changed=!prev||prev.estado!=='ocupada'||['noches','salida','checkin'].some(function(k){return String(prev[k])!==String(r[k]);});
+ if(changed&&(!pfValidarNoches(entradaISO(r),r.salida,r.noches)||(tramosActivos(r).length&&Number(nochesHab(r))!==Number(r.noches))))throw Error('No se guardó: entrada, salida y noches de la Hab. '+r.num+' no coinciden.');
+ });
+}
+// Return-valued union calls fail atomically even when their caller catches errors.
+var svUnir=unirCuentasV2;
+unirCuentasV2=function(){var args=arguments;return pfTransaccion(function(){var res=svUnir.apply(null,args);if(!res||!res.ok){var err=Error(res&&res.msg||'No se pudo unir la cuenta.');if(PF_BATCH)PF_BATCH.error=err;throw err;}return res;});};
+pfEnvolver('_unirVariasConfirmar');pfEnvolver('separarCuenta');pfEnvolver('separarHabDeCuenta');
 
 </script>
 </body>
