@@ -418,7 +418,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v2.13 · 28/11/2026';
+const APP_VERSION = 'v2.14 · 29/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -15472,10 +15472,21 @@ function hotelTplRestaurar(){
   render();
 }
 function guardarHotel(){
+  clearTimeout(_hotelTplTimer); _hotelTplTimer=null;
   hotelTplGuardar();
+  const h=leerHotelForm(); saveHotel(h);
+  if(JSON.stringify(hotel())!==JSON.stringify(h)){
+    alert('No se pudieron guardar los datos del hotel en este equipo. No cierres esta pantalla; vuelve a intentarlo.'); return;
+  }
   _hotelTplDraft={};
-  const h=leerHotelForm(); saveHotel(h); aplicarTema(); pintarMarca(); render(); alert('Datos del hotel guardados, incluidos los mensajes.');
+  aplicarTema(); pintarMarca(); render();
+  alert('Datos del hotel guardados en este equipo, incluidos los mensajes. Revisa el indicador de sincronización para confirmar la subida a la nube.');
 }
+/* Botones de identidad: enlace delegado, también después de repintar. */
+document.addEventListener('click', function(ev){
+  const boton=ev.target.closest && ev.target.closest('[data-guardar-identidad]');
+  if(boton){ ev.preventDefault(); guardarHotel(); }
+});
 function elegirPaleta(k){ const h=leerHotelForm(); h.palette=k; saveHotel(h); aplicarTema(); pintarMarca(); render(); }
 function aplicarColorPersonalizado(){
   const a=document.getElementById('col-principal'); const b=document.getElementById('col-secundario');
@@ -15706,6 +15717,7 @@ function renderIdentidad(){
   html+='<div class="field"><label>WhatsApp del hotel</label><input id="h-whatsapp" value="'+escA(h.whatsapp||'')+'" placeholder="ej: 0412-1234567"></div>';
   html+='<div class="field"><label>Correo del hotel</label><input id="h-correo" class="puedeMinus" value="'+escA(h.correo||'')+'" placeholder="recepcion@tuhotel.com"></div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px">Estos dos datos se añaden al final de los mensajes de WhatsApp y correo que le envías al huésped, para que sepa cómo responderte. <b>No</b> es el número desde el que se envía: eso depende del WhatsApp abierto en este equipo (ver abajo).</p>';
+  html+='<div style="margin:12px 0 18px"><button type="button" class="btn-green" data-guardar-identidad style="padding:12px 22px">💾 Guardar datos del hotel</button><p style="font-size:12px;color:#55637a;line-height:1.6">Pulsa este botón después de cambiar nombre, RIF, dirección, eslogan, WhatsApp o correo. Los mensajes se siguen guardando automáticamente.</p></div>';
   html+='<div class="section-title" style="font-size:15px;margin-top:18px">Mensajes al huésped</div>';
   html+='<div class="field"><label>Mensaje de bienvenida (al hacer check-in)</label><textarea id="h-tpl-bienvenida" oninput="hotelTplCambio()" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(_hotelTplDraft.bienvenida!==undefined?_hotelTplDraft.bienvenida:(h.plantillaBienvenida||plantillaBienvenidaDefault()))+'</textarea></div>';
   html+='<div class="field"><label>Mensaje de reserva (localizador)</label><textarea id="h-tpl-reserva" oninput="hotelTplCambio()" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(_hotelTplDraft.reserva!==undefined?_hotelTplDraft.reserva:(h.plantillaReserva||plantillaReservaDefault()))+'</textarea></div>';
@@ -15714,9 +15726,10 @@ function renderIdentidad(){
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px;line-height:1.6">Si está <b>marcado</b>, al hacer el check-out la app te muestra el mensaje de despedida listo para enviarlo por WhatsApp o correo. Si lo <b>desmarcas</b>, el check-out se hace directo y no aparece nada.</p>';
   html+='<div class="field"><label>Mensaje de despedida (al hacer check-out)</label><textarea id="h-tpl-checkout" oninput="hotelTplCambio()" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(_hotelTplDraft.checkout!==undefined?_hotelTplDraft.checkout:(h.plantillaCheckout||plantillaCheckoutDefault()))+'</textarea></div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px;line-height:1.6">Escribe el mensaje a tu gusto. Usa estas <b>etiquetas</b> y la app las cambia solas por los datos reales:<br>• <b>[nombre]</b> = nombre del huésped · <b>[hotel]</b> = nombre del hotel<br>• Solo en bienvenida: <b>[habitacion]</b> = número de habitación<br>• Solo en reserva: <b>[localizador]</b>, <b>[entrada]</b>, <b>[salida]</b><br>• Solo en check-out: <b>[noches]</b> = noches de la estadía<br>El WhatsApp y el correo del hotel se agregan solos al final. Si borras todo el texto, vuelve al mensaje por defecto.</p>';
-  html+='<div style="background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#1d6b38;margin:0 0 10px;line-height:1.6">✅ Estos mensajes <b>se guardan solos mientras escribes</b>. No hace falta buscar el botón de guardar; puedes probarlo cerrando la app y volviendo a entrar. Si quieres confirmar de una vez, usa el botón <b>Guardar datos del hotel</b> al final de la página.</div>';
+  html+='<div style="background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#1d6b38;margin:0 0 10px;line-height:1.6">✅ Estos mensajes <b>se guardan solos mientras escribes</b>. No hace falta buscar el botón de guardar; puedes probarlo cerrando la app y volviendo a entrar. Si quieres confirmar de una vez, usa el botón <b>Guardar datos del hotel</b> debajo de los datos o al final de esta sección.</div>';
   html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 12px"><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'bienvenida\')">👁️ Ver bienvenida</button><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'reserva\')">👁️ Ver reserva</button><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'checkout\')">👁️ Ver despedida</button><button class="btn-ghost" style="padding:8px 14px" onclick="hotelTplRestaurar()">↩️ Volver al mensaje original</button></div>';
   html+='<div style="margin:6px 0 14px"><button class="btn-ghost" style="padding:8px 14px" onclick="adminTab=\'marca\';render()">🏨 El logo y los colores se cambian en Marca del Hotel</button></div>';
+  html+='<div style="margin:12px 0"><button type="button" class="btn-green" data-guardar-identidad style="padding:12px 22px">💾 Guardar datos del hotel</button></div></div>';
   if(esMaster(session().rol)){
     html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-top:20px">';
     html+='<div class="section-title" style="font-size:15px;margin-top:0">Formas de pago</div>'
