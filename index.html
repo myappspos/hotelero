@@ -418,7 +418,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v2.12 · 28/11/2026';
+const APP_VERSION = 'v2.13 · 28/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -9731,7 +9731,7 @@ function ocultarPagadosCobrar(){
 function extRegistradas(r){
   if(!r) return [];
   var a=Array.isArray(r.extensiones)?r.extensiones:[];
-  return a.filter(function(x){ return x && Number(x.noches)>0; });
+  return a.filter(function(x){return x&&Number(x.noches)>0;}).map(function(x){var n=Math.max(0,Number(x.noches)-Number(x.nochesQuitadas||0));return Object.assign({},x,{noches:n,total:svCent(n*Number(x.tarifa||0))});}).filter(function(x){return x.noches>0;});
 }
 /* total de noches EXTENDIDAS (solo las registradas) */
 /* Precio que valia la habitacion ANTES de las extensiones. Si no hay registro,
@@ -10113,13 +10113,14 @@ function quitarNochesModal(num){
   body+='<label style="display:flex;align-items:center;gap:8px"><input type="radio" name="qn-forma" value="favor" checked style="width:16px;height:16px;margin:0;flex:0 0 16px"> Dejar el saldo a favor del huésped (no toca la caja)</label>';
   body+='</div>';
   body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="quitarNochesConfirm('+num+', this)">Quitar noches</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
-  showModal(body); qnPrev(num);
+  QN_PLAN213=null;showModal(body); qnPrev(num);
 }
 function qnPrev(num){
  var r=findRoomAny(num),el=document.getElementById('qn-n');if(!r||!el)return;
  var q=Number(el.value);if(!Number.isInteger(q)||q<1||q>=nochesHab(r))return;
  var D=svQuitarCalculo(r,q),e=document.getElementById('qn-prev');
- if(e)e.textContent='Quedan '+D.noches+' noche(s). Hospedaje: '+fmtUSD(D.antes)+' → '+fmtUSD(D.despues)+'. Consumos conservados: '+fmtUSD(D.consumos)+'. Salida: '+fechaDDMMYYYY(D.salida)+'. Excedente disponible: '+fmtUSD(D.sobra)+'. No se devuelve dinero automáticamente.';
+ QN_PLAN213={num:Number(num),q:q,snapshot:qnSnapshot213(),despues:D.despues,sobra:D.sobra};
+ if(e)e.textContent='Quedan '+D.noches+' noche(s). Hospedaje: '+fmtUSD(D.antes)+' → '+fmtUSD(D.despues)+'. Consumos conservados (pagados y pendientes): '+fmtUSD(D.consumos)+'. Dinero válido en cuenta: '+fmtUSD(D.pagado)+'. Salida: '+fechaDDMMYYYY(D.salida)+'. Excedente después de reservar TODOS los consumos: '+fmtUSD(D.sobra)+'. Quitar noches no significa devolver dinero. Por defecto se conserva el crédito.';
  var dev=document.getElementById('qn-dev');if(dev)dev.style.display=D.sobra>0.009?'block':'none';
 }
 function quitarNochesConfirm(num,btn){
@@ -10128,12 +10129,16 @@ function quitarNochesConfirm(num,btn){
  if(r.cortesiaHosp||r.creditoCxc||habMitadACxc(r)||r.cuentaCon||cuartosQuePaganA(r).length>1){procesoListo(btn);alert('Esta reducción requiere revisar cortesía, crédito o cuenta unida. No se cambió ninguna noche ni deuda. Separa la operación y revisa con Administración; no se genera devolución automática.');return;}
  var q=Number((document.getElementById('qn-n')||{}).value);
  if(!Number.isInteger(q)||q<1||q>=nochesHab(r)){procesoListo(btn);alert('Indica un número entero de noches; debe quedar al menos una.');return;}
- var D=svQuitarCalculo(r,q),sel=document.querySelector('input[name="qn-forma"]:checked'),forma=sel?sel.value:'favor';
+ var D=svQuitarCalculo(r,q);
+ if(QN_PLAN213&&(QN_PLAN213.num!==Number(num)||QN_PLAN213.q!==q||QN_PLAN213.snapshot!==qnSnapshot213()||Math.abs(QN_PLAN213.despues-D.despues)>.009||Math.abs(QN_PLAN213.sobra-D.sobra)>.009)){procesoListo(btn);alert('La estadía, los pagos o las devoluciones cambiaron. Vuelve a abrir Quitar noches. No se registró ninguna devolución.');return;}
+ var sel=document.querySelector('input[name="qn-forma"]:checked'),forma=sel?sel.value:'favor';
  if(!confirm('¿Quitar '+q+' noche(s)? Quedan '+D.noches+'.\nHospedaje: '+fmtUSD(D.antes)+' → '+fmtUSD(D.despues)+'\nConsumos y pagos históricos se conservan.\nExcedente disponible: '+fmtUSD(D.sobra)+(forma==='caja'?' (devolución en efectivo)':' (se conserva como crédito, sin salida de Caja)'))){procesoListo(btn);return;}
  if(D.sobra>0.009&&forma==='caja'&&!confirm('CONFIRMA ENTREGA REAL: ¿entregarás '+fmtUSD(D.sobra)+' en EFECTIVO USD al huésped ahora?\nEsto registrará una salida en el turno activo. Si no entregarás efectivo, cancela y elige conservar crédito.')){procesoListo(btn);return;}
+ if(QN_PLAN213&&QN_PLAN213.snapshot!==qnSnapshot213())throw Error('Los datos cambiaron durante la confirmación. No se modificó ninguna cuenta.');
  var patch={noches:D.noches,salida:D.salida,tramos:D.tramos,tramosCobro:D.tramos.length?true:false,ocultarCobrar:false};
  var log={id:'qn'+Date.now()+Math.random().toString(36).slice(2,8),fecha:new Date().toISOString(),por:(session()||{}).nombre||'',noches:q,antes:nochesHab(r),despues:D.noches,antesUsd:D.antes,despuesUsd:D.despues,sobraUsd:D.sobra,forma:forma};
  patch.quitarNochesLog=(r.quitarNochesLog||[]).concat([log]);
+ patch.extensiones=qnExtensiones213(r,q,log);
  if(D.sobra>0.009&&forma==='caja'){
   var dev={id:'dev'+Date.now()+Math.random().toString(36).slice(2,8),ts:Date.now(),tasa:tasa(),tipo:'devolucion',dia:diaKey(new Date()),fechaStr:new Date().toLocaleString('es-VE'),hab:Number(num),huesped:r.huesped||'',control:Number(r.control)||0,concepto:'Devolución confirmada por noches quitadas',montoUsd:D.sobra,montoBs:precioBs(D.sobra),metodo:'Efectivo USD',usuario:(session()||{}).nombre||'',turnoId:turnoActivo().id,confirmacionEfectivo:true,operacionId:PF_ACTION||log.id,abonosOrigen:[],pagosOrigen:[]};
   var resta=D.sobra;patch.abonos=(r.abonos||[]).map(function(a){return Object.assign({},a);});
@@ -11736,7 +11741,7 @@ function cajaLineasDePago(p){
    Asi un cobro viejo guardado con monto 0 pero repartido en lineas no sale en cero. */
 /* [DEVOLUCIONES] Dinero que salio de caja (ej: se devolvio al quitar noches) */
 function devolucionesDe(alcance){
- var l=DB.get('devoluciones',[])||[];if(!alcance)return l;
+ var l=(DB.get('devoluciones',[])||[]).filter(function(d){return d&&!pfAnulado(d);});if(!alcance)return l;
  if(alcance.tipo==='turno'){var t=turnos().find(function(x){return String(x.id)===String(alcance.id);});return t?l.filter(function(d){return pfEnTurno(d,t);}):[];}
  return l.filter(function(d){return d.dia===alcance.dia;});
 }
@@ -18529,7 +18534,7 @@ function pfAnulado(p){return !!(p&&(p.anulado||p.anulada||/ANUL/i.test(String(p.
 function pfCredito(k){var x=Object.assign({},k);if(x.credUsd==null)x.credUsd=Number(x.montoUsd)||0;if(x.credBs==null)x.credBs=Number(x.montoBs)||0;return x;}
 function pfCuadre(t){
  var raw=pagosDelTurno(t.id),valid=raw.filter(function(p){return !pfAnulado(p);}).map(function(p){return JSON.parse(JSON.stringify(p));});
- var R={pagos:valid,anulados:raw.filter(pfAnulado),metodos:{},usd:0,bs:0,devUsd:0,devBs:0,errores:[],operaciones:{},devoluciones:devolucionesDe({tipo:'turno',id:t.id})};
+ var R={devolucionesAnuladas:(DB.get('devoluciones',[])||[]).filter(function(d){return d&&pfAnulado(d)&&pfEnTurno(d,t);}),pagos:valid,anulados:raw.filter(pfAnulado),metodos:{},usd:0,bs:0,devUsd:0,devBs:0,errores:[],operaciones:{},devoluciones:devolucionesDe({tipo:'turno',id:t.id})};
  var ids={},juntos={};function add(m){if(!R.metodos[m])R.metodos[m]={usd:0,bs:0,devUsd:0,devBs:0};return R.metodos[m];}
  valid.forEach(function(p){var id=String(p.id),T=pagoTotal(p),u=Number(T.usd)||0,b=Number(T.bs)||0;if(ids[id])R.errores.push('Identificador de pago repetido: '+id);ids[id]=true;
   if(!Number.isFinite(Number(p.montoUsd||0))||!Number.isFinite(Number(p.montoBs||0))||u<0||b<0)R.errores.push('Monto inválido · control '+fmtControl(p.control||0));
@@ -18549,6 +18554,7 @@ function pfCuadreDia(dia){
 }
 function pfCuadreHTML(R){
  var h='<h2>Control de cobros y devoluciones</h2><div class="amar">'+R.pagos.length+' registros de pago · '+R.nOperaciones+' operaciones. Una operación conjunta puede tener varios destinos; se suma una sola vez cada registro. Los Bs y USD representan equivalentes, no dos ingresos separados.</div>';
+ if(R.devolucionesAnuladas&&R.devolucionesAnuladas.length)h+='<div class="amar"><b>Correcciones conservadas en el historial (sin salida de dinero)</b>'+R.devolucionesAnuladas.map(function(d){return '<p>Devolución '+esc(d.id)+' · '+fmtUSD(d.montoUsd)+' · ANULADA: '+esc(d.anuladoMotivo||d.anuladaMotivo||'')+'</p>';}).join('')+'<p>Los informes guardados de turnos cerrados no se reescriben. Este cálculo excluye las devoluciones anuladas.</p></div>';
  if(R.errores.length)h+='<div class="amar"><b>REQUIERE REVISIÓN — no es un cierre conciliado</b><ul>'+R.errores.map(function(e){return '<li>'+esc(e)+'</li>';}).join('')+'</ul></div>';
  h+='<table><tr><th>Forma de pago</th><th class="r">Cobrado USD</th><th class="r">Devuelto USD</th><th class="r">Neto USD</th><th class="r">Neto Bs (equivalente)</th></tr>';
  Object.keys(R.metodos).forEach(function(m){var x=R.metodos[m];h+='<tr><td>'+esc(m)+'</td><td class="r">'+fmtUSD(x.usd)+'</td><td class="r">'+fmtUSD(x.devUsd)+'</td><td class="r">'+fmtUSD(x.usd-x.devUsd)+'</td><td class="r">'+fmtBs(x.bs-x.devBs)+'</td></tr>';});
@@ -18797,7 +18803,8 @@ function fhCuentaDatos(r){
   if(direct>0.009&&!isCxc){var evidence=(c.pagosConsumo||[]).filter(function(a){var p=pagos.find(function(p){return String(p.id)===String(a.pagoId);});return !a.cxcId&&!fhPagoAnulado(p);}).reduce(function(s,a){return s+Number(a.montoUsd||0);},0);if(direct-evidence>.009){var delta=fhCent(direct-evidence);out.recibido+=delta;out.pagos.push({id:'Sin desglose · '+(c.id||''),hab:x.hab,monto:delta,neto:delta,devuelto:0,fecha:'Fecha no registrada',metodo:'Forma de pago no registrada',control:c.controlPago,concepto:'Pago directo registrado · '+(c.tipo||'Consumo'),uso:'Aplicado al consumo; faltan los recibos individuales',estado:'Importe registrado sin desglose',recibo:null,consumo:delta,resto:0});}if(Math.abs(direct-evidence)>.009)out.advertencias.push('Consumo '+(c.tipo||c.id||'')+': pago directo registrado '+fmtUSD(direct)+' sin desglose completo de recibos. No se inventan fecha ni forma de pago.');}
  });
  D.list.forEach(function(q){var available=scAbonosDisponibles(q);(q.abonos||[]).forEach(function(a,i){if(!a)return;var id=a.id?'id:'+a.id:'q:'+q.num+':'+i,dup=!!seenA[id];seenA[id]=true;
-  var raw=fhCent(a.montoUsd),net=dup?0:fhCent(scAbonoOriginal(a,q)),usable=dup?0:fhCent(available[i]),used=fhCent(Math.max(0,net-usable)),refund=Math.min(Math.max(0,raw),Math.max(0,fhCent(a.devolucionesUsd))),p=fhRecibo(a,q,pagos),invalid=fhPagoAnulado(a)||fhPagoAnulado(p),state=dup?'Duplicado · no suma':invalid?'Anulado · no suma':net>0.009||refund>0.009?'Válido':'Fuera del saldo actual · revisar origen';
+  var raw=fhCent(a.montoUsd),net=dup?0:fhCent(scAbonoOriginal(a,q)),usable=dup?0:fhCent(available[i]),used=fhCent(Math.max(0,net-usable)),refund=Math.min(Math.max(0,raw),Math.max(0,fhCent(a.devolucionesUsd))),p=fhRecibo(a,q,pagos),trace=fhTrazaDevolucion213(a,p),invalid=fhPagoAnulado(a)||fhPagoAnulado(p),state=dup?'Duplicado · no suma':invalid?'Anulado · no suma':net>0.009||refund>0.009?'Válido':'Fuera del saldo actual · revisar origen';
+  if(trace){raw=trace.original;refund=trace.devuelto;}
   if(a.soloConsumo&&!a.cxc&&!dup&&!invalid&&p){var copy=Object.assign({},a,{soloConsumo:false}),qr=Object.assign({},q,{abonos:(q.abonos||[]).map(function(v){return v===a?copy:v;})}),valid=fhCent(scAbonoOriginal(copy,qr));if(valid>0.009&&cargos.some(function(x){return Number(x.hab)===Number(q.num)&&x.c.pagado&&!x.c.cxc&&!csEnCxc(x.c)&&Number(x.c.controlPago)===Number(a.control);})){net=valid;used=valid;usable=0;state='Válido · pago de consumos separado del adelanto';}}if(a.cxc)state='Traslado a CXC · no es dinero recibido';if(p){seenP['p:'+p.id]=true;if(fhPagoAnulado(p)&&net>0)out.advertencias.push('El recibo '+fhCtrl(p.control)+' figura anulado pero el abono continúa vigente. Se conserva el saldo operativo y se requiere revisión.');}
   out.pagos.push({id:a.id,hab:Number(q.num),monto:raw,neto:net,devuelto:dup?0:refund,fecha:p?(p.fechaStr||fhDate(p.ts)):fhDate(a.fecha),metodo:a.metodo||(p&&(p.metodoOriginal||p.metodo))||'Forma de pago no registrada',control:a.control,concepto:a.concepto||(a.origen==='reserva'?'Anticipo aplicado desde reserva':'Pago / adelanto de cuenta'),uso:net>0.009?'Consumos ya pagados: '+fmtUSD(used)+' · resto para la cuenta: '+fmtUSD(usable):'No se utiliza como adelanto en el saldo actual',estado:state,recibo:p,consumo:used,resto:usable,origen:a.origen});
   if(!dup&&(net>0.009||refund>0.009)&&!invalid){out.recibido+=net+refund;out.devuelto+=refund;}
@@ -18827,11 +18834,29 @@ function fhCuentaHTML(r){
  if(p.devuelto>0)h+='<div>Devuelto: '+fmtUSD(p.devuelto)+' · neto vigente: '+fmtUSD(p.neto)+'</div>';
  if(p.recibo){var pg=p.recibo;h+='<div class="fh-proof">Recibo de Caja: '+esc(pg.id)+' · '+esc(pg.usuario||'Usuario no registrado')+'<br>Turno: '+esc(pg.turnoId||'No registrado');if(Number(pg.montoUsd)!==p.monto)h+='<br>Total del recibo conjunto: '+fmtUSD(pg.montoUsd)+'; aquí solo se suma la parte de esta cuenta.';if(pg.operacionId)h+='<br>Operación: '+esc(pg.operacionId);if(Array.isArray(pg.metodos)&&pg.metodos.length)h+='<br>Desglose del recibo: '+pg.metodos.map(function(m){return esc(m.metodo||'')+' '+fmtUSD(m.montoUsd)+(m.ref?' · ref. '+esc(m.ref):'');}).join(' / ');if(fhPagoAnulado(pg))h+='<br>Motivo: '+esc(pg.anuladoMotivo||pg.motivo||'No registrado');h+='</div>';}else h+='<div class="fh-muted">Sin vínculo único con un recibo de Caja; se muestran los datos del abono, sin inventar una asociación.</div>';h+='</article>';});
  h+='<h4>3. Cómo queda aplicado el dinero</h4><div class="fh-summary">'+fhMini('Hospedaje cubierto',d.hospAplicado)+fhMini('Consumos cubiertos',d.consAplicado)+fhMini('Adelanto libre',d.disponible)+'</div><p class="fh-note">Distribución calculada del saldo actual: primero hospedaje y luego consumos pendientes. No cambia pagos ni crea una asignación histórica individual cuando esa información no está registrada.</p>';
- if(d.devoluciones.length){h+='<h4>Devoluciones vinculadas</h4>';d.devoluciones.forEach(function(v){h+='<article class="fh-item"><b>'+fmtUSD(v.montoUsd)+' · '+esc(v.concepto||'Devolución')+'</b><div>'+esc(v.fechaStr||fhDate(v.ts))+' · '+esc(v.metodo||'')+'</div><div class="fh-muted">Control '+fhCtrl(v.control)+' · '+esc(v.usuario||'')+' · turno '+esc(v.turnoId||'No registrado')+'</div><div class="fh-muted">Origen: '+esc((v.abonosOrigen||[]).map(function(a){return a.id;}).join(', '))+'</div></article>';});}
+ if(d.devoluciones.length){h+='<h4>Devoluciones vinculadas</h4>';d.devoluciones.forEach(function(v){h+='<article class="fh-item"><b>'+fmtUSD(v.montoUsd)+' · '+esc(v.concepto||'Devolución')+'</b>'+(pfAnulado(v)?'<div class="fh-state">ANULADA · no salió dinero de Caja · no se descuenta</div><div>'+esc(v.anuladoMotivo||v.anuladaMotivo||'')+'</div>':'<div class="fh-state">Devolución vigente · importe ya descontado del dinero neto</div>')+'<div>'+esc(v.fechaStr||fhDate(v.ts))+' · '+esc(v.metodo||'')+'</div><div class="fh-muted">Control '+fhCtrl(v.control)+' · '+esc(v.usuario||'')+' · turno '+esc(v.turnoId||'No registrado')+'</div><div class="fh-muted">Origen: '+esc((v.abonosOrigen||[]).map(function(a){return a.id;}).join(', '))+'</div></article>';});}
  if(d.advertencias.length)h+='<div class="fh-warning"><b>Información que requiere revisión</b>'+d.advertencias.map(function(t){return '<p>'+esc(t)+'</p>';}).join('')+'</div>';
  return h+'</section>';
 }
 cuentaHabBox=function(r){return fhCuentaHTML(r);};
+
+
+
+/* v2.13: no hardcoded room/payment repair and no automatic data migration. */
+var QN_PLAN213=null;
+function qnSnapshot213(){return JSON.stringify([rooms(),DB.get('pagos',[]),DB.get('devoluciones',[]),cxc(),turnos()]);}
+function qnExtensiones213(r,q,log){
+ var arr=(r.extensiones||[]).map(function(x){return Object.assign({},x);}),left=q;
+ for(var i=arr.length-1;i>=0&&left>0;i--){var x=arr[i],active=Math.max(0,Number(x.noches||0)-Number(x.nochesQuitadas||0)),take=Math.min(active,left);if(!take)continue;
+  x.nochesQuitadas=Number(x.nochesQuitadas||0)+take;x.reducciones=(x.reducciones||[]).concat([{operacion:log.id,fecha:log.fecha,por:log.por,noches:take,motivo:'Reducción de estadía confirmada; extensión original conservada'}]);left-=take;
+ }return arr;
+}
+function fhTrazaDevolucion213(a,p){
+ if(!a||!p||!a.ajustadoPorNoches||a.devolucionesUsd||pfAnulado(a)||pfAnulado(p)||String(p.hab).split(',').length!==1)return null;
+ var original=fhCent(p.montoUsd),current=fhCent(a.montoUsd);if(original<=current+.009)return null;
+ var rows=(DB.get('devoluciones',[])||[]).filter(function(d){return d&&!pfAnulado(d)&&(d.abonosOrigen||[]).some(function(x){return String(x.id)===String(a.id);})&&(d.pagosOrigen||[]).some(function(id){return String(id)===String(p.id);});}),sum=fhCent(rows.reduce(function(v,d){return v+Number(d.montoUsd||0);},0));
+ return sum>0.009&&Math.abs(original-current-sum)<.009?{original:original,devuelto:sum}:null;
+}
 
 </script>
 </body>
