@@ -256,6 +256,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 #res-lista .res-sec-head > div:nth-child(2){border:0 !important;background:transparent !important;box-shadow:none !important;padding:0 !important;}
 #res-lista .res-sec-head > div:nth-child(2) span{background:transparent !important;}
 #res-lista .res-lista-inner{display:flex;flex-direction:column;gap:10px;width:100%;padding:8px 0 0;margin:0;background:transparent !important;border:0 !important;}
+
+/* Readable account cards, including narrow screens. */
+.fh-account{background:#f3f6fb;border:1px solid #dbe4f1;border-radius:12px;padding:12px;margin-top:10px;color:#253750;overflow-wrap:anywhere;}
+.fh-account h3{font-size:15px;color:#17385c;margin:0 0 10px;}.fh-account h4{font-size:14px;margin:18px 0 8px;}
+.fh-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}.fh-summary>div{background:#fff;border-radius:7px;padding:8px;}
+.fh-label{display:block;font-size:11px;color:#52647a;margin-bottom:3px;}.fh-summary strong,.fh-values strong{display:block;font-size:13px;font-variant-numeric:tabular-nums;}
+.fh-balance{display:flex;justify-content:space-between;gap:8px;background:#17385c;color:#fff;border-radius:8px;padding:11px;margin-top:10px;font-size:15px;font-weight:800;}
+.fh-item{background:#fff;border:1px solid #dbe4f1;border-radius:8px;padding:10px;margin:8px 0;font-size:12px;}.fh-title{font-weight:800;font-size:13px;}.fh-muted{font-size:11px;color:#52647a;margin-top:4px;line-height:1.5;}.fh-state{font-weight:700;font-size:11px;color:#315d52;margin-top:5px;}
+.fh-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;border-top:1px solid #e4eaf2;margin-top:8px;padding-top:8px;}
+.fh-note{font-size:11px;line-height:1.5;color:#52647a;margin:8px 0;}.fh-proof{font-size:11px;line-height:1.5;background:#eef4fa;padding:7px;border-radius:6px;margin-top:7px;}.fh-warning{background:#fff3d7;border:1px solid #e3c079;border-radius:8px;padding:10px;font-size:11px;line-height:1.5;margin-top:12px;}
+
 </style>
 </head>
 <body>
@@ -407,7 +418,7 @@ try{ if(document.addEventListener) document.addEventListener('DOMContentLoaded',
 /* ====== VERSION DE LA APP ======
    Cada vez que se sube un index.html nuevo, se sube este numero y la fecha.
    Asi se sabe de un vistazo si un equipo esta con la version nueva o con una vieja. */
-const APP_VERSION = 'v2.11 · 28/11/2026';
+const APP_VERSION = 'v2.12 · 28/11/2026';
 
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
@@ -4686,7 +4697,7 @@ function abrirHab(num){
     body += tramosRenglonesHTML(r);
     if(!r.autorizada) body += '<div class="field" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-tramos-act" style="width:auto;margin:0" '+(r.tramosCobro!==false?'checked':'')+' onchange="toggleTramosCobro('+num+')"> Cobrar por tramos (cada tramo con su tarifa)</label></div>';
     if(!r.cortesiaHosp)body += desgloseBox(tarifaEfectiva(r), nochesHab(r), 'ocup', promoPct(r));
-    if(r.autorizada){ body += cuentaHabBoxAutorizada(r);if(habCortesia(r))body+=cuentaHabBox(r); } else { try{ body += cuentaHabBox(r); }catch(e){} }
+    if(r.autorizada) body += cuentaHabBoxAutorizada(r); body += cuentaHabBox(r);
     try{ body += cxcDesgloseHabHTML(r); }catch(e){}
     if(r.limpiezaPendiente){ body += '<div style="background:#fff3e0;border:1px solid #f3961c;color:#b5651d;border-radius:8px;padding:8px 10px;font-size:13px;margin:10px 0">🧹 Limpieza solicitada · pendiente de Ama de Llaves</div>'; }
     /* [COMIDAS] plan contratado y boton para volver a sumarlo a la cuenta */
@@ -18748,6 +18759,79 @@ abonoCuentaUsd=function(a,r){
  if(idx<0)return raw;
  return scAbonosDisponibles(r)[idx]||0;
 };
+
+
+/* Detailed read-only account. Existing financial calculations remain authoritative. */
+function fhCent(v){return Math.round((Number(v)||0)*100)/100;}
+function fhDate(v){var d=new Date(v);return v&&!isNaN(d.getTime())?d.toLocaleString('es-VE'):String(v||'Fecha no registrada');}
+function fhCtrl(v){return Number(v)>0?fmtControl(v):'No registrado';}
+function fhPagoAnulado(p){return !!(p&&(p.anulado||p.anulada||String(p.metodo||'').toUpperCase()==='ANULADO'));}
+function fhRecibo(a,q,pagos){
+ if(a.pagoId!=null){var exact=pagos.filter(function(p){return String(p.id)===String(a.pagoId);});if(exact.length===1)return exact[0];}
+ var t=Date.parse(a.fecha||a.ts||''),cs=pagos.filter(function(p){
+  if(!p||!Number(a.control)||Number(p.control)!==Number(a.control))return false;
+  if(q.clienteId&&p.clienteId&&String(q.clienteId)!==String(p.clienteId))return false;
+  if(String(p.hab||'').split(',').map(function(n){return Number(n.trim());}).indexOf(Number(q.num))<0)return false;
+  if(a.metodo&&String(p.metodoOriginal||p.metodo||'')!==String(a.metodo))return false;
+  var pt=Number(p.ts)||Date.parse(p.fecha||'');return Number.isFinite(t)&&Number.isFinite(pt)&&Math.abs(t-pt)<=120000;
+ });
+ if(cs.length>1){var m=cs.filter(function(p){return Math.abs(Number(p.montoUsd)-Number(a.montoUsd))<0.009;});if(m.length===1)cs=m;}
+ return cs.length===1?cs[0]:null;
+}
+function fhCuentaDatos(r){
+ var D=detalleCuentaHab(r),out={list:D.list,filas:[],pagos:[],devoluciones:[],advertencias:[],cargos:0,pagado:0,recibido:0,devuelto:0,disponible:fhCent(Math.max(0,D.abo-D.tot)),saldo:fhCent(D.saldo),hospAplicado:0,consAplicado:0};
+ var pagos=DB.get('pagos',[])||[],seenC={},seenP={},seenA={},pending=[],roomMap={};D.list.forEach(function(q){roomMap[Number(q.num)]=q;});
+ var cargos=[];D.list.forEach(function(q){cargosDe(q).forEach(function(c){if(!c)return;var key=c.id?'id:'+c.id:JSON.stringify(c);if(seenC[key])return;seenC[key]=true;var cc=cargoParaCuenta(c,q);cargos.push({c:c,cuenta:cc,hab:Number(c.habOriginal||c.hab||q.num),q:q});});});
+ D.filas.forEach(function(f){
+  var h=fhCent(Math.max(0,f.hosp-f.d)),ab=fhCent(Math.max(0,f.ab)),paid=Math.min(h,ab);ab=fhCent(ab-paid);
+  var excluded=habCortesia(f.r)||habHospEnCxc(f.r)||habMitadACxc(f.r);
+  out.filas.push({tipo:'hospedaje',hab:Number(f.r.num),descripcion:'Hospedaje · '+f.noches+' noche'+(f.noches===1?'':'s'),detalle:'Tarifa actual '+fmtUSD(f.r.tarifa||0)+(tramosActivos(f.r).length?' · tramos: '+tramosActivos(f.r).map(function(t){return (t.hab?'Hab. '+t.hab+' · ':'')+t.noches+' noche(s) × '+fmtUSD(t.tarifa||0);}).join('; '):'')+(f.d>0?' · descuento '+fmtUSD(f.d):''),cargo:h,pagado:paid,pendiente:fhCent(h-paid),estado:excluded?(habCortesia(f.r)?'Hospedaje cubierto por cortesía':'Hospedaje en CXC · fuera del saldo de recepción'):'',original:fhCent(brutoHab(f.r)-descUsd(f.r)),control:f.r.control});
+  out.hospAplicado+=paid;pending.push({q:f.r,ab:ab});
+ });
+ cargos.forEach(function(x){
+  var c=x.c,q=x.q,isCxc=csEnCxc(c)||!!c.cxc,gift=!!c.cubiertoPorCortesia,cancel=!!(c.anulado||c.anulada),amount=fhCent(c.montoUsd),direct=Math.min(amount,Math.max(0,fhCent(c.pagoDirectoUsd))),paid=cancel||gift||isCxc?0:(c.pagado?amount:direct),rest=cancel||gift||isCxc?0:fhCent(amount-paid),calc=0;
+  if(rest>0.009){var bucket=pending.find(function(p){return Number(p.q.num)===Number(x.cuenta.hab||x.hab);})||pending.find(function(p){return Number(p.q.num)===Number(q.num);});if(bucket){calc=Math.min(rest,bucket.ab);bucket.ab=fhCent(bucket.ab-calc);paid=fhCent(paid+calc);rest=fhCent(rest-calc);}}
+  var state=cancel?'Anulado · no suma':gift?'Cubierto por cortesía · no es dinero recibido':isCxc?'En CXC · no suma al saldo de recepción':rest>0.009?(paid>0?'Parcialmente pagado':'Pendiente'):'Pagado';
+  out.filas.push({tipo:'consumo',hab:x.hab,descripcion:(c.tipo||'Consumo')+(c.desc?' · '+c.desc:''),detalle:(c.restaurante?c.restaurante+' · ':'')+fhDate(c.fecha),cargo:cancel||gift||isCxc?0:amount,original:amount,pagado:paid,pendiente:rest,estado:state,control:c.control,controlPago:c.controlPago,asignado:calc,id:c.id});out.consAplicado+=paid;
+  (c.pagosConsumo||[]).forEach(function(a){var p=pagos.find(function(p){return String(p.id)===String(a.pagoId);}),key='p:'+a.pagoId;if(seenP[key])return;seenP[key]=true;var invalid=fhPagoAnulado(p),ext=isCxc||!!a.cxcId;var money=fhCent(a.montoUsd);out.pagos.push({id:a.pagoId,hab:x.hab,monto:money,neto:invalid||ext?0:money,devuelto:0,fecha:p?(p.fechaStr||fhDate(p.ts)):fhDate(a.fecha),metodo:p?(p.metodoOriginal||p.metodo):'Forma de pago no registrada',control:p?p.control:c.controlPago,concepto:'Pago directo · '+(c.tipo||'Consumo')+(c.desc?' · '+c.desc:''),uso:ext?'Pago de CXC · separado de recepción':'Aplicado directamente a este consumo',estado:invalid?'Anulado · no suma':ext?'CXC · no suma a recepción':'Válido',recibo:p,consumo:invalid||ext?0:money,resto:0});if(!invalid&&!ext)out.recibido+=money;});
+  if(direct>0.009&&!isCxc){var evidence=(c.pagosConsumo||[]).filter(function(a){var p=pagos.find(function(p){return String(p.id)===String(a.pagoId);});return !a.cxcId&&!fhPagoAnulado(p);}).reduce(function(s,a){return s+Number(a.montoUsd||0);},0);if(direct-evidence>.009){var delta=fhCent(direct-evidence);out.recibido+=delta;out.pagos.push({id:'Sin desglose · '+(c.id||''),hab:x.hab,monto:delta,neto:delta,devuelto:0,fecha:'Fecha no registrada',metodo:'Forma de pago no registrada',control:c.controlPago,concepto:'Pago directo registrado · '+(c.tipo||'Consumo'),uso:'Aplicado al consumo; faltan los recibos individuales',estado:'Importe registrado sin desglose',recibo:null,consumo:delta,resto:0});}if(Math.abs(direct-evidence)>.009)out.advertencias.push('Consumo '+(c.tipo||c.id||'')+': pago directo registrado '+fmtUSD(direct)+' sin desglose completo de recibos. No se inventan fecha ni forma de pago.');}
+ });
+ D.list.forEach(function(q){var available=scAbonosDisponibles(q);(q.abonos||[]).forEach(function(a,i){if(!a)return;var id=a.id?'id:'+a.id:'q:'+q.num+':'+i,dup=!!seenA[id];seenA[id]=true;
+  var raw=fhCent(a.montoUsd),net=dup?0:fhCent(scAbonoOriginal(a,q)),usable=dup?0:fhCent(available[i]),used=fhCent(Math.max(0,net-usable)),refund=Math.min(Math.max(0,raw),Math.max(0,fhCent(a.devolucionesUsd))),p=fhRecibo(a,q,pagos),invalid=fhPagoAnulado(a)||fhPagoAnulado(p),state=dup?'Duplicado · no suma':invalid?'Anulado · no suma':net>0.009||refund>0.009?'Válido':'Fuera del saldo actual · revisar origen';
+  if(a.soloConsumo&&!a.cxc&&!dup&&!invalid&&p){var copy=Object.assign({},a,{soloConsumo:false}),qr=Object.assign({},q,{abonos:(q.abonos||[]).map(function(v){return v===a?copy:v;})}),valid=fhCent(scAbonoOriginal(copy,qr));if(valid>0.009&&cargos.some(function(x){return Number(x.hab)===Number(q.num)&&x.c.pagado&&!x.c.cxc&&!csEnCxc(x.c)&&Number(x.c.controlPago)===Number(a.control);})){net=valid;used=valid;usable=0;state='Válido · pago de consumos separado del adelanto';}}if(a.cxc)state='Traslado a CXC · no es dinero recibido';if(p){seenP['p:'+p.id]=true;if(fhPagoAnulado(p)&&net>0)out.advertencias.push('El recibo '+fhCtrl(p.control)+' figura anulado pero el abono continúa vigente. Se conserva el saldo operativo y se requiere revisión.');}
+  out.pagos.push({id:a.id,hab:Number(q.num),monto:raw,neto:net,devuelto:dup?0:refund,fecha:p?(p.fechaStr||fhDate(p.ts)):fhDate(a.fecha),metodo:a.metodo||(p&&(p.metodoOriginal||p.metodo))||'Forma de pago no registrada',control:a.control,concepto:a.concepto||(a.origen==='reserva'?'Anticipo aplicado desde reserva':'Pago / adelanto de cuenta'),uso:net>0.009?'Consumos ya pagados: '+fmtUSD(used)+' · resto para la cuenta: '+fmtUSD(usable):'No se utiliza como adelanto en el saldo actual',estado:state,recibo:p,consumo:used,resto:usable,origen:a.origen});
+  if(!dup&&(net>0.009||refund>0.009)&&!invalid){out.recibido+=net+refund;out.devuelto+=refund;}
+ });});
+ // Exact linked annulled direct receipts remain visible even if removed from the cargo's payment array.
+ pagos.forEach(function(p){if(!p||!fhPagoAnulado(p)||seenP['p:'+p.id]||!(p.consumoIds||[]).some(function(id){return cargos.some(function(x){return String(x.c.id)===String(id);});}))return;seenP['p:'+p.id]=true;out.pagos.push({id:p.id,hab:p.hab,monto:fhCent(p.montoUsd),neto:0,devuelto:0,fecha:p.fechaStr||fhDate(p.ts),metodo:p.metodoOriginal||p.metodo,control:p.control,concepto:p.concepto||'Pago de consumo',uso:'Anulado · no se aplica',estado:'Anulado · no suma',recibo:p,consumo:0,resto:0});});
+ var abIds={};D.list.forEach(function(q){(q.abonos||[]).forEach(function(a){if(a&&a.id)abIds[String(a.id)]=true;});});
+ (DB.get('devoluciones',[])||[]).forEach(function(d){if((d.abonosOrigen||[]).some(function(a){return abIds[String(a.id)];}))out.devoluciones.push(d);});
+ out.pagos.sort(function(a,b){function when(x){var p=x.recibo,t=p&&(Number(p.ts)||Date.parse(p.fecha||''));if(t)return t;var q=D.list.find(function(q){return Number(q.num)===Number(x.hab);}),ab=q&&(q.abonos||[]).find(function(v){return String(v.id)===String(x.id);});return ab?Date.parse(ab.fecha||'')||0:0;}return when(a)-when(b);});
+ out.filas.forEach(function(f){out.cargos+=f.cargo;out.pagado+=f.pagado;});['cargos','pagado','recibido','devuelto','hospAplicado','consAplicado'].forEach(function(k){out[k]=fhCent(out[k]);});
+ var pendingSum=fhCent(out.filas.reduce(function(s,f){return s+f.pendiente;},0));if(Math.abs(pendingSum-out.saldo)>.009)out.advertencias.push('El desglose no puede distribuir todo el saldo con la evidencia disponible. El saldo para cobrar se mantiene en '+fmtUSD(out.saldo)+'.');
+ if(Math.abs(out.recibido-out.devuelto-out.pagado-out.disponible)>.009)out.advertencias.push('Hay importes marcados como pagados o movimientos sin desglose completo. No se inventan recibos ni se modifica la deuda. Revisa los registros señalados.');
+ return out;
+}
+function fhMini(label,money){return '<div><span class="fh-label">'+esc(label)+'</span><strong>'+fmtUSD(money)+'</strong></div>';}
+function fhCuentaHTML(r){
+ if(!r||r.estado!=='ocupada')return '';var d=fhCuentaDatos(r),h='<section class="fh-account" data-fh-account="'+escA(r.num)+'"><h3>Cuenta de la habitación · detalle del dinero</h3>';
+ if(d.list.length>1)h+='<p class="fh-note">Cuenta unida: habitaciones '+esc(d.list.map(function(q){return q.num;}).join(', '))+'. Se muestra la cuenta completa una sola vez; cada movimiento indica su habitación.</p>';
+ h+='<div class="fh-summary">'+fhMini('Total de cargos de recepción',d.cargos)+fhMini('Dinero recibido registrado',d.recibido)+fhMini('Dinero devuelto',d.devuelto)+fhMini('Dinero neto recibido',fhCent(d.recibido-d.devuelto))+fhMini('Aplicado a cargos',d.pagado)+fhMini('Adelanto disponible',d.disponible)+'</div><div class="fh-balance"><span>'+(d.saldo>.009?'Falta por pagar':'Cuenta pagada')+'</span><strong>'+fmtUSD(d.saldo)+'</strong></div>';
+ h+='<h4>1. Hospedaje y cada consumo</h4>';d.filas.forEach(function(f){h+='<article class="fh-item"><div class="fh-title">'+esc(f.descripcion)+'</div><div class="fh-muted">Hab. '+esc(f.hab)+' · '+esc(f.detalle||'')+'</div>';
+ if(f.estado)h+='<div class="fh-state">'+esc(f.estado)+(f.cargo===0&&f.original>0?' · importe de referencia '+fmtUSD(f.original):'')+'</div>';
+ h+='<div class="fh-values">'+fhMini('Cargo',f.cargo)+fhMini('Pagado',f.pagado)+fhMini('Pendiente',f.pendiente)+'</div><div class="fh-muted">Control del cargo: '+fhCtrl(f.control)+(f.controlPago?' · control de pago: '+fhCtrl(f.controlPago):'')+'</div>';
+ if(f.asignado>0)h+='<div class="fh-muted">'+fmtUSD(f.asignado)+' cubiertos por abonos de cuenta en el cálculo actual.</div>';h+='</article>';});
+ h+='<h4>2. Pagos y anticipos recibidos</h4><p class="fh-note">Se conserva el importe original. Un pago ya usado no vuelve a ser adelanto. Los recibos de Caja son referencias del mismo dinero: no se suman otra vez.</p>';
+ if(!d.pagos.length)h+='<p>No hay pagos registrados para esta cuenta.</p>';
+ d.pagos.forEach(function(p){h+='<article class="fh-item"><div class="fh-title">'+esc(p.concepto)+' · '+fmtUSD(p.monto)+'</div><div class="fh-muted">Hab. '+esc(p.hab)+' · '+esc(p.fecha)+'</div><div>'+esc(p.metodo)+'</div><div class="fh-muted">N.º de control: '+fhCtrl(p.control)+' · registro: '+esc(p.id||'Sin identificador')+'</div><div class="fh-state">'+esc(p.estado)+'</div><div class="fh-muted">'+esc(p.uso)+'</div>';
+ if(p.devuelto>0)h+='<div>Devuelto: '+fmtUSD(p.devuelto)+' · neto vigente: '+fmtUSD(p.neto)+'</div>';
+ if(p.recibo){var pg=p.recibo;h+='<div class="fh-proof">Recibo de Caja: '+esc(pg.id)+' · '+esc(pg.usuario||'Usuario no registrado')+'<br>Turno: '+esc(pg.turnoId||'No registrado');if(Number(pg.montoUsd)!==p.monto)h+='<br>Total del recibo conjunto: '+fmtUSD(pg.montoUsd)+'; aquí solo se suma la parte de esta cuenta.';if(pg.operacionId)h+='<br>Operación: '+esc(pg.operacionId);if(Array.isArray(pg.metodos)&&pg.metodos.length)h+='<br>Desglose del recibo: '+pg.metodos.map(function(m){return esc(m.metodo||'')+' '+fmtUSD(m.montoUsd)+(m.ref?' · ref. '+esc(m.ref):'');}).join(' / ');if(fhPagoAnulado(pg))h+='<br>Motivo: '+esc(pg.anuladoMotivo||pg.motivo||'No registrado');h+='</div>';}else h+='<div class="fh-muted">Sin vínculo único con un recibo de Caja; se muestran los datos del abono, sin inventar una asociación.</div>';h+='</article>';});
+ h+='<h4>3. Cómo queda aplicado el dinero</h4><div class="fh-summary">'+fhMini('Hospedaje cubierto',d.hospAplicado)+fhMini('Consumos cubiertos',d.consAplicado)+fhMini('Adelanto libre',d.disponible)+'</div><p class="fh-note">Distribución calculada del saldo actual: primero hospedaje y luego consumos pendientes. No cambia pagos ni crea una asignación histórica individual cuando esa información no está registrada.</p>';
+ if(d.devoluciones.length){h+='<h4>Devoluciones vinculadas</h4>';d.devoluciones.forEach(function(v){h+='<article class="fh-item"><b>'+fmtUSD(v.montoUsd)+' · '+esc(v.concepto||'Devolución')+'</b><div>'+esc(v.fechaStr||fhDate(v.ts))+' · '+esc(v.metodo||'')+'</div><div class="fh-muted">Control '+fhCtrl(v.control)+' · '+esc(v.usuario||'')+' · turno '+esc(v.turnoId||'No registrado')+'</div><div class="fh-muted">Origen: '+esc((v.abonosOrigen||[]).map(function(a){return a.id;}).join(', '))+'</div></article>';});}
+ if(d.advertencias.length)h+='<div class="fh-warning"><b>Información que requiere revisión</b>'+d.advertencias.map(function(t){return '<p>'+esc(t)+'</p>';}).join('')+'</div>';
+ return h+'</section>';
+}
+cuentaHabBox=function(r){return fhCuentaHTML(r);};
 
 </script>
 </body>
